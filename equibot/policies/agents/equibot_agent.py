@@ -94,17 +94,17 @@ class EquiBotAgent(DPAgent):
             )
             scale = feat_dict["scale"].reshape(B, Ho, 1, 1)[:, [-1]].repeat(1, Ho, 1, 1)
             z_pos, z_dir, z_scalar = self.actor._convert_state_to_vec(state)
-            z_pos = self.state_normalizer.normalize(z_pos)
+            z_pos = self.state_normalizer.normalize(z_pos) # ([32, 2, 2, 3])
             z_pos = (z_pos - center) / scale
-            z = feat_dict["so3"]
-            z = z.reshape(B, Ho, -1, 3)
+            z = feat_dict["so3"]   # ([64, 32, 3])
+            z = z.reshape(B, Ho, -1, 3)  # ([32, 2, 32, 3])
             if self.dof > 4:
                 z = torch.cat([z, z_pos, z_dir], dim=-2)
             else:
                 z = torch.cat([z, z_pos], dim=-2)
         obs_cond_vec, obs_cond_scalar = z.reshape(B, -1, 3), (
             z_scalar.reshape(B, -1) if z_scalar is not None else None
-        )
+        )#([32, 80, 3]), ([32, 4])
 
         if self.obs_mode.startswith("pc"):
             if self.ac_mode == "abs":
@@ -116,7 +116,7 @@ class EquiBotAgent(DPAgent):
             else:
                 center = 0
             scale = feat_dict["scale"].reshape(B, Ho, 1, 1)[:, [-1]].repeat(1, Hp, 1, 1)
-            gt_action = gt_action.reshape(B, Hp, self.num_eef, self.dof)
+            gt_action = gt_action.reshape(B, Hp, self.num_eef, self.dof) # ([32, 16, 2, 7])
             if self.dof == 4:
                 gt_action = torch.cat(
                     [gt_action[..., :1], (gt_action[..., 1:] - center) / scale], dim=-1
@@ -158,14 +158,14 @@ class EquiBotAgent(DPAgent):
         if vec_gripper_action is not None:
             noisy_eef_actions = self.actor.noise_scheduler.add_noise(
                 vec_eef_action, vec_eef_noise, timesteps
-            )
+            ) # (B, ac_dim, 3, H) 
             noisy_gripper_actions = self.actor.noise_scheduler.add_noise(
                 vec_gripper_action, vec_gripper_noise, timesteps
             )
 
             vec_eef_noise_pred, vec_gripper_noise_pred = (
                 self.actor.noise_pred_net_handle(
-                    noisy_eef_actions.permute(0, 3, 1, 2),
+                    noisy_eef_actions.permute(0, 3, 1, 2),#(B, H, ac_dim, 3) 
                     timesteps,
                     scalar_sample=noisy_gripper_actions.permute(0, 2, 1),
                     cond=obs_cond_vec,
@@ -174,7 +174,7 @@ class EquiBotAgent(DPAgent):
             )
             vec_eef_noise_pred = vec_eef_noise_pred.permute(0, 2, 3, 1)
             vec_gripper_noise_pred = vec_gripper_noise_pred.permute(0, 2, 1)
-            if self.dof != 7:
+            if self.dof != 7:  # append None as gripper noise
                 noise_pred = self.actor._convert_action_to_scalar(
                     vec_eef_noise_pred, vec_gripper_noise_pred, batch=batch
                 ).view(noise.shape)
@@ -198,7 +198,7 @@ class EquiBotAgent(DPAgent):
             n_vec = np.prod(vec_eef_noise_pred.shape)
             n_sca = np.prod(vec_gripper_noise_pred.shape)
             k = (n_vec) / (n_vec + n_sca)
-            loss = nn.functional.mse_loss(
+            loss = nn.functional.mse_loss(  # weighted sum
                 vec_eef_noise_pred, vec_eef_noise
             ) * k + nn.functional.mse_loss(
                 vec_gripper_noise_pred, vec_gripper_noise

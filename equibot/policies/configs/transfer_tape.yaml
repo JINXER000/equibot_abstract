@@ -1,0 +1,21 @@
+defaults:
+  - base
+
+use_wandb: false
+
+env:
+  env_class: 'tape'
+  dof: 6
+  max_episode_length: 50
+
+agent:
+  agent_name: aloha
+
+model:
+  encoder:
+    backbone_type: vn_pointnet
+
+data:
+  dataset:
+    num_points: 512
+    symb_mask: ['qpose_left', 'qpose_right', None, None, None]

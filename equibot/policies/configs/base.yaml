@@ -99,5 +99,5 @@ hydra:
     dir: ${log_dir}/${prefix}
 
 wandb:
-  entity: [enter wandb entity name here]
-  project: [enter wandb project name here]
+  entity: neuralogic
+  project: equibot

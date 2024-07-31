@@ -1,3 +1,9 @@
+# CYZ dev
+1. use 'base' env!
+
+## TODO
+[] figure out data structure of orientation. 
+
 # EquiBot: SIM(3)-Equivariant Diffusion Policy for Generalizable and Data Efficient Learning
 
 Jingyun Yang*, Zi-ang Cao*, Congyue Deng, Rika Antonova, Shuran Song, Jeannette Bohg

@@ -52,7 +52,7 @@ class EquiBotPolicy(nn.Module):
         self.eef_dim = cfg.env.eef_dim
         self.dof = cfg.env.dof
         if cfg.model.obs_mode == "state":
-            self.obs_dim = self.num_eef * (self.eef_dim // 3)
+            self.obs_dim = self.num_eef * (self.eef_dim // 3)  ## why //3: 13//3=4 = [xyz, 2*rot, gravity, gripper]
         elif cfg.model.obs_mode == "rgb":
             raise NotImplementedError()
         else:
@@ -89,7 +89,7 @@ class EquiBotPolicy(nn.Module):
             self.encoder_handle = self.encoder
             self.noise_pred_net_handle = self.noise_pred_net
 
-    def _convert_state_to_vec(self, state):
+    def _convert_state_to_vec(self, state):  #([32, 2, 2, 13])
         # state format for 3d and 4d actions: eef_pos
         # state format for 7d actions: eef_pos, eef_rot_x, eef_rot_z, gravity_dir, gripper_pose, [optional] goal_pos
         # input: (B, H, E * eef_dim)
@@ -123,7 +123,7 @@ class EquiBotPolicy(nn.Module):
                 vec_state_pos = eef_pos
             vec_state_dir = torch.cat([dir1, dir2, gravity_dir], dim=2)
             scalar_state = gripper_pose
-            return vec_state_pos, vec_state_dir, scalar_state
+            return vec_state_pos, vec_state_dir, scalar_state  # torch.Size([32, 2, 2, 3]), torch.Size([32, 2, 6, 3]), torch.Size([32, 2, 2])
 
     def _convert_action_to_vec(self, ac, batch=None):
         # input: (B, H, E * dof); output: (B, ac_dim, 3, H) + maybe (B, E, H)
@@ -131,7 +131,7 @@ class EquiBotPolicy(nn.Module):
         ac = ac.view(ac.shape[0], ac.shape[1], -1, self.dof)
         if self.dof in [4, 7]:
             gripper_ac = ac[:, :, :, 0]  # (B, H, E)
-            eef_ac = ac[:, :, :, 1:]  # (B, H, E, 3)
+            eef_ac = ac[:, :, :, 1:]  # (B, H, E, 6)
             if self.dof == 7:
                 eef_ac = eef_ac.reshape(
                     ac.shape[0], ac.shape[1], -1, 3

@@ -195,9 +195,9 @@ class VecConditionalUnet1D(nn.Module):
         scalar_cond: (B,cond_dim)
         output: (B,T,input_dim)
         """
-        sample = einops.rearrange(sample, "b h t v -> b t v h")
+        sample = einops.rearrange(sample, "b h t v -> b t v h") # ([32, 4, 3, 16])
         if scalar_sample is not None:
-            scalar_sample = einops.rearrange(scalar_sample, "b h t -> b t h")
+            scalar_sample = einops.rearrange(scalar_sample, "b h t -> b t h")  # ([32, 2, 16])
 
         # 1. encode timestep
         timesteps = timestep
@@ -213,14 +213,14 @@ class VecConditionalUnet1D(nn.Module):
 
         # 2. conditioning
         assert cond is not None
-        vec_feature = cond
-        scalar_feature = self.diffusion_step_encoder(timesteps)  # (B, dsed)
+        vec_feature = cond  # [z, z_pos, z_dir], pc + pos + dir
+        scalar_feature = self.diffusion_step_encoder(timesteps)  # (B, dsed)  ([32, 80])
         if scalar_cond is not None:
-            scalar_feature = torch.cat([scalar_feature, scalar_cond], dim=-1)
+            scalar_feature = torch.cat([scalar_feature, scalar_cond], dim=-1)  #([32, 84])
 
         # 3. forward pass through the unet
         # 3.1 fuse vector and scalar samples if needed
-        if scalar_sample is not None:
+        if scalar_sample is not None: # noisy gripper action
             assert hasattr(self, "scalar_fusion_module")
             sample = self.scalar_fusion_module(sample, scalar_sample)
 
@@ -233,11 +233,11 @@ class VecConditionalUnet1D(nn.Module):
             h.append(x)
             x = downsample(x)
 
-        for mid_module in self.mid_modules:
+        for mid_module in self.mid_modules:  # bottleneck
             x = mid_module(x, vec_feature, scalar_feature)
 
         for idx, (resnet, resnet2, upsample) in enumerate(self.up_modules):
-            x = torch.cat((x, h.pop()), dim=1)
+            x = torch.cat((x, h.pop()), dim=1)  # connecting parts
             x = resnet(x, vec_feature, scalar_feature)
             x = resnet2(x, vec_feature, scalar_feature)
             x = upsample(x)
