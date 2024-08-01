@@ -31,13 +31,14 @@ class ALOHAPolicy(nn.Module):
 
         self.num_eef = cfg.env.num_eef
         self.dof = cfg.env.dof # 6
+        num_action_dim = 1 # TODO: now is only xyz. 
         num_scalar_dims = self.dof * self.num_eef # joint pose
         # assume the symb mask is 2*[jpose, grasp, other_obj], then the activated_obsv is obj_grasp+ other_obj
         # for now, jpose require no obs
         activated_obsv = 0
         self.obs_dim = self.encoder_out_dim + activated_obsv
         self.noise_pred_net = VecConditionalUnet1D(
-            input_dim=num_scalar_dims,
+            input_dim=num_action_dim,
             cond_dim=self.obs_dim,
             scalar_cond_dim=0,
             scalar_input_dim=num_scalar_dims,
@@ -67,7 +68,8 @@ class ALOHAPolicy(nn.Module):
 
     def _convert_jpose_to_vec(self, jpose, batch=None):
         # input: (B, 1, E , dof); output: (B, 1, ac_dim, 3) 
-        jpose = jpose.reshape(jpose.shape[0], jpose.shape[1],  -1, 3)
+        # jpose = jpose.reshape(jpose.shape[0], jpose.shape[1],  -1, 3)
+        jpose = jpose.reshape(jpose.shape[0], 1,  -1)
         return jpose
     
     def forward(self, obs, jpose, timesteps, symb_mask=None):

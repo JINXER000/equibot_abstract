@@ -84,6 +84,7 @@ class ALOHAPoseDataset(Dataset):
         raw_files = self.raw_file_names
 
         conditional_pc = None
+        grasp_xyz = None
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
             # joint pose
@@ -115,9 +116,15 @@ class ALOHAPoseDataset(Dataset):
                 sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
                 conditional_pc = conditional_pc[sampled_indices]
 
+            elif 'npz' in file_name: # as a dummy input of vnn
+                npz_path = os.path.join(self.root, 'raw', file_name)
+                data = np.load(npz_path)
+                grasp_xyz = data['seg_center'].reshape(1,1,3)
+
         assert conditional_pc is not None
         for i in range(len(data_list)):
             data_list[i]['pc'] = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
+            data_list[i]['grasp_xyz'] = torch.tensor(grasp_xyz).to(torch.float32)
 
             # TODO: add grasp pose to data
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)

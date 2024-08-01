@@ -97,6 +97,7 @@ class ALOHAAgent(object):
         batch = to_torch(batch, self.device)
         pc = batch["pc"]
         joint_data  = batch["joint_pose"]
+        grasp_xyz = batch["grasp_xyz"]
 
         if self.pc_scale is None:
             self._init_normalizers(batch)
@@ -107,12 +108,17 @@ class ALOHAAgent(object):
 
         feat_dict = self.actor.encoder_handle(pc, target_norm=self.pc_scale)
         center = (
-            feat_dict["center"].reshape(batch_size, 1, 3)[:, [-1]].repeat(1, 1, 1)
+            feat_dict["center"].reshape(batch_size, 1, 1, 3)[:, [-1]].repeat(1, 1, 1, 1)
         )
-        scale = feat_dict["scale"].reshape(batch_size, 1, 1)[:, [-1]].repeat(1, 1, 1)
+        scale = feat_dict["scale"].reshape(batch_size, 1, 1, 1)[:, [-1]].repeat(1, 1, 1, 1)
         
+        grasp_xyz = self.xyz_normalizer.normalize(grasp_xyz)
+        grasp_xyz = grasp_xyz - center
+        grasp_xyz = grasp_xyz / scale
+
         # scalar
         scalar_jpose = self.actor._convert_jpose_to_vec(joint_data)
+        # scalar_jpose = joint_data
         
         obs_cond_vec = feat_dict["so3"]  
         obs_cond_vec = obs_cond_vec.reshape(batch_size,  -1, 3)
@@ -124,15 +130,20 @@ class ALOHAAgent(object):
             device=self.device,
         ).long()
 
+        grasp_vec_noise = torch.randn_like(grasp_xyz, device=self.device)  
+        noisy_grasp = self.actor.noise_scheduler.add_noise(
+            grasp_xyz, grasp_vec_noise, timesteps
+        )      
+
         scalar_jpose_noise = torch.randn_like(scalar_jpose, device=self.device)
         noisy_jpose = self.actor.noise_scheduler.add_noise(
             scalar_jpose, scalar_jpose_noise, timesteps
         )
         # NOTE: noisy_jpose should be  scalar_sample, but here it is set as sample as it is compulsory
         scalar_jpose_pred = self.actor.noise_pred_net_handle(
-            noisy_jpose,
+            noisy_grasp,
             timesteps,
-            scalar_sample = None, 
+            scalar_sample = noisy_jpose, 
             cond=obs_cond_vec,
             scalar_cond=None,
         )

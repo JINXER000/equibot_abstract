@@ -188,14 +188,14 @@ class VecConditionalUnet1D(nn.Module):
         **kwargs
     ):
         """
-        sample: (B,T,input_dim,3)
+        sample: (B,T,input_dim,3)  
         timestep: (B,) or int, diffusion step
         scalar_sample: (B,T,input_dim)
         cond: (B,cond_dim,3)
         scalar_cond: (B,cond_dim)
         output: (B,T,input_dim)
         """
-        sample = einops.rearrange(sample, "b h t v -> b t v h") # ([32, 4, 3, 16])
+        sample = einops.rearrange(sample, "b h t v -> b t v h") # ([32, 4, 3, 16]) batch, channel,  vector, horizon
         if scalar_sample is not None:
             scalar_sample = einops.rearrange(scalar_sample, "b h t -> b t h")  # ([32, 2, 16])
 
@@ -227,6 +227,7 @@ class VecConditionalUnet1D(nn.Module):
         # 3.2 unet
         x = sample
         h = []
+        # channel ++, horizon --
         for idx, (resnet, resnet2, downsample) in enumerate(self.down_modules):
             x = resnet(x, vec_feature, scalar_feature)
             x = resnet2(x, vec_feature, scalar_feature)

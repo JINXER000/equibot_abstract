@@ -12,7 +12,8 @@ agent:
 env:
   env_class: ???
   num_eef: 2
-  dof: 7
+  # for an action, it has pos vel and angular vel + gripper. NOT num of joints!
+  dof: 7  
   eef_dim: 13
   vectorize: false
   args:

@@ -57,7 +57,7 @@ class EquiBotPolicy(nn.Module):
             raise NotImplementedError()
         else:
             self.obs_dim = self.encoder_out_dim + self.num_eef * (self.eef_dim // 3)
-        self.action_dim = (2 if self.dof > 4 else 1) * self.num_eef
+        self.action_dim = (2 if self.dof > 4 else 1) * self.num_eef # (vel + angle_vel )*2
 
         num_scalar_dims = (0 if self.dof == 3 else 1) * self.num_eef
         self.noise_pred_net = VecConditionalUnet1D(
