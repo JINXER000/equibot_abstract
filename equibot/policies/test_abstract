@@ -1,0 +1,191 @@
+import os
+import sys
+import time
+import torch
+import hydra
+import omegaconf
+import wandb
+import numpy as np
+import getpass as gt
+from glob import glob
+from tqdm import tqdm
+from omegaconf import OmegaConf
+
+from equibot.policies.utils.media import combine_videos, save_video
+from equibot.policies.agents.aloha_agent import ALOHAAgent  
+
+sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+
+
+def run_eval(
+    agent,
+    vis=False,
+    num_episodes=1,
+    log_dir=None,
+    reduce_horizon_dim=True,
+    verbose=False,
+    use_wandb=False,
+    ckpt_name=None,
+):
+    if vis:
+        vis_frames = []
+
+        # input dummy obs
+
+        ply_path = "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
+        import open3d as o3d
+        conditional_pc = o3d.io.read_point_cloud(ply_path)
+        conditional_pc = np.asarray(conditional_pc.points)
+
+        # tgt_size = cfg.num_points
+        # sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
+        # conditional_pc = conditional_pc[sampled_indices]
+
+        agent_obs = {"pc": [conditional_pc]}
+
+
+        # predict actions
+        st = time.time()
+        ac, unnormed_history = agent.act(agent_obs, return_history=True)
+        print(f"Inference time: {time.time() - st:.3f}s")
+
+        # visualize actions in pybullet
+        for i in range(ac.shape[0]):
+            agent_ac = ac[i]
+
+        history_pic_dir = os.path.join(log_dir, "history_pics")
+        if not os.path.exists(history_pic_dir):
+            os.makedirs(history_pic_dir)
+        render_pose(unnormed_history, use_gui=True, \
+                    directory = history_pic_dir, save_pic_every = 10)
+
+
+        # take actions
+        for ac_ix in range(ac_horizon):
+            if len(obs["pc"]) == 0 or len(obs["pc"][0]) == 0:
+                ac_dict = None
+                break
+            agent_ac = ac[ac_ix] if len(ac.shape) > 1 else ac
+            state, rew, done, info = env.step(agent_ac, dummy_reward=True)
+            if hasattr(env, "visualize_eef_frame"):
+                env.visualize_eef_frame(state)
+            rgb_render = render = env.render()
+            obs = organize_obs(render, rgb_render, state)
+            obs_history.append(obs)
+            if len(obs) > obs_horizon:
+                obs_history = obs_history[-obs_horizon:]
+            images[-1].append(rgb_render["images"][0][..., :3])
+            if vis:
+                vis_frames.append(rgb_render["images"][0][..., :3])
+
+
+
+
+    max_num_images = np.max([len(images[i]) for i in range(len(images))])
+    for i in range(len(images)):
+        if len(images[i]) < max_num_images:
+            images[i] = images[i] + [images[i][-1]] * (max_num_images - len(images[i]))
+    images = np.array(images)
+    rews = np.array(rews)
+
+    pos_idxs, neg_idxs = np.where(rews >= 0.5)[0], np.where(rews < 0.5)[0]
+    metrics = dict(rew=np.mean(rews))
+    fps = 30 if "sim_mobile" in env.__module__ else 4
+    if use_wandb:
+        if len(pos_idxs) > 0:
+            metrics["video_pos"] = wandb.Video(
+                combine_videos(images[pos_idxs][:6], num_cols=5).transpose(0, 3, 1, 2),
+                fps=30,
+            )
+        if len(neg_idxs) > 0:
+            metrics["video_neg"] = wandb.Video(
+                combine_videos(images[neg_idxs][:6], num_cols=5).transpose(0, 3, 1, 2),
+                fps=30,
+            )
+        if vis:
+            metrics["vis_rollout"] = images
+            metrics["vis_pc"] = wandb.Object3D(sample_pc)
+    else:
+        metrics["vis_rollout"] = images
+    return metrics
+
+
+@hydra.main(config_path="configs", config_name="fold_synthetic")
+def main(cfg):
+    assert cfg.mode == "eval"
+    device = torch.device(cfg.device)
+    if cfg.use_wandb:
+        wandb_config = omegaconf.OmegaConf.to_container(
+            cfg, resolve=True, throw_on_missing=False
+        )
+        wandb.init(
+            entity=cfg.wandb.entity,
+            project=cfg.wandb.project,
+            tags=["eval"],
+            name=cfg.prefix,
+            settings=wandb.Settings(code_dir="."),
+            config=wandb_config,
+        )
+    np.random.seed(cfg.seed)
+
+
+    agent = ALOHAAgent(cfg)
+    agent.train(False)
+
+    if os.path.isdir(cfg.training.ckpt):
+        ckpt_dir = cfg.training.ckpt
+        ckpt_paths = list(glob(os.path.join(ckpt_dir, "ckpt*.pth")))
+        assert len(ckpt_paths) >= cfg.eval.num_ckpts_to_eval
+        ckpt_paths = list(sorted(ckpt_paths))[-cfg.eval.num_ckpts_to_eval :]
+        assert f"{cfg.eval.last_ckpt}" in ckpt_paths[-1]
+    else:
+        ckpt_paths = [cfg.training.ckpt]
+
+    rew_list = []
+
+    for ckpt_path in ckpt_paths:
+        ckpt_name = ckpt_path.split("/")[-1].split(".")[0]
+        agent.load_snapshot(ckpt_path)
+
+        log_dir = os.getcwd()
+
+        eval_metrics = run_eval(
+            agent,
+            vis=True,
+            num_episodes=cfg.training.num_eval_episodes,
+            log_dir=log_dir,
+            reduce_horizon_dim=cfg.data.dataset.reduce_horizon_dim,
+            verbose=True,
+            ckpt_name=ckpt_name,
+        )
+        mean_rew = eval_metrics["rew"]
+        print(f"Evaluation results: mean rew = {mean_rew}")
+        rew_list.append(mean_rew)
+        if cfg.use_wandb:
+            wandb.log(
+                {"eval/" + k: v for k, v in eval_metrics.items() if k != "vis_rollout"}
+            )
+        else:
+            save_filename = os.path.join(
+                os.getcwd(), f"vis_{ckpt_name}_rew{mean_rew:.3f}.mp4"
+            )
+        if "vis_rollout" in eval_metrics:
+            if len(eval_metrics["vis_rollout"].shape) == 4:
+                save_video(eval_metrics["vis_rollout"], save_filename, fps=30)
+            else:
+                assert len(eval_metrics["vis_rollout"][0].shape) == 4
+                for eval_idx, eval_video in enumerate(eval_metrics["vis_rollout"]):
+                    episode_rew = eval_metrics["rew_values"][eval_idx]
+                    save_filename = os.path.join(
+                        os.getcwd(),
+                        f"vis_{ckpt_name}_ep{eval_idx}_rew{episode_rew:.3f}.mp4",
+                    )
+                    save_video(eval_video, save_filename)
+        del eval_metrics
+    np.savez(os.path.join(os.getcwd(), "info.npz"), rews=np.array(rew_list))
+
+
+if __name__ == "__main__":
+    main()
