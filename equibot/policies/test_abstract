@@ -17,7 +17,38 @@ from equibot.policies.agents.aloha_agent import ALOHAAgent
 sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
 sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
 from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+import open3d as o3d
 
+def rotate_points(conditional_pc):
+    points = np.asarray(conditional_pc.points)
+
+    # rotate the pc around y axis for 90 deg, then rotate around x axis for 45 deg
+    rotation_y = np.array([
+        [np.cos(np.pi / 2), 0, np.sin(np.pi / 2)],
+        [0, 1, 0],
+        [-np.sin(np.pi / 2), 0, np.cos(np.pi / 2)]
+    ])
+
+    # 45 degrees rotation around the x-axis
+    rotation_x = np.array([
+        [1, 0, 0],
+        [0, np.cos(np.pi / 4), -np.sin(np.pi / 4)],
+        [0, np.sin(np.pi / 4), np.cos(np.pi / 4)]
+    ])
+
+    # Apply the rotations
+    points_rotated = points @ rotation_y.T @ rotation_x.T
+
+    # apply translation
+    points_rotated += np.array([0.1, 2.1, 0.1])
+    # Update the point cloud with the rotated points
+    conditional_pc.points = o3d.utility.Vector3dVector(points_rotated)
+
+    # draw axis
+    axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+    o3d.visualization.draw_geometries([conditional_pc, axis])
+
+    return points_rotated   
 
 def run_eval(
     agent,
@@ -35,25 +66,18 @@ def run_eval(
         # input dummy obs
 
         ply_path = "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
-        import open3d as o3d
         conditional_pc = o3d.io.read_point_cloud(ply_path)
-        conditional_pc = np.asarray(conditional_pc.points)
 
-        # tgt_size = cfg.num_points
-        # sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
-        # conditional_pc = conditional_pc[sampled_indices]
+        # points = rotate_points(conditional_pc)
+        points = np.asarray(conditional_pc.points)
 
-        agent_obs = {"pc": [conditional_pc]}
+        agent_obs = {"pc": [points]}
 
 
         # predict actions
         st = time.time()
-        ac, unnormed_history = agent.act(agent_obs, return_history=True)
+        unnormed_history = agent.act(agent_obs, return_history=True)
         print(f"Inference time: {time.time() - st:.3f}s")
-
-        # visualize actions in pybullet
-        for i in range(ac.shape[0]):
-            agent_ac = ac[i]
 
         history_pic_dir = os.path.join(log_dir, "history_pics")
         if not os.path.exists(history_pic_dir):

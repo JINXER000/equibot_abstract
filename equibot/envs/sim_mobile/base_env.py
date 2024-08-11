@@ -912,7 +912,7 @@ class BaseEnv(object):
                 [
                     quat2mat(pybullet.getQuaternionFromEuler(ori.tolist()))
                     for ori in global_ee_oris
-                ]
+                ]W
             )
             dir1 = eef_rot[:, :, 0]
             dir2 = eef_rot[:, :, 2]
@@ -926,7 +926,7 @@ class BaseEnv(object):
             )[:, None]
             return np.concatenate(
                 [eef_pos, dir1, dir2, gravity_dir, gripper_pose], axis=-1
-            )
+            )# xyz, 3, 3, 3, 1 = 13
 
     def _render(self):
         return self.render()["images"][0][..., :3]

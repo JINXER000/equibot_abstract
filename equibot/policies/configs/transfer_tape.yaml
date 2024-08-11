@@ -21,4 +21,6 @@ model:
 data:
   dataset:
     num_points: 512
-    symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
+    # symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
+    symb_mask: [None, None, None, 'grasp_right', None]
+    tamp_type: 'precondition'

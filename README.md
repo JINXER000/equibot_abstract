@@ -2,7 +2,26 @@
 1. use 'base' env!
 
 ## TODO
-[] figure out data structure of orientation. 
+### 
+use grasp pose relative to obj. before normalizing pc, subtract the pc with pc center. 
+### compose 2 grasps
+#### in training, 
+
+- use 2 unet to sum the loss.  Note that each grasp should subtract the corresponding point cloud. As a result, the right grasp should be normal distribution around the right point cloud.
+- in CCSP, it average outputs from different constraints(mlps). I think it is also doable, as the right grasp pred output is not taken into account in the left-unet. 
+- specifically, we have vec_lgrasp_pred and vec_rgrasp_pred, then we concatnate them to compute the loss. For joint, we calculate the average output from 2 unets. 
+- I think it can jointly model the moultimodality of 2 grasps. For example, left grasp on top + right grasp on bottom, it will be in the same pred_vec.
+#### in testing, 
+refer to ECCV 2022 to sample the joint poses. For grasps, sample them individually. 
+
+## Adapt to grasp+joint
+### eef data structure
+[x] figure out data structure of orientation. 
+The rotation is the 1st and 3rd row of rot mat. See trans2vec() for more detail.
+### Procedure to revise the state space
+[x] train the grasp pose and joint vals
+- in aloha_policy.py, remember to revise self.eef_dim. 
+- revise _init_normalizers() if the input is mixed with scalars and vectors. 
 
 # EquiBot: SIM(3)-Equivariant Diffusion Policy for Generalizable and Data Efficient Learning
 
