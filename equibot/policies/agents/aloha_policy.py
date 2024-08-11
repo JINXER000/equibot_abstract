@@ -77,7 +77,7 @@ class ALOHAPolicy(nn.Module):
     def _convert_jpose_to_vec(self, jpose, batch=None):
         # input: (B, 1, E , dof); output: (B, 1, ac_dim, 3) 
         # jpose = jpose.reshape(jpose.shape[0], jpose.shape[1],  -1, 3)
-        jpose = jpose.reshape(jpose.shape[0], -1,  12)
+        jpose = jpose.reshape(jpose.shape[0], -1,  self.dof * self.num_eef)
         return jpose
     
     def _convert_grasp_to_vec(self, grasp, batch = None):

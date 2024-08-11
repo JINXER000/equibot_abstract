@@ -14,6 +14,8 @@ use grasp pose relative to obj. before normalizing pc, subtract the pc with pc c
 #### in testing, 
 refer to ECCV 2022 to sample the joint poses. For grasps, sample them individually. 
 
+### use MLP instead of Unet as denoising network
+
 ## Adapt to grasp+joint
 ### eef data structure
 [x] figure out data structure of orientation. 

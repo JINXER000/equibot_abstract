@@ -197,27 +197,29 @@ class ALOHAAgent(object):
 
         self.actor.step_ema()
 
-        metrics = {
-            "loss": loss,
-            # "mean_gt_jnoise_norm": np.linalg.norm(
-            #     scalar_jpose_noise.reshape(joint_data.shape[0], -1).detach().cpu().numpy(),
-            #     axis=1,
-            # ).mean(),
-            # "mean_pred_jnoise_norm": np.linalg.norm(
-            #     scalar_jpose_pred.reshape(joint_data.shape[0], -1)
-            #     .detach()
-            #     .cpu()
-            #     .numpy(),
-            #     axis=1,
-            # ).mean(),
-            "mean_gt_eef_noise_norm": np.linalg.norm(
-                vec_grasp_noise.detach().cpu().numpy(), axis=1
-            ).mean(),
-            "mean_pred_eef_noise_norm": np.linalg.norm(
-                vec_grasp_pred.detach().cpu().numpy(), axis=1
-            ).mean(),
-
-        }
+        metrics = {"loss": loss,
+                   "cond_obsv": np.linalg.norm(
+                       obs_cond_vec.detach().cpu().numpy(), axis=1
+                   ).mean(),
+                   }
+        if self.symb_mask[0] != 'None' or self.symb_mask[1] != 'None': # pred joint
+            metrics["mean_gt_jnoise_norm"] = np.linalg.norm(
+                    scalar_jpose_noise.detach().cpu().numpy(),
+                    axis=1,
+                ).mean(),
+            metrics["mean_pred_jnoise_norm"] = np.linalg.norm(
+                    scalar_jpose_pred.detach()
+                    .cpu()
+                    .numpy(),
+                    axis=1,
+                ).mean(),
+        if self.symb_mask[2] != 'None' or self.symb_mask[3] != 'None': # pred grasp
+            metrics["mean_gt_eef_noise_norm"] = np.linalg.norm(
+                    vec_grasp_noise.detach().cpu().numpy(), axis=1
+                ).mean(),
+            metrics["mean_pred_eef_noise_norm"]= np.linalg.norm(
+                    vec_grasp_pred.detach().cpu().numpy(), axis=1
+                ).mean(),
 
         return metrics
 
@@ -247,6 +249,7 @@ class ALOHAAgent(object):
     def load_snapshot(self, load_path):
         state_dict = torch.load(load_path)
         self.grasp_xyz_normalizer = Normalizer(state_dict["grasp_normalizer"])
+        # self.grasp_xyz_normalizer = Normalizer(state_dict["state_normalizer"])
         self.actor.grasp_xyz_normalizer = self.grasp_xyz_normalizer
         self.jpose_normalizer= Normalizer(state_dict["ac_normalizer"])
         self.actor.jpose_normalizer = self.jpose_normalizer
