@@ -303,9 +303,8 @@ class ALOHAAgent(object):
                 xyz = xyz[::step, :][: self.num_points]
                 xyzs.append(xyz)
         torch_obs = dict(
-            pc=torch.tensor(np.array(xyzs))
-            .to(self.device)
-            .float())
+            pc=torch.tensor(np.array(xyzs)).to(self.device).float(), 
+            gt_grasp = obs['gt_grasp']  )
         history = self.actor(torch_obs, return_history=return_history)
 
 

@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from collections import namedtuple
 
-DATASET_PATH = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/insert_tape'
+DATASET_PATH = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape'
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
 
@@ -22,7 +22,8 @@ class ALOHAPoseDataset(Dataset):
         super().__init__()
         self.mode = mode
         self.dir_name = cfg.path
-        self.root = os.path.join(DATASET_PATH, self.dir_name)
+        self.root = self.dir_name
+        # self.root = os.path.join(DATASET_PATH, self.dir_name)
         self.symb_mask = cfg.symb_mask
         self.transform = transform
         self.pre_transform = pre_transform

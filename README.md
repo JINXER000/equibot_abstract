@@ -1,9 +1,12 @@
 # CYZ dev
-1. use 'base' env!
+
 
 ## TODO
 ### 
-use grasp pose relative to obj. before normalizing pc, subtract the pc with pc center. 
+[] use grasp pose relative to obj. before normalizing pc, subtract the pc with pc center. 
+[] Use grasp data for riemann to train. 
+[] Visualize the grasp diffusion history. 
+[] When testing, input the same point cloud. 
 ### compose 2 grasps
 #### in training, 
 

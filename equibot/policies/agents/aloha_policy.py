@@ -159,12 +159,14 @@ class ALOHAPolicy(nn.Module):
                 model_output=noise_pred[0], timestep=k, sample=curr_action[0]
             ).prev_sample
             # add back the offset
-            grasp_slice = new_action[0][0][0].reshape(1, 1, self.eef_dim, 3) 
-            grasp_slice[:, :, 0, :] = grasp_slice[:, :, 0, :]*scale + center
+            grasp_slice = new_action[0][0][0].reshape(self.eef_dim, 3) 
+            grasp_xyz = grasp_slice[0]*scale + center
+            grasp_dir1 = grasp_slice[1]
+            grasp_dir2 = grasp_slice[2]
 
             # un-normalize
-            unnormed_grasp = (
-                        self.grasp_xyz_normalizer.unnormalize(grasp_slice)
+            unnormed_grasp_xyz = (
+                        self.grasp_xyz_normalizer.unnormalize(grasp_xyz)
                         .detach()
                         .cpu()
                         .numpy()
@@ -187,17 +189,23 @@ class ALOHAPolicy(nn.Module):
                             .reshape(-1)
                         )
                 
-            row_1 = unnormed_grasp[3:6]
-            row_3 = unnormed_grasp[6:]
+            row_1 = grasp_dir1.detach().cpu().numpy()
+            row_3 = grasp_dir2.detach().cpu().numpy()
             row_2 = np.cross(row_1, row_3)
             rotation_mat = np.stack([row_1, row_2, row_3])
             trans_mat = np.eye(4)
             trans_mat[:3, :3] = rotation_mat
-            trans_mat[3, :3] = unnormed_grasp[:3]
+            trans_mat[:3, 3] = unnormed_grasp_xyz
             if noise_pred[1] is not None:
                 action_slice = (trans_mat, unnormed_joint)
             else:
                 action_slice = (trans_mat, None)
             denoise_history.append(action_slice)
+
+            # record the denoised action
+            curr_action = tuple(new_action)
+
+        # for debug
+        gt_grasp_9d = obs['gt_grasp']
 
         return  denoise_history 
