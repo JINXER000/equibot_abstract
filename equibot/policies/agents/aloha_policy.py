@@ -9,6 +9,29 @@ from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
 import numpy as np
 
+def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
+    """
+    Converts 6D rotation representation by Zhou et al. [1] to rotation matrix
+    using Gram--Schmidt orthogonalization per Section B of [1].
+    Args:
+        d6: 6D rotation representation, of size (*, 6)
+
+    Returns:
+        batch of rotation matrices of size (*, 3, 3)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    """
+
+    a1, a2 = d6[..., :3], d6[..., 3:]
+    b1 = F.normalize(a1, dim=-1)
+    b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
+    b2 = F.normalize(b2, dim=-1)
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack((b1, b2, b3), dim=-2)
+
 class ALOHAPolicy(nn.Module):
     # TODO: figure out the dimensions!
     def __init__(self, cfg, device = "cpu"):
@@ -108,7 +131,7 @@ class ALOHAPolicy(nn.Module):
         batch_size =  pc.shape[0]
 
         ema_nets = self.ema.averaged_model
-        feat_dict = ema_nets["encoder"](pc, target_norm=self.pc_scale)
+        feat_dict = ema_nets["encoder"](pc, ret_perpoint_feat=True, target_norm=self.pc_scale)
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.obs_horizon, 1, 1)
         )
@@ -161,8 +184,7 @@ class ALOHAPolicy(nn.Module):
             # add back the offset
             grasp_slice = new_action[0][0][0].reshape(self.eef_dim, 3) 
             grasp_xyz = grasp_slice[0]*scale + center
-            grasp_dir1 = grasp_slice[1]
-            grasp_dir2 = grasp_slice[2]
+
 
             # un-normalize
             unnormed_grasp_xyz = (
@@ -188,11 +210,19 @@ class ALOHAPolicy(nn.Module):
                             .numpy()
                             .reshape(-1)
                         )
+            ## incorrect way to of f_gs()
+            # grasp_dir1 = grasp_slice[1]
+            # grasp_dir2 = grasp_slice[2]
+            # row_1 = grasp_dir1.detach().cpu().numpy()
+            # row_3 = grasp_dir2.detach().cpu().numpy()
+            # row_2 = np.cross(row_1, row_3)
+            # rotation_mat = np.stack([row_1, row_2, row_3])
                 
-            row_1 = grasp_dir1.detach().cpu().numpy()
-            row_3 = grasp_dir2.detach().cpu().numpy()
-            row_2 = np.cross(row_1, row_3)
-            rotation_mat = np.stack([row_1, row_2, row_3])
+            # pt3d version of f_gs()
+            rot6d = grasp_slice[1:].reshape(1, 6)
+            rotation_mat_ts = rotation_6d_to_matrix(rot6d)
+            rotation_mat = rotation_mat_ts.cpu().numpy()
+
             trans_mat = np.eye(4)
             trans_mat[:3, :3] = rotation_mat
             trans_mat[:3, 3] = unnormed_grasp_xyz

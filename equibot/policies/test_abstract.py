@@ -94,7 +94,8 @@ def run_eval(
         if not os.path.exists(history_pic_dir):
             os.makedirs(history_pic_dir)
         render_pose(unnormed_history, use_gui=True, \
-                    directory = history_pic_dir, save_pic_every = 10)
+                    directory = history_pic_dir, save_pic_every = 10,
+                    obj_points = points)
 
 
         # take actions

@@ -51,6 +51,7 @@ def main(cfg):
         drop_last=True,
         pin_memory=True,
     )
+    
     cfg.data.dataset.num_training_steps = (
         cfg.training.num_epochs * len(train_dataset) // batch_size
     )

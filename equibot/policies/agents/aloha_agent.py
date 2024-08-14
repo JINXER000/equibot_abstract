@@ -65,27 +65,34 @@ class ALOHAAgent(object):
                 }
             )
             print(f"Joint pose normalization stats: {self.jpose_normalizer.stats}")
+        
+        if self.pc_normalizer is None:
+            pc = batch['pc']
+            flattend_pc = pc.view(-1, 3)
+            indices = [[0,1,2]]
+
+            pc_normalizer = Normalizer(
+                flattend_pc, symmetric=True, indices=indices
+            )
+            self.pc_normalizer = Normalizer(
+                {
+                    "min": pc_normalizer.stats["min"],
+                    "max": pc_normalizer.stats["max"],
+                }
+            )
+            self.actor.pc_normalizer = self.pc_normalizer
 
         if self.grasp_xyz_normalizer is None:
-            # grasp_poses = batch['grasp_pose']
-            # indices = [[0, 1, 2], [3, 4, 5, 6, 7, 8]] # xyz, rot6d
-            # gpose_normalizer = Normalizer(grasp_poses, symmetric=True, indices=indices)
-            # self.grasp_xyz_normalizer = Normalizer(
-            # {
-            #     "min": gpose_normalizer.stats["min"],
-            #     "max": gpose_normalizer.stats["max"],
-            # }
 
-            # )
             self.grasp_xyz_normalizer = Normalizer(
             {
-                "min": jpose_normalizer.stats["min"][:3],
-                "max": jpose_normalizer.stats["max"][:3],
+                "min": pc_normalizer.stats["min"],
+                "max": pc_normalizer.stats["max"],
             }
             )
-        if self.pc_normalizer is None:
-            self.pc_normalizer = self.grasp_xyz_normalizer
-            self.actor.pc_normalizer = self.pc_normalizer
+        # if self.pc_normalizer is None:
+        #     self.pc_normalizer = self.grasp_xyz_normalizer
+        #     self.actor.pc_normalizer = self.pc_normalizer
 
         # compute action scale relative to point cloud scale
         pc = batch["pc"].reshape(-1, self.num_points, 3)
@@ -155,7 +162,7 @@ class ALOHAAgent(object):
 
         # only grasp
         if self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
-            vec_grasp_pred,_  = self.actor.noise_pred_net_handle(
+            vec_grasp_noise_pred,_  = self.actor.noise_pred_net_handle(
                 noisy_grasp,
                 timesteps,
                 cond=obs_cond_vec,
@@ -163,7 +170,7 @@ class ALOHAAgent(object):
             )
         else:
             # pred joint
-            vec_grasp_pred ,  scalar_jpose_pred = self.actor.noise_pred_net_handle(
+            vec_grasp_noise_pred ,  scalar_jpose_noise_pred = self.actor.noise_pred_net_handle(
                 noisy_grasp,
                 timesteps,
                 scalar_sample = noisy_jpose, 
@@ -174,16 +181,16 @@ class ALOHAAgent(object):
 
         # only qpose
         if self.symb_mask[2] == 'None' and self.symb_mask[3] == 'None':
-            loss = nn.functional.mse_loss(scalar_jpose_pred, scalar_jpose_noise)
+            loss = nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
         # only grasp
         elif self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
-            loss = nn.functional.mse_loss(vec_grasp_pred, vec_grasp_noise)
+            loss = nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
         else:
-            n_vec = np.prod(vec_grasp_pred.shape)
-            n_scalar = np.prod(scalar_jpose_pred.shape)
+            n_vec = np.prod(vec_grasp_noise_pred.shape)
+            n_scalar = np.prod(scalar_jpose_noise_pred.shape)
             k = n_vec / (n_vec + n_scalar)
-            loss = k * nn.functional.mse_loss(vec_grasp_pred, vec_grasp_noise) \
-                + (1 - k) * nn.functional.mse_loss(scalar_jpose_pred, scalar_jpose_noise)
+            loss = k * nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise) \
+                + (1 - k) * nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
         if torch.isnan(loss):
             print(f"Loss is nan, please investigate.")
             import pdb
@@ -208,7 +215,7 @@ class ALOHAAgent(object):
                     axis=1,
                 ).mean(),
             metrics["mean_pred_jnoise_norm"] = np.linalg.norm(
-                    scalar_jpose_pred.detach()
+                    scalar_jpose_noise_pred.detach()
                     .cpu()
                     .numpy(),
                     axis=1,
@@ -218,7 +225,7 @@ class ALOHAAgent(object):
                     vec_grasp_noise.detach().cpu().numpy(), axis=1
                 ).mean(),
             metrics["mean_pred_eef_noise_norm"]= np.linalg.norm(
-                    vec_grasp_pred.detach().cpu().numpy(), axis=1
+                    vec_grasp_noise_pred.detach().cpu().numpy(), axis=1
                 ).mean(),
 
         return metrics
@@ -276,11 +283,6 @@ class ALOHAAgent(object):
         # batch_size = len(obs["pc"][0])
         batch_size = 1  # only support batch size 1 for now
 
-        # state = obs["state"].reshape(tuple(obs["state"].shape[:2]) + (-1,))
-
-        # process the point clouds
-        # some point clouds might be invalid
-        # if this occurs, exclude these batch items
         xyzs = []
         ac = np.zeros([batch_size, self.pred_horizon, self.num_eef, self.dof])
 
@@ -308,29 +310,4 @@ class ALOHAAgent(object):
         history = self.actor(torch_obs, return_history=return_history)
 
 
-
-            # # unorm history
-            # unnormed_history = []
-            # if return_history and batch_size == 1:
-                
-            #     for j in range(len(history)):
-            #         grasp_h, joint_h = history[j]
-            #         grasp_h = (
-            #             self.grasp_xyz_normalizer.unnormalize(grasp_h[i])
-            #             .detach()
-            #             .cpu()
-            #             .numpy()
-            #             .reshape(-1)
-            #         )
-            #         joint_h = (
-            #             self.jpose_normalizer.unnormalize(joint_h[i])
-            #             .detach()
-            #             .cpu()
-            #             .numpy()
-            #             .reshape(-1)
-            #         )
-            #         unnormed_history.append((grasp_h, joint_h))
-
-
-            # ac[idx] = (unnormed_grasp,unnormed_jpose)
         return history

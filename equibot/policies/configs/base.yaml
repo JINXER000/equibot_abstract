@@ -87,7 +87,7 @@ training:
   weight_decay: 1e-6
   num_eval_episodes: 10
   eval_interval: 1000000 # do not eval during training
-  save_interval: 50
+  save_interval: 100
   vis_interval: 100
   ckpt: null
 

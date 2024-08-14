@@ -4,10 +4,28 @@ import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from collections import namedtuple
+# import pytorch3d as pt
 
 DATASET_PATH = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape'
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
+def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
+    """
+    Converts rotation matrices to 6D rotation representation by Zhou et al. [1]
+    by dropping the last row. Note that 6D representation is not unique.
+    Args:
+        matrix: batch of rotation matrices of size (*, 3, 3)
+
+    Returns:
+        6D rotation representation, of size (*, 6)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    """
+    batch_dim = matrix.size()[:-2]
+    return matrix[..., :2, :].clone().reshape(batch_dim + (6,))
 
 class ALOHAPoseDataset(Dataset):
     # def __init__(self, dir_name, transform=None, pre_transform=None, pre_filter=None, symb_mask=['qpose_left', 'qpose_right', None, None, None]):
@@ -43,7 +61,10 @@ class ALOHAPoseDataset(Dataset):
         
         # Process the data
         # self.process(cfg)
-        self.process_hdf5(cfg)
+        if cfg.dataset_type == 'hdf5':
+            self.process_hdf5(cfg)
+        elif cfg.dataset_type == 'npz':
+            self.process_riemanngrasp(cfg)
         # if not os.path.exists(self.processed_file_path):
         #     self.process(cfg)
         
@@ -168,34 +189,108 @@ class ALOHAPoseDataset(Dataset):
                     elif cfg.tamp_type == 'effect':
                         grasp_poses = f['end_grasps']['grasp_poses'][()]
 
-                    
-
         for i in range(len(data_list)):
             data_list[i]['pc'] = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
 
             # select the 1st grasp conditioned on the pc.
-            grasp_vec = self.trans2vec(grasp_poses)[0]
-            data_list[i]['grasp_pose'] = torch.tensor(grasp_vec).to(torch.float32)
-
-            # TODO: add grasp pose to data
+            # data_list[i]['grasp_pose'] = self.trans2vec(grasp_poses)
+            data_list[i]['grasp_pose'] = self.trans2vec_pt3d(grasp_poses)
+           
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
+
+    def process_riemanngrasp(self, cfg):
+        data_list = []
+        raw_files = self.raw_file_names
+
+        grasp_file = [file for file in raw_files if 'riemann_center' in file]
+        joint_file = [file for file in raw_files if 'txt' in file]
+
+        # process grasp first
+        riemann_path = os.path.join(self.root, 'raw', grasp_file[0])
+        riemann_data = np.load(riemann_path)
+
+
+        txt_path = os.path.join(self.root, 'raw', joint_file[0])
+        jpos_mat = np.loadtxt(txt_path)  # contain 50 demos
+
+        change_grasp_every = np.ceil(jpos_mat.shape[0] / riemann_data['xyz'].shape[0])
+        change_grasp_id = 0
+        cur_pc = None
+        cur_grasp_pose = None
+        for i in tqdm(range(jpos_mat.shape[0])): 
+
+            line_rcd = torch.tensor(jpos_mat[i], dtype=torch.float32) # t, arm_left_6d, arm_right_6d
+            joint_pose = line_rcd[1:].reshape(-1, cfg.dof).unsqueeze(0)
+
+            data_slice = {'joint_pose': joint_pose}
+
+            # update the grasp every change_grasp_every
+            if i % change_grasp_every == 0:
+                j = change_grasp_id
+                obj_pc = riemann_data['xyz'][j].astype(np.float32)
+                seg_center = riemann_data['seg_center'][j].astype(np.float32)
+                axes = riemann_data['axes'][j].astype(np.float32)
+                grasp_rot = axes.reshape(3, 3)
+                obj_point = riemann_data['obj_point'][j].astype(np.float32)
+
+                conditional_pc = obj_pc
+
+                tgt_size = cfg.num_points
+                sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
+                conditional_pc = conditional_pc[sampled_indices]
+
+                cur_pc =  torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
+
+                # process grasp
+                grasp_pose = np.ones((4, 4)).astype(np.float32)
+                grasp_pose[:3, :3] = grasp_rot
+                grasp_pose[:3, 3] = seg_center
+                grasp_pose = grasp_pose.reshape(1, 4, 4)
+
+                cur_grasp_pose = self.trans2vec_pt3d(grasp_pose)
+
+                change_grasp_id += 1
+
+            data_slice['pc'] = cur_pc
+            data_slice['grasp_pose'] = cur_grasp_pose
+            data_list.append(data_slice)
+
+
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print('######Loaded grasp data of length: ', len(data_list))
+
 
     # Q: should grasp be 3x3 or 1x9? I think both ok, because at last the dim will be (-1, 3)
     def trans2vec(self, grasp_trans_arr):
 
         grasp_xyz = grasp_trans_arr[:, :3, 3].reshape(-1, 3)
         eef_rot = grasp_trans_arr[:, :3, :3]
+
+        # map to cont space using code from equibot
         dir1 = eef_rot[:, :3, 0]
         dir2 = eef_rot[:, :3, 2]
         for i in range(len(dir1)):
             assert np.allclose(
                 np.cross(dir2[i], dir1[i]), eef_rot[:, :, 1][i], atol=1e-4
-            )        
+            )                
         grasp = np.concatenate((grasp_xyz, dir1, dir2), axis=1)
-        grasp = grasp.reshape(-1, 1, 1, 9)
-        return grasp
 
+        grasp = grasp.reshape(-1, 1, 1, 9)
+        grasp_tensor = torch.tensor(grasp[0]).to(torch.float32)
+        return grasp_tensor
+    
+    def trans2vec_pt3d(self, grasp_trans_arr):
+        grasp_trans_arr = torch.tensor(grasp_trans_arr).to(torch.float32)
+        grasp_xyz = grasp_trans_arr[:, :3, 3].reshape(-1, 3)
+        eef_rot = grasp_trans_arr[:, :3, :3]
+        # map to cont space using pytorch 3d
+        rot6d = matrix_to_rotation_6d(eef_rot)
+        grasp = torch.cat((grasp_xyz, rot6d), dim=1)
+
+        grasp = grasp.reshape(-1, 1, 1, 9)
+        return grasp[0]
 
 
     def __len__(self):
