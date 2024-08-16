@@ -123,7 +123,49 @@ class ALOHAPolicy(nn.Module):
     def step_ema(self):
         self.ema.step(self.nets)
 
-    def forward(self, obs, return_history = True):
+
+    def recover_grasp(self, grasp_batch, scale, center, history_bid = -1):
+        # reduce dim to B, 3, 3
+        grasp_action = torch.mean(grasp_batch, dim=1)
+        # add back the offset
+        grasp_xyz = grasp_action[:,0].reshape(-1, 1, 3)
+        grasp_xyz = grasp_xyz *scale + center
+
+        # un-normalize
+        unnormed_grasp_xyz = (
+                    self.grasp_xyz_normalizer.unnormalize(grasp_xyz)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
+        rot6d_batch = grasp_action[:, 1:].reshape(-1, 1, 6)
+        # pt3d version of f_gs()
+        rot6d = rot6d_batch[history_bid]
+        rotation_mat_ts = rotation_6d_to_matrix(rot6d)
+        rotation_mat = rotation_mat_ts.cpu().numpy()
+
+        trans_mat = np.eye(4)
+        trans_mat[:3, :3] = rotation_mat
+        trans_mat[:3, 3] = unnormed_grasp_xyz[history_bid]
+
+        return trans_mat, unnormed_grasp_xyz, rot6d_batch
+
+    def recover_jpose(self, jpose_batch):
+        # reduce the horizon
+        jpose_action = torch.mean(jpose_batch, dim=1)
+        jpose_action = jpose_action.reshape(-1, self.num_eef, self.dof)
+    
+
+        unnormed_joint = (
+                    self.jpose_normalizer.unnormalize(jpose_action)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
+        
+        return unnormed_joint
+
+    def forward(self, obs, history_bid = -1):
         pc = obs["pc"]
         pc = pc.repeat(1, self.obs_horizon, 1, 1)
         pc = self.pc_normalizer.normalize(pc)
@@ -176,66 +218,39 @@ class ALOHAPolicy(nn.Module):
                 scalar_sample=curr_action[1],
                 cond=obs_cond_vec,
             )
-            # inverse diffusion step
+            ####### inverse diffusion step
             new_action = [None, None]
             new_action[0] = self.noise_scheduler.step(
                 model_output=noise_pred[0], timestep=k, sample=curr_action[0]
             ).prev_sample
-            # add back the offset
-            grasp_slice = new_action[0][0][0].reshape(self.eef_dim, 3) 
-            grasp_xyz = grasp_slice[0]*scale + center
 
-
-            # un-normalize
-            unnormed_grasp_xyz = (
-                        self.grasp_xyz_normalizer.unnormalize(grasp_xyz)
-                        .detach()
-                        .cpu()
-                        .numpy()
-                        .reshape(-1)
-                    )
-            
             if noise_pred[1] is not None:
                 new_action[1] = self.noise_scheduler.step(
                     model_output=noise_pred[1], timestep=k, sample=curr_action[1]
                 ).prev_sample
-
-                joint_slice = new_action[1][0][0].reshape(1, 1, self.num_eef, self.dof)
-            
-
-                unnormed_joint = (
-                            self.jpose_normalizer.unnormalize(joint_slice)
-                            .detach()
-                            .cpu()
-                            .numpy()
-                            .reshape(-1)
-                        )
-            ## incorrect way to of f_gs()
-            # grasp_dir1 = grasp_slice[1]
-            # grasp_dir2 = grasp_slice[2]
-            # row_1 = grasp_dir1.detach().cpu().numpy()
-            # row_3 = grasp_dir2.detach().cpu().numpy()
-            # row_2 = np.cross(row_1, row_3)
-            # rotation_mat = np.stack([row_1, row_2, row_3])
-                
-            # pt3d version of f_gs()
-            rot6d = grasp_slice[1:].reshape(1, 6)
-            rotation_mat_ts = rotation_6d_to_matrix(rot6d)
-            rotation_mat = rotation_mat_ts.cpu().numpy()
-
-            trans_mat = np.eye(4)
-            trans_mat[:3, :3] = rotation_mat
-            trans_mat[:3, 3] = unnormed_grasp_xyz
-            if noise_pred[1] is not None:
-                action_slice = (trans_mat, unnormed_joint)
-            else:
-                action_slice = (trans_mat, None)
-            denoise_history.append(action_slice)
+                   
+            # record history
+            if history_bid >=0:
+                trans_mat, _, _ = self.recover_grasp(new_action[0], scale, center, history_bid)
+                if noise_pred[1] is not None:
+                    unnormed_joint = self.recover_jpose(noise_pred[1])
+                    action_slice = (trans_mat, unnormed_joint[0])
+                else:
+                    action_slice = (trans_mat, None)
+                denoise_history.append(action_slice)
 
             # record the denoised action
             curr_action = tuple(new_action)
 
-        # for debug
-        gt_grasp_9d = obs['gt_grasp']
+        # calculate mes of xyz and rot
+        _, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
+        
+        gt_grasp_xyz = obs['gt_grasp'][:, 0, 0, :3].reshape(-1, 1, 3)
+        gt_grasp_rot6d = obs['gt_grasp'][:, 0, 0, 3:].reshape(-1, 1, 6)
 
-        return  denoise_history 
+        xyz_mse = torch.nn.functional.mse_loss(torch.tensor(unnormed_grasp_xyz), torch.tensor(gt_grasp_xyz))
+        rot_mse = torch.nn.functional.mse_loss(rot6d_batch.detach().cpu(), torch.tensor(gt_grasp_rot6d))
+
+        metrics = {'grasp_xyz_error': xyz_mse, 
+                   'grasp_rotation_error': rot_mse}
+        return  denoise_history, metrics

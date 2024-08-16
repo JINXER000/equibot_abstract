@@ -64,6 +64,7 @@ class ALOHAAgent(object):
                     "max": jpose_normalizer.stats["max"],
                 }
             )
+            self.actor.jpose_normalizer = self.jpose_normalizer
             print(f"Joint pose normalization stats: {self.jpose_normalizer.stats}")
         
         if self.pc_normalizer is None:
@@ -81,6 +82,7 @@ class ALOHAAgent(object):
                 }
             )
             self.actor.pc_normalizer = self.pc_normalizer
+            print(f"PC normalization stats: {self.pc_normalizer.stats}")
 
         if self.grasp_xyz_normalizer is None:
 
@@ -90,10 +92,9 @@ class ALOHAAgent(object):
                 "max": pc_normalizer.stats["max"],
             }
             )
-        # if self.pc_normalizer is None:
-        #     self.pc_normalizer = self.grasp_xyz_normalizer
-        #     self.actor.pc_normalizer = self.pc_normalizer
-
+            self.actor.grasp_xyz_normalizer = self.grasp_xyz_normalizer 
+            print(f"Grasp normalization stats: {self.grasp_xyz_normalizer.stats}")
+            
         # compute action scale relative to point cloud scale
         pc = batch["pc"].reshape(-1, self.num_points, 3)
         centroid = pc.mean(1, keepdim=True)
@@ -275,39 +276,36 @@ class ALOHAAgent(object):
         
 
 
-    def act(self, obs, return_history = True):
+    def act(self, obs, history_bid = -1):
         self.train(False)
         assert isinstance(obs["pc"][0], np.ndarray)
 
 
-        # batch_size = len(obs["pc"][0])
-        batch_size = 1  # only support batch size 1 for now
+        batch_size = obs["pc"].shape[0]
+        # batch_size = 1  # only support batch size 1 for now
+        assert history_bid < batch_size # batch to select as denoising history
 
         xyzs = []
-        ac = np.zeros([batch_size, self.pred_horizon, self.num_eef, self.dof])
 
-        forward_idxs = list(np.arange(batch_size))
-        for batch_idx, xyz in enumerate(obs["pc"]):
-            if not batch_idx in forward_idxs:
-                xyzs.append(np.zeros((self.num_points, 3)))
-            elif xyz.shape[0] == 0:
-                # no points in point cloud, return no-op action
-                forward_idxs.remove(batch_idx)
-                xyzs.append(np.zeros((self.num_points, 3)))
-            elif self.shuffle_pc:
-                choice = np.random.choice(
-                    xyz.shape[0], self.num_points, replace=True
-                )
-                xyz = xyz[choice, :]
-                xyzs.append(xyz)
-            else:
-                step = xyz.shape[0] // self.num_points
-                xyz = xyz[::step, :][: self.num_points]
-                xyzs.append(xyz)
+        for batch_idx in range(obs['pc'].shape[0]):
+            for horizon_id in range(obs['pc'].shape[1]):
+                xyz = obs['pc'][batch_idx][horizon_id]
+                if self.shuffle_pc:
+                    choice = np.random.choice(
+                        xyz.shape[0], self.num_points, replace=True
+                    )
+                    xyz = xyz[choice, :]
+                    xyzs.append(xyz)
+                else:
+                    # only input certain amount of points
+                    step = xyz.shape[0] // self.num_points
+                    xyz = xyz[::step, :][: self.num_points]
+                    xyzs.append(xyz)
+        batch_pc = np.array(xyzs).reshape(obs['pc'].shape[0], obs['pc'].shape[1], -1, 3)
         torch_obs = dict(
-            pc=torch.tensor(np.array(xyzs)).to(self.device).float(), 
+            pc=torch.tensor(batch_pc).to(self.device).float(), 
             gt_grasp = obs['gt_grasp']  )
-        history = self.actor(torch_obs, return_history=return_history)
+        denoise_history, metrics = self.actor(torch_obs, history_bid=history_bid)
 
 
-        return history
+        return denoise_history, metrics

@@ -19,6 +19,8 @@ from equibot.envs.subproc_vec_env import SubprocVecEnv
 from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 
+from test_abstract import run_eval
+
 @hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
     assert cfg.mode == "train"
@@ -81,6 +83,23 @@ def main(cfg):
             del train_metrics
             global_step += 1
             batch_ix += 1
+
+        # run eval 
+        if (
+            (
+                epoch_ix % cfg.training.eval_interval == 0
+                or epoch_ix == cfg.training.num_epochs - 1
+            )
+            and epoch_ix > 0
+        ):
+            eval_metrics = run_eval(agent = agent, vis= False, batch= batch, history_bid= -1 )
+            if cfg.use_wandb:
+                wandb.log(
+                    {"eval/" + k: v for k, v in eval_metrics.items()},
+                    step=global_step,
+                )
+
+        # save ckpt
         if (
             epoch_ix % cfg.training.save_interval == 0
             or epoch_ix == cfg.training.num_epochs - 1
