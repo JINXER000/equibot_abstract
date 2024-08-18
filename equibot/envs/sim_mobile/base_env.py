@@ -912,7 +912,7 @@ class BaseEnv(object):
                 [
                     quat2mat(pybullet.getQuaternionFromEuler(ori.tolist()))
                     for ori in global_ee_oris
-                ]W
+                ]
             )
             dir1 = eef_rot[:, :, 0]
             dir2 = eef_rot[:, :, 2]

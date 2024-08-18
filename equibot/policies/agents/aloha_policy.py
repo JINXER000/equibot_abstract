@@ -2,35 +2,13 @@ import copy
 import hydra
 import torch
 from torch import nn
-import torch.nn.functional as F
+
 
 from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
 from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
-import numpy as np
 
-def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
-    """
-    Converts 6D rotation representation by Zhou et al. [1] to rotation matrix
-    using Gram--Schmidt orthogonalization per Section B of [1].
-    Args:
-        d6: 6D rotation representation, of size (*, 6)
-
-    Returns:
-        batch of rotation matrices of size (*, 3, 3)
-
-    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
-    On the Continuity of Rotation Representations in Neural Networks.
-    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
-    Retrieved from http://arxiv.org/abs/1812.07035
-    """
-
-    a1, a2 = d6[..., :3], d6[..., 3:]
-    b1 = F.normalize(a1, dim=-1)
-    b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
-    b2 = F.normalize(b2, dim=-1)
-    b3 = torch.cross(b1, b2, dim=-1)
-    return torch.stack((b1, b2, b3), dim=-2)
+from equibot.policies.utils.misc import rotation_6d_to_matrix, matrix_to_rotation_6d
 
 class ALOHAPolicy(nn.Module):
     # TODO: figure out the dimensions!
@@ -103,52 +81,66 @@ class ALOHAPolicy(nn.Module):
         jpose = jpose.reshape(jpose.shape[0], -1,  self.dof * self.num_eef)
         return jpose
     
-    def _convert_grasp_to_vec(self, grasp, batch = None):
-        assert grasp.shape[-1] == 9
-        eef_pose = grasp[:, :, :, :3]
-        dir1 = grasp[:, :, :, 3:6]
-        dir2 = grasp[:, :, :, 6:9]
+    # def _convert_grasp_to_vec(self, grasp, batch = None):
+    #     assert grasp.shape[-1] == 9
+    #     eef_pose = grasp[:, :, :, :3]
+    #     dir1 = grasp[:, :, :, 3:6]
+    #     dir2 = grasp[:, :, :, 6:9]
 
-        return eef_pose, dir1, dir2
+    #     return eef_pose, dir1, dir2
     
-    def _convert_vec_to_grasp(self, g_vec):
-        eef_pose = g_vec[:, :, 0, :]
-        dir1 = g_vec[:, :, 1, :]
-        dir2 = g_vec[:, :, 2, :]
+    def _convert_trans_to_vec(self, grasp_trans_arr):
+        batch_size, horizon, _, _ = grasp_trans_arr.shape
+        grasp_xyz = grasp_trans_arr[:, :, :3, 3].reshape(batch_size, horizon, 1, 3)  # B, H, 3, 1
+        grasp_rot =  grasp_trans_arr[:, :, :3, :3].reshape(-1, 3, 3) # B*H, 3, 3
+        rot6d = matrix_to_rotation_6d(grasp_rot) # B*H, 6
+        rot_dir1 = rot6d[:, :3].reshape(batch_size, horizon, 1, 3)
+        rot_dir2 = rot6d[:, 3:].reshape(batch_size, horizon, 1, 3)
 
-        grasp_flatten = torch.cat([eef_pose, dir1, dir2], dim = -1)
-
-        return grasp_flatten
+        return grasp_xyz, rot_dir1, rot_dir2
     
+    def _convert_vec_to_trans(self, rot6d_batch, unnormed_grasp_xyz):
+        batch_size, horizon, _, _ = rot6d_batch.shape
+        rot6d_batch = rot6d_batch.reshape(-1, 6)
+        rotation_mat_ts = rotation_6d_to_matrix(rot6d_batch)
+        rotation_mat = rotation_mat_ts
+
+        trans_mat_batch = torch.zeros((rot6d_batch.shape[0], 4, 4), device=rot6d_batch.device)
+        trans_mat_batch[:, :3, :3] = rotation_mat
+        trans_mat_batch[:, :3, 3] = unnormed_grasp_xyz.reshape(-1, 3)
+        trans_mat_batch[:, 3, 3] = 1
+
+        trans_mat_batch = trans_mat_batch.reshape(batch_size, horizon, 4, 4)
+
+        return trans_mat_batch
+
+
     def step_ema(self):
         self.ema.step(self.nets)
 
 
-    def recover_grasp(self, grasp_batch, scale, center, history_bid = -1):
-        # reduce dim to B, 3, 3
-        grasp_action = torch.mean(grasp_batch, dim=1)
+    def recover_grasp(self, grasp_batch, scale, center):
+        # reshape dim to B,  3, 3
+        grasp_batch = torch.mean(grasp_batch, dim=1)
+        scale = torch.mean(scale, dim=1)
+        center = torch.mean(center, dim=1)
+        grasp_action = grasp_batch.reshape(-1, 3, 3)
         # add back the offset
-        grasp_xyz = grasp_action[:,0].reshape(-1, 1, 3)
+        grasp_xyz = grasp_action[:,0, :].reshape(-1, 1, 3)
         grasp_xyz = grasp_xyz *scale + center
 
         # un-normalize
         unnormed_grasp_xyz = (
                     self.grasp_xyz_normalizer.unnormalize(grasp_xyz)
-                    .detach()
-                    .cpu()
-                    .numpy()
+                    # .detach()
+                    # .cpu()
+                    # .numpy()
                 )
-        rot6d_batch = grasp_action[:, 1:].reshape(-1, 1, 6)
-        # pt3d version of f_gs()
-        rot6d = rot6d_batch[history_bid]
-        rotation_mat_ts = rotation_6d_to_matrix(rot6d)
-        rotation_mat = rotation_mat_ts.cpu().numpy()
+        rot6d_batch = grasp_action[:, 1: , :].reshape(-1, 1, 1, 6)
 
-        trans_mat = np.eye(4)
-        trans_mat[:3, :3] = rotation_mat
-        trans_mat[:3, 3] = unnormed_grasp_xyz[history_bid]
+        trans_batch = self._convert_vec_to_trans(rot6d_batch, unnormed_grasp_xyz)
 
-        return trans_mat, unnormed_grasp_xyz, rot6d_batch
+        return trans_batch, unnormed_grasp_xyz, rot6d_batch
 
     def recover_jpose(self, jpose_batch):
         # reduce the horizon
@@ -177,11 +169,11 @@ class ALOHAPolicy(nn.Module):
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.obs_horizon, 1, 1)
         )
-        center = center[:, 0, :, :]
+        # center = center[:, 0, :, :]
         scale = (
             feat_dict["scale"].reshape(batch_size, self.obs_horizon, 1, 1)[:, [-1]].repeat(1, self.obs_horizon, 1, 1)
         )
-        scale = scale[:, 0, :, :]
+        # scale = scale[:, 0, :, :]
 
         pc_feat = feat_dict["so3"]  
         obs_cond_vec = pc_feat.reshape(batch_size, -1, 3)
@@ -231,7 +223,8 @@ class ALOHAPolicy(nn.Module):
                    
             # record history
             if history_bid >=0:
-                trans_mat, _, _ = self.recover_grasp(new_action[0], scale, center, history_bid)
+                trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center, history_bid)
+                trans_mat = trans_batch[0, 0]
                 if noise_pred[1] is not None:
                     unnormed_joint = self.recover_jpose(noise_pred[1])
                     action_slice = (trans_mat, unnormed_joint[0])
@@ -243,13 +236,18 @@ class ALOHAPolicy(nn.Module):
             curr_action = tuple(new_action)
 
         # calculate mes of xyz and rot
-        _, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
+        trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
+
         
-        gt_grasp_xyz = obs['gt_grasp'][:, 0, 0, :3].reshape(-1, 1, 3)
-        gt_grasp_rot6d = obs['gt_grasp'][:, 0, 0, 3:].reshape(-1, 1, 6)
+        # gt_grasp_xyz = obs['gt_grasp'][:, 0, 0, :3].reshape(-1, 1, 3)
+        # gt_grasp_rot6d = obs['gt_grasp'][:, 0, 0, 3:].reshape(-1, 1, 6)
+        gt_grasp_xyz, gt_dir1, gt_dir2 = self._convert_trans_to_vec(obs['gt_grasp'])
+        gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
+        gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
+        gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1)
 
         xyz_mse = torch.nn.functional.mse_loss(torch.tensor(unnormed_grasp_xyz), torch.tensor(gt_grasp_xyz))
-        rot_mse = torch.nn.functional.mse_loss(rot6d_batch.detach().cpu(), torch.tensor(gt_grasp_rot6d))
+        rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
 
         metrics = {'grasp_xyz_error': xyz_mse, 
                    'grasp_rotation_error': rot_mse}

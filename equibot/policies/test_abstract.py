@@ -9,7 +9,6 @@ import numpy as np
 import getpass as gt
 from glob import glob
 from tqdm import tqdm
-from equibot.policies.utils.misc import to_torch
 
 from equibot.policies.utils.media import combine_videos, save_video
 from equibot.policies.agents.aloha_agent import ALOHAAgent  

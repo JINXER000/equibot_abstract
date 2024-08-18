@@ -2,13 +2,17 @@
 
 
 ## TODO
-### 
+### problems and solution
 [x] use grasp pose relative to obj. before normalizing pc, subtract the pc with pc center. --> NO need, as when producing pc_feat, it already subtracted the centroid.
 [x] Use grasp data for riemann to train. --> still rot incorrect
 [x] Visualize the grasp diffusion history. 
 [] feat_dict["so3"] and feat_dict["inv"] seems to be so small. Is it because of nomalizer? Also evaluate the folding and see the feat_dict. 
 [x] Make grasp_xyz normalizer different --> still incorrect
 [x] perform orthogonization on rotation mat
+[] normalize every scalar to 0-1
+### representative runs
+https://wandb.ai/neuralogic/equibot/runs/bdwdh2iv?nw=nwuserjosephchen
+
 ### compose 2 grasps
 #### in training, 
 
