@@ -11,8 +11,11 @@
 [x] perform orthogonization on rotation mat
 [] normalize every scalar to 0-1
 ### representative runs
+- when using only one grasp and point cloud, the rotation error is large:
 https://wandb.ai/neuralogic/equibot/runs/bdwdh2iv?nw=nwuserjosephchen
 
+- when using 50 demos, we observe that at 50k step,  the encoder output goes up, and rotation error drops as well!
+https://wandb.ai/neuralogic/equibot/runs/33c0qst9?nw=nwuserjosephchen
 ### compose 2 grasps
 #### in training, 
 

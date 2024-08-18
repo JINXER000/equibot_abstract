@@ -125,6 +125,8 @@ class ALOHAPolicy(nn.Module):
         scale = torch.mean(scale, dim=1)
         center = torch.mean(center, dim=1)
         grasp_action = grasp_batch.reshape(-1, 3, 3)
+
+
         # add back the offset
         grasp_xyz = grasp_action[:,0, :].reshape(-1, 1, 3)
         grasp_xyz = grasp_xyz *scale + center
@@ -132,10 +134,14 @@ class ALOHAPolicy(nn.Module):
         # un-normalize
         unnormed_grasp_xyz = (
                     self.grasp_xyz_normalizer.unnormalize(grasp_xyz)
-                    # .detach()
-                    # .cpu()
-                    # .numpy()
                 )
+
+        # # try for debug
+        # grasp_action = (
+        #             self.grasp_xyz_normalizer.unnormalize(grasp_action)
+        #         )
+        # # then both xyz and rot in grasp_action are normalized
+        
         rot6d_batch = grasp_action[:, 1: , :].reshape(-1, 1, 1, 6)
 
         trans_batch = self._convert_vec_to_trans(rot6d_batch, unnormed_grasp_xyz)
@@ -246,9 +252,10 @@ class ALOHAPolicy(nn.Module):
         gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
         gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1)
 
-        xyz_mse = torch.nn.functional.mse_loss(torch.tensor(unnormed_grasp_xyz), torch.tensor(gt_grasp_xyz))
-        rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
+        xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
+        rot_mse = torch.nn.functional.mse_loss(rot6d_batch.reshape(gt_grasp_rot6d.shape), gt_grasp_rot6d)
 
         metrics = {'grasp_xyz_error': xyz_mse, 
                    'grasp_rotation_error': rot_mse}
+        # print(f'eval metrics: {metrics}')
         return  denoise_history, metrics

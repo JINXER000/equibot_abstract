@@ -100,7 +100,8 @@ class ALOHAAgent(object):
         centroid = pc.mean(1, keepdim=True)
         centered_pc = pc - centroid
         pc_scale = centered_pc.norm(dim=-1).mean()
-        ac_scale = jpose_normalizer.stats["max"].max()
+        # ac_scale = jpose_normalizer.stats["max"].max()
+        ac_scale = pc_normalizer.stats["max"].max()
         self.pc_scale = pc_scale / ac_scale
         self.actor.pc_scale = self.pc_scale
 
@@ -142,7 +143,14 @@ class ALOHAAgent(object):
         
         grasp_xyz = self.grasp_xyz_normalizer.normalize(grasp_xyz_raw)
         grasp_xyz = (grasp_xyz - center)/scale
+
+        # # try to normalize rot debug
+        # grasp_dir1 = self.grasp_xyz_normalizer.normalize(grasp_dir1)
+        # grasp_dir2 = self.grasp_xyz_normalizer.normalize(grasp_dir2)
+
         gt_grasp_z = torch.cat([grasp_xyz, grasp_dir1, grasp_dir2], dim=-2)
+
+
 
         # scalar
         joint_data = self.jpose_normalizer.normalize(joint_data)
@@ -232,50 +240,50 @@ class ALOHAAgent(object):
                     vec_grasp_noise_pred.detach().cpu().numpy(), axis=1
                 ).mean(),
 
-        # denoise debugging
-        self.train(False)
-        torch.set_grad_enabled(False)
-        ema_nets = self.actor.ema.averaged_model
-        curr_action = (noisy_grasp, noisy_jpose)
-        for k in self.actor.noise_scheduler.timesteps:
-            # load from existing data statistics
-            # predict noise
-            noise_pred = ema_nets["noise_pred_net"](
-                sample=curr_action[0],
-                timestep=k,
-                scalar_sample = curr_action[1], 
-                cond=obs_cond_vec,
-                scalar_cond=None,
-            )            
+        # # denoise debugging
+        # self.train(False)
+        # torch.set_grad_enabled(False)
+        # ema_nets = self.actor.ema.averaged_model
+        # curr_action = (noisy_grasp, noisy_jpose)
+        # for k in self.actor.noise_scheduler.timesteps:
+        #     # load from existing data statistics
+        #     # predict noise
+        #     noise_pred = ema_nets["noise_pred_net"](
+        #         sample=curr_action[0],
+        #         timestep=k,
+        #         scalar_sample = curr_action[1], 
+        #         cond=obs_cond_vec,
+        #         scalar_cond=None,
+        #     )            
 
-            ####### inverse diffusion step
-            new_action = [None, None]
-            new_action[0] = self.actor.noise_scheduler.step(
-                model_output=noise_pred[0], timestep=k, sample=curr_action[0]
-            ).prev_sample
+        #     ####### inverse diffusion step
+        #     new_action = [None, None]
+        #     new_action[0] = self.actor.noise_scheduler.step(
+        #         model_output=noise_pred[0], timestep=k, sample=curr_action[0]
+        #     ).prev_sample
 
-            if noise_pred[1] is not None:
-                new_action[1] = self.actor.noise_scheduler.step(
-                    model_output=noise_pred[1], timestep=k, sample=curr_action[1]
-                ).prev_sample
+        #     if noise_pred[1] is not None:
+        #         new_action[1] = self.actor.noise_scheduler.step(
+        #             model_output=noise_pred[1], timestep=k, sample=curr_action[1]
+        #         ).prev_sample
                    
-            # record the denoised action
-            curr_action = tuple(new_action)
+        #     # record the denoised action
+        #     curr_action = tuple(new_action)
 
-        # calculate mes of xyz and rot
-        trans_batch, unnormed_grasp_xyz, rot6d_batch = self.actor.recover_grasp(new_action[0], scale, center)
+        # # calculate mes of xyz and rot
+        # trans_batch, unnormed_grasp_xyz, rot6d_batch = self.actor.recover_grasp(new_action[0], scale, center)
 
-        gt_grasp_xyz, gt_dir1, gt_dir2 = self.actor._convert_trans_to_vec(grasp_pose)
-        gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
-        gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
-        gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1)
+        # gt_grasp_xyz, gt_dir1, gt_dir2 = self.actor._convert_trans_to_vec(grasp_pose)
+        # gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
+        # gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
+        # gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1)
 
-        xyz_mse = torch.nn.functional.mse_loss(torch.tensor(unnormed_grasp_xyz), torch.tensor(gt_grasp_xyz))
-        rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
+        # xyz_mse = torch.nn.functional.mse_loss(torch.tensor(unnormed_grasp_xyz), torch.tensor(gt_grasp_xyz))
+        # rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
 
-        metrics['xyz_mse'] = xyz_mse
-        metrics['rot_mse'] = rot_mse
-        torch.set_grad_enabled(True)
+        # metrics['xyz_mse'] = xyz_mse
+        # metrics['rot_mse'] = rot_mse
+        # torch.set_grad_enabled(True)
         return metrics
 
     def fix_checkpoint_keys(self, state_dict):
