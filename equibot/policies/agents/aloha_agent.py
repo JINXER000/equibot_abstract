@@ -198,11 +198,12 @@ class ALOHAAgent(object):
         elif self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
             loss = nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
         else:
-            n_vec = np.prod(vec_grasp_noise_pred.shape)
-            n_scalar = np.prod(scalar_jpose_noise_pred.shape)
+            n_vec = np.prod(vec_grasp_noise_pred.shape)  # 3*3
+            n_scalar = np.prod(scalar_jpose_noise_pred.shape)  # 2*6
             k = n_vec / (n_vec + n_scalar)
-            loss = k * nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise) \
-                + (1 - k) * nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
+            vec_loss = nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
+            scalar_loss = nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
+            loss = k * vec_loss + (1 - k) * scalar_loss
         if torch.isnan(loss):
             print(f"Loss is nan, please investigate.")
             import pdb
@@ -222,23 +223,32 @@ class ALOHAAgent(object):
                    ).mean(),
                    }
         if self.symb_mask[0] != 'None' or self.symb_mask[1] != 'None': # pred joint
-            metrics["mean_gt_jnoise_norm"] = np.linalg.norm(
-                    scalar_jpose_noise.detach().cpu().numpy(),
-                    axis=1,
-                ).mean(),
-            metrics["mean_pred_jnoise_norm"] = np.linalg.norm(
-                    scalar_jpose_noise_pred.detach()
-                    .cpu()
-                    .numpy(),
-                    axis=1,
-                ).mean(),
+            # metrics["mean_gt_jnoise_norm"] = np.linalg.norm(
+            #         scalar_jpose_noise.detach().cpu().numpy(),
+            #         axis=1,
+            #     ).mean(),
+            # metrics["mean_pred_jnoise_norm"] = np.linalg.norm(
+            #         scalar_jpose_noise_pred.detach()
+            #         .cpu()
+            #         .numpy(),
+            #         axis=1,
+            #     ).mean(),
+            metrics["scalar_loss"] = scalar_loss
+
         if self.symb_mask[2] != 'None' or self.symb_mask[3] != 'None': # pred grasp
-            metrics["mean_gt_eef_noise_norm"] = np.linalg.norm(
-                    vec_grasp_noise.detach().cpu().numpy(), axis=1
-                ).mean(),
-            metrics["mean_pred_eef_noise_norm"]= np.linalg.norm(
-                    vec_grasp_noise_pred.detach().cpu().numpy(), axis=1
-                ).mean(),
+            # metrics["mean_gt_eef_noise_norm"] = np.linalg.norm(
+            #         vec_grasp_noise.detach().cpu().numpy(), axis=1
+            #     ).mean(),
+            # metrics["mean_pred_eef_noise_norm"]= np.linalg.norm(
+            #         vec_grasp_noise_pred.detach().cpu().numpy(), axis=1
+            #     ).mean(),
+            metrics["vec_loss"] = vec_loss
+
+        # # to tensorboard, x axis is training steps
+        # for k, v in metrics.items():
+        #     self.actor.writer.add_scalar(f"train/{k}", v, 
+        # self.actor.writer.flush()
+        
 
         # # denoise debugging
         # self.train(False)
@@ -359,7 +369,8 @@ class ALOHAAgent(object):
         batch_pc = np.array(xyzs).reshape(obs['pc'].shape[0], obs['pc'].shape[1], -1, 3)
         torch_obs = dict(
             pc=torch.tensor(batch_pc).to(self.device).float(), 
-            gt_grasp = torch.tensor(obs['gt_grasp']).to(self.device).float()  )
+            gt_grasp = torch.tensor(obs['gt_grasp']).to(self.device).float(),
+            joint_pose = torch.tensor(obs['joint_pose']).to(self.device).float(),)
         denoise_history, metrics = self.actor(torch_obs, history_bid=history_bid)
 
 

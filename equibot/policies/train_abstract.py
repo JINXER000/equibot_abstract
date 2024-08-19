@@ -20,6 +20,7 @@ from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 
 from test_abstract import run_eval
+# from torch.utils.tensorboard import SummaryWriter
 
 @hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
@@ -30,6 +31,10 @@ def main(cfg):
     batch_size = cfg.training.batch_size
 
     # setup logging
+    # # tensorboard
+    # writer = SummaryWriter()
+
+    # wandb
     if cfg.use_wandb:
         wandb_config = omegaconf.OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=False
@@ -66,6 +71,8 @@ def main(cfg):
     else:
         start_epoch_ix = 0
 
+
+
     # train loop
     global_step = 0
     for epoch_ix in tqdm(range(start_epoch_ix, cfg.training.num_epochs)):
@@ -80,9 +87,18 @@ def main(cfg):
                     step=global_step,
                 )
                 wandb.log({"epoch": epoch_ix}, step=global_step)
+
+            # # to tensorboard
+            for k, v in train_metrics.items():
+                v_ts_cpu = torch.tensor(v)
+                agent.actor.writer.add_scalar(f"train/{k}", v_ts_cpu, epoch_ix)
+            agent.actor.writer.flush()
+            
             del train_metrics
             global_step += 1
             batch_ix += 1
+
+
 
         # run eval 
         if (
@@ -99,6 +115,13 @@ def main(cfg):
                     step=global_step,
                 )
 
+            # # to tensorboard
+            train_step = epoch_ix * len(train_loader)+batch_ix
+            for k, v in eval_metrics.items():
+                v_ts_cpu = torch.tensor(v)
+                agent.actor.writer.add_scalar(f"train/{k}", v_ts_cpu, train_step)
+            agent.actor.writer.flush()
+
         # save ckpt
         if (
             epoch_ix % cfg.training.save_interval == 0
@@ -113,6 +136,8 @@ def main(cfg):
                 ]:
                     os.remove(fn)
             agent.save_snapshot(save_path)
+
+    agent.actor.writer.close()
 
 
 if __name__ == "__main__":

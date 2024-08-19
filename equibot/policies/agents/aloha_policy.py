@@ -10,6 +10,8 @@ from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecC
 
 from equibot.policies.utils.misc import rotation_6d_to_matrix, matrix_to_rotation_6d
 
+from torch.utils.tensorboard import SummaryWriter
+
 class ALOHAPolicy(nn.Module):
     # TODO: figure out the dimensions!
     def __init__(self, cfg, device = "cpu"):
@@ -63,6 +65,8 @@ class ALOHAPolicy(nn.Module):
         self._init_torch_compile()
 
         self.noise_scheduler = hydra.utils.instantiate(cfg.model.noise_scheduler)
+
+        self.writer = SummaryWriter()
 
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized paraGen Policy with {num_parameters} parameters")
@@ -229,11 +233,13 @@ class ALOHAPolicy(nn.Module):
                    
             # record history
             if history_bid >=0:
-                trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center, history_bid)
-                trans_mat = trans_batch[0, 0]
+                trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
+                assert trans_batch.shape[3] == 4
+                trans_mat = trans_batch[history_bid, 0].detach().cpu().numpy()
                 if noise_pred[1] is not None:
                     unnormed_joint = self.recover_jpose(noise_pred[1])
-                    action_slice = (trans_mat, unnormed_joint[0])
+                    qos_12d = unnormed_joint[history_bid].reshape(-1)
+                    action_slice = (trans_mat, qos_12d)
                 else:
                     action_slice = (trans_mat, None)
                 denoise_history.append(action_slice)
@@ -244,9 +250,6 @@ class ALOHAPolicy(nn.Module):
         # calculate mes of xyz and rot
         trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
 
-        
-        # gt_grasp_xyz = obs['gt_grasp'][:, 0, 0, :3].reshape(-1, 1, 3)
-        # gt_grasp_rot6d = obs['gt_grasp'][:, 0, 0, 3:].reshape(-1, 1, 6)
         gt_grasp_xyz, gt_dir1, gt_dir2 = self._convert_trans_to_vec(obs['gt_grasp'])
         gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
         gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
@@ -257,5 +260,13 @@ class ALOHAPolicy(nn.Module):
 
         metrics = {'grasp_xyz_error': xyz_mse, 
                    'grasp_rotation_error': rot_mse}
-        # print(f'eval metrics: {metrics}')
+
+        # calculate joint error
+        if new_action[1] is not None:
+            unnormed_joint = self.recover_jpose(new_action[1])
+            gt_joint = obs['joint_pose']
+            unnormed_joint = torch.tensor(unnormed_joint, device=self.device)
+            joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
+            metrics['joint_error'] = joint_mse
+        
         return  denoise_history, metrics

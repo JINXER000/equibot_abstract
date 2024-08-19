@@ -9,13 +9,20 @@
 [] feat_dict["so3"] and feat_dict["inv"] seems to be so small. Is it because of nomalizer? Also evaluate the folding and see the feat_dict. 
 [x] Make grasp_xyz normalizer different --> still incorrect
 [x] perform orthogonization on rotation mat
-[] normalize every scalar to 0-1
+[] find out why joint error is big in evaluation. Should we use 6 dof only?
+
+
 ### representative runs
 - when using only one grasp and point cloud, the rotation error is large:
 https://wandb.ai/neuralogic/equibot/runs/bdwdh2iv?nw=nwuserjosephchen
 
 - when using 50 demos, we observe that at 50k step,  the encoder output goes up, and rotation error drops as well!
 https://wandb.ai/neuralogic/equibot/runs/33c0qst9?nw=nwuserjosephchen
+
+#### questions about convergence
+Is it because of the weight initialization of the encoder? we need more point clouds?
+I found that vec_layer use kaiming initialization. 
+I think in aloha case, we should use 2-layer encoder instead of 4-layer. 
 ### compose 2 grasps
 #### in training, 
 

@@ -19,8 +19,10 @@ sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
 from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 import open3d as o3d
 
-def rotate_points(conditional_pc):
-    points = np.asarray(conditional_pc.points)
+from torch.utils.tensorboard import SummaryWriter
+
+def rotate_points(conditional_pc, visualize=False):
+    points = np.asarray(conditional_pc)
 
     # rotate the pc around y axis for 90 deg, then rotate around x axis for 45 deg
     rotation_y = np.array([
@@ -38,34 +40,40 @@ def rotate_points(conditional_pc):
 
     # Apply the rotations
     points_rotated = points @ rotation_y.T @ rotation_x.T
+    # points_rotated = points
 
     # apply translation
-    points_rotated += np.array([0.1, 2.1, 0.1])
-    # Update the point cloud with the rotated points
-    conditional_pc.points = o3d.utility.Vector3dVector(points_rotated)
+    points_rotated += np.array([-0.1, -0.1, 0.2])
 
-    # draw axis
-    axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-    o3d.visualization.draw_geometries([conditional_pc, axis])
+    if visualize:
+        # visualize the pc with open3d
+        conditional_pcd = o3d.geometry.PointCloud()
+        conditional_pcd.points = o3d.utility.Vector3dVector(points_rotated[0,0])
+
+        # draw axis
+        axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+        o3d.visualization.draw_geometries([conditional_pcd, axis])
 
     return points_rotated   
 
 def ply2points(ply_path):
 
-    conditional_pc = o3d.io.read_point_cloud(ply_path)
-    # points = rotate_points(conditional_pc)
-    points = np.asarray(conditional_pc.points)
+    conditional_pcd = o3d.io.read_point_cloud(ply_path)
+    # points = rotate_points(conditional_pcd.points)
+    points = np.asarray(conditional_pcd.points)
 
     return points
 
 def process_batch(batch, agent):
-    # pc = batch["pc"].reshape(-1, 3).cpu().numpy()
-    # grasp_pose = batch["grasp_pose"].reshape(-1).cpu().numpy()
 
     pc = batch["pc"].cpu().numpy()
     grasp_pose = batch["grasp_pose"].cpu().numpy()
+    joint_pose = batch["joint_pose"].cpu().numpy()
+
+    # # perform transformation
+    # pc = rotate_points(pc)
     
-    return pc, grasp_pose
+    return pc, grasp_pose, joint_pose
 
 def run_eval(
     agent,
@@ -79,14 +87,14 @@ def run_eval(
 
     ## input obs from dataset
     if batch is not None:
-        points_batch, gt_grasp_9d = process_batch(batch, agent)
+        points_batch, gt_grasp_9d, joint_pose = process_batch(batch, agent)
     else:
         # # input dummy obs
         ply_path = "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
         points = ply2points(ply_path)
         points_batch = points.reshape(1, 1, -1, 3)  # batch size, Ho, N, 3
 
-    agent_obs = {"pc": points_batch, "gt_grasp": gt_grasp_9d}
+    agent_obs = {"pc": points_batch, "gt_grasp": gt_grasp_9d, 'joint_pose': joint_pose}
 
 
     # predict actions
@@ -144,6 +152,12 @@ def main(cfg):
     agent = ALOHAAgent(cfg)
     agent.train(False)
 
+    # draw encoder in tensorboard
+    writer = SummaryWriter()
+    # dummy_input = torch.randn(32, 2, 512, 3, device=device).float()
+    # writer.add_graph(agent.actor.encoder, dummy_input)
+
+
     if os.path.isdir(cfg.training.ckpt):
         ckpt_dir = cfg.training.ckpt
         ckpt_paths = list(glob(os.path.join(ckpt_dir, "ckpt*.pth")))
@@ -153,9 +167,7 @@ def main(cfg):
     else:
         ckpt_paths = [cfg.training.ckpt]
 
-    rew_list = []
-
-    for ckpt_path in ckpt_paths:
+    for i, ckpt_path in enumerate(ckpt_paths):
         ckpt_name = ckpt_path.split("/")[-1].split(".")[0]
         agent.load_snapshot(ckpt_path)
 
@@ -170,6 +182,11 @@ def main(cfg):
         )
         # print metrics
         print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
+        for k, v in eval_metrics.items():
+            writer.add_scalar(f"eval/{k}", v, i)
+
+    writer.flush()
+    writer.close()
 
 
 if __name__ == "__main__":

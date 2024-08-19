@@ -6,20 +6,18 @@ from tqdm import tqdm
 from collections import namedtuple
 from equibot.policies.utils.misc import  matrix_to_rotation_6d
 
-# import pytorch3d as pt
+import hydra
+import sys
+sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
+
 
 DATASET_PATH = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape'
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
 class ALOHAPoseDataset(Dataset):
-    # def __init__(self, dir_name, transform=None, pre_transform=None, pre_filter=None, symb_mask=['qpose_left', 'qpose_right', None, None, None]):
-    #     self.dir_name = dir_name
-    #     self.root = os.path.join(DATASET_PATH, dir_name)
-    #     self.transform = transform
-    #     self.pre_transform = pre_transform
-    #     self.pre_filter = pre_filter
-    #     self.symb_mask = symb_mask
-
     def __init__(self, cfg, mode, transform=None, pre_transform=None, pre_filter=None):
         super().__init__()
         self.mode = mode
@@ -44,39 +42,25 @@ class ALOHAPoseDataset(Dataset):
         # # self.mask = torch.tensor(mask, dtype=torch.bool)
         
         # Process the data
-        # self.process(cfg)
-        if cfg.dataset_type == 'hdf5':
-            self.process_50demos(cfg)
-            # self.process_one_hdf5(cfg)
-        elif cfg.dataset_type == 'npz':
-            self.process_riemanngrasp(cfg)
-        # if not os.path.exists(self.processed_file_path):
-        #     self.process(cfg)
+        # self.process_select(cfg)
+        if not os.path.exists(self.processed_file_path):
+            self.process_select(cfg)
         
         # Load processed data
         self.data, self.slices = torch.load(self.processed_file_path)
 
-    # def calc_dims(self, symb_mask):
-    #     grasp_dim = 19
-    #     qpose_dim = 6
-    #     objpose_dim = 5
-    #     dims = []
-    #     start_idx = 0
-    #     # qpose
-    #     for i in range(2):
-    #         dims.append(feature_tuple(qpose_dim, start_idx, qpose_dim + start_idx))
-    #         start_idx += qpose_dim
-    #     # grasp
-    #     for i in range(2, 4):
-    #         dims.append(feature_tuple(grasp_dim, start_idx, grasp_dim + start_idx))
-    #         start_idx += grasp_dim
-    #     # objpose
-    #     for i in range(4, len(symb_mask)):
-    #         dims.append(feature_tuple(objpose_dim, start_idx, objpose_dim + start_idx))
-    #         start_idx += objpose_dim
+    def process_select(self, cfg):
+        if cfg.dataset_type == 'hdf5':
+            self.process_50demos(cfg)
+        elif cfg.dataset_type == 'npz':
+            self.process_riemanngrasp(cfg)
+        elif cfg.dataset_type == 'txt':
+            self.process_txt(cfg)
+        elif cfg.dataset_type == 'one_hdf5':
+            self.process_one_hdf5(cfg)
+        else:
+            raise NotImplementedError('Dataset type not implemented!')
 
-    #     dims = tuple(dims)
-    #     return dims
 
     @property
     def raw_file_names(self):
@@ -86,7 +70,7 @@ class ALOHAPoseDataset(Dataset):
     def processed_file_path(self):
         return os.path.join(self.root, 'processed', 'data.pt')
 
-    def process(self, cfg):
+    def process_txt(self, cfg):
         print('Processing dataset...')
         data_list = []
         raw_files = self.raw_file_names
@@ -275,9 +259,16 @@ class ALOHAPoseDataset(Dataset):
 
                     grasp_nums = len(grasp_poses)
                     joint_data = f['demo_joint_vals'][()]
+                    stage = cfg.tamp_type
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]
                         right_jpose = joint_data[i][7:13]
+
+                        # only include jpose before OR after the action
+                        stage = self.which_stage(stage, left_jpose, right_jpose)
+                        if stage != cfg.tamp_type:
+                            continue
+
                         joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
 
                         grasp_id = np.random.randint(0, grasp_nums-1)
@@ -302,21 +293,23 @@ class ALOHAPoseDataset(Dataset):
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 file!')
 
+    # def replay_joints(self):
 
+    # tell the stage from eef pose
+    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.2):
+        #compute ee pose and see if they are too close
+        eepose_l = qpos_to_eepose(left_jpose, 0)
+        eepose_r = qpos_to_eepose(right_jpose, 1)
+        eef_dist = np.linalg.norm(eepose_l[0] - eepose_r[0])
 
-
-    # def trans2vec_pt3d(self, grasp_trans_arr):
-    #     grasp_trans_arr = torch.tensor(grasp_trans_arr).to(torch.float32)
-    #     grasp_xyz = grasp_trans_arr[:, :3, 3].reshape(-1, 3)
-    #     eef_rot = grasp_trans_arr[:, :3, :3]
-    #     # map to cont space using pytorch 3d
-    #     rot6d = matrix_to_rotation_6d(eef_rot)  # B*6
-    #     grasp = torch.cat((grasp_xyz, rot6d), dim=1)  #  B*9
-
-    #     grasp = grasp.reshape(1, 9)
-    #     return grasp
-
-
+        if stage == 'precondition':
+            if eef_dist < threthold:
+                stage = 'acting'
+        elif stage == 'acting':
+            if eef_dist > threthold:
+                stage = 'effect'
+        return stage
+        
     def __len__(self):
         return len(self.data)
 
@@ -327,3 +320,35 @@ class ALOHAPoseDataset(Dataset):
             sample = self.transform(sample)
 
         return sample
+
+@hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+def main(cfg):
+    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
+    num_workers = cfg.data.dataset.num_workers
+    batch_size = 32
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=False,
+        drop_last=True,
+        pin_memory=True,
+    )
+    
+    for batch_id, batch in enumerate(test_loader):
+        history_list = []
+        tmp_pc = batch['pc'][0].reshape(-1, 3).numpy()
+        for i in range(batch['joint_pose'].shape[0]):
+            jpose = batch['joint_pose'][i].reshape(-1).numpy()
+            grasp_pose = batch['grasp_pose'][i].reshape(4,4).numpy()
+            action_slice = (grasp_pose, jpose)
+            # action_slice = (None, jpose)
+            history_list.append(action_slice)
+
+
+        render_pose(history_list, use_gui=True, \
+                    directory = None, obj_points = tmp_pc)
+
+if __name__ == '__main__':
+    main()
