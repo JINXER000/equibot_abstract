@@ -4,11 +4,12 @@ defaults:
 use_wandb: false
 
 training:
-  ckpt: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/aloha_transfer_tape/ckpt00100_retrace.pth"
+  ckpt: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/aloha_transfer_tape/ckpt00400.pth.onlygrasp50"
   eval_interval: 1
 
 env:
   env_class: 'tape'
+  num_eef: 2
   dof: 6
   max_episode_length: 50
 
@@ -17,22 +18,22 @@ agent:
 
 model:
 
-# ## use vec_pointnet and train from scratch
-#   hidden_dim: 32
-#   encoder:
-#     backbone_type: vn_pointnet
-#     backbone_args: 
-#       num_layers: 4
-#       preload_path: 'None'
-
-
-### use VDGCNN and transfer from pretrained model
-  hidden_dim: 256
+## use vec_pointnet and train from scratch
+  hidden_dim: 32
   encoder:
-    backbone_type: VDGCNN
-    backbone_args: 
-      num_layers: 7
-      preload_path: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/pretrained/mugs.pt"
+    backbone_type: vn_pointnet
+    backbone_args:
+      num_layers: 4
+      preload_path: 'None'
+
+
+# ### use VDGCNN and transfer from pretrained model
+#   hidden_dim: 256
+#   encoder:
+#     backbone_type: VDGCNN
+#     backbone_args: 
+#       num_layers: 7
+#       preload_path: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/pretrained/mugs.pt"
 data:
   dataset:
     num_points: 512

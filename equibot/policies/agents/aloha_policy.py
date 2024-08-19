@@ -10,6 +10,7 @@ from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecC
 
 from equibot.policies.utils.misc import rotation_6d_to_matrix, matrix_to_rotation_6d
 
+
 class ALOHAPolicy(nn.Module):
     # TODO: figure out the dimensions!
     def __init__(self, cfg, device = "cpu"):
@@ -63,6 +64,7 @@ class ALOHAPolicy(nn.Module):
         self._init_torch_compile()
 
         self.noise_scheduler = hydra.utils.instantiate(cfg.model.noise_scheduler)
+
 
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized paraGen Policy with {num_parameters} parameters")
@@ -230,10 +232,12 @@ class ALOHAPolicy(nn.Module):
             # record history
             if history_bid >=0:
                 trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
-                trans_mat = trans_batch[0, 0].cpu().numpy()
+                assert trans_batch.shape[3] == 4
+                trans_mat = trans_batch[history_bid, 0].detach().cpu().numpy()
                 if noise_pred[1] is not None:
-                    unnormed_joint = self.recover_jpose(noise_pred[1]).cpu().numpy()
-                    action_slice = (trans_mat, unnormed_joint[0])
+                    unnormed_joint = self.recover_jpose(noise_pred[1])
+                    qos_12d = unnormed_joint[history_bid].reshape(-1)
+                    action_slice = (trans_mat, qos_12d)
                 else:
                     action_slice = (trans_mat, None)
                 denoise_history.append(action_slice)
@@ -259,5 +263,13 @@ class ALOHAPolicy(nn.Module):
 
         metrics = {'grasp_xyz_error': xyz_mse, 
                    'grasp_rotation_error': rot_mse}
-        # print(f'eval metrics: {metrics}')
+
+        # calculate joint error
+        if new_action[1] is not None:
+            unnormed_joint = self.recover_jpose(new_action[1])
+            gt_joint = obs['joint_pose']
+            unnormed_joint = torch.tensor(unnormed_joint, device=self.device)
+            joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
+            metrics['joint_error'] = joint_mse
+        
         return  denoise_history, metrics
