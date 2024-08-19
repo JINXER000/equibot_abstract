@@ -172,8 +172,9 @@ class ALOHAAgent(object):
             gt_grasp_z, vec_grasp_noise, timesteps
         )      
 
-        # only grasp
+        
         if self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
+            # only grasp
             noisy_jpose = None
         else:
             scalar_jpose_noise = torch.randn_like(scalar_jpose, device=self.device)
@@ -204,6 +205,7 @@ class ALOHAAgent(object):
             vec_loss = nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
             scalar_loss = nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
             loss = k * vec_loss + (1 - k) * scalar_loss
+            # loss = vec_loss + scalar_loss
         if torch.isnan(loss):
             print(f"Loss is nan, please investigate.")
             import pdb

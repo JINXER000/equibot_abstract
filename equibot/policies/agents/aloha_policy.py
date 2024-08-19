@@ -2,7 +2,7 @@ import copy
 import hydra
 import torch
 from torch import nn
-
+import numpy as np
 
 from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
 from equibot.policies.utils.diffusion.ema_model import EMAModel
@@ -238,8 +238,15 @@ class ALOHAPolicy(nn.Module):
                 trans_mat = trans_batch[history_bid, 0].detach().cpu().numpy()
                 if noise_pred[1] is not None:
                     unnormed_joint = self.recover_jpose(noise_pred[1])
-                    qos_12d = unnormed_joint[history_bid].reshape(-1)
-                    action_slice = (trans_mat, qos_12d)
+                    jpose_flat = unnormed_joint[history_bid].reshape(-1)
+                    jpose_12d = np.zeros(12)
+                    if self.symb_mask[0] == 'None':  # only right
+                        jpose_12d[6:] = jpose_flat
+                    elif self.symb_mask[1] == 'None':
+                        jpose_12d[:6] = jpose_flat
+                    else:
+                        jpose_12d = jpose_flat
+                    action_slice = (trans_mat, jpose_12d)
                 else:
                     action_slice = (trans_mat, None)
                 denoise_history.append(action_slice)

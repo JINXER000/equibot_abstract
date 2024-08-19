@@ -4,17 +4,16 @@ import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from collections import namedtuple
-from equibot.policies.utils.misc import  matrix_to_rotation_6d
+from equibot.policies.utils.constants import qpos_to_eepose
 
 import hydra
 import sys
 sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
 sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
 from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
+# from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
 
 
-DATASET_PATH = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape'
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
 class ALOHAPoseDataset(Dataset):
@@ -23,7 +22,6 @@ class ALOHAPoseDataset(Dataset):
         self.mode = mode
         self.dir_name = cfg.path
         self.root = self.dir_name
-        # self.root = os.path.join(DATASET_PATH, self.dir_name)
         self.symb_mask = cfg.symb_mask
         self.transform = transform
         self.pre_transform = pre_transform
@@ -42,9 +40,9 @@ class ALOHAPoseDataset(Dataset):
         # # self.mask = torch.tensor(mask, dtype=torch.bool)
         
         # Process the data
-        # self.process_select(cfg)
-        if not os.path.exists(self.processed_file_path):
-            self.process_select(cfg)
+        self.process_select(cfg)
+        # if not os.path.exists(self.processed_file_path):
+        #     self.process_select(cfg)
         
         # Load processed data
         self.data, self.slices = torch.load(self.processed_file_path)
@@ -269,7 +267,12 @@ class ALOHAPoseDataset(Dataset):
                         if stage != cfg.tamp_type:
                             continue
 
-                        joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
+                        if self.symb_mask[0] == 'None':
+                            joint_pose = right_jpose.reshape(1, 1, 6)
+                        elif self.symb_mask[1] == 'None':
+                            joint_pose = left_jpose.reshape(1, 1, 6)
+                        else: # num_eef ==2
+                            joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
 
                         grasp_id = np.random.randint(0, grasp_nums-1)
                         pc_tensort = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
@@ -296,7 +299,7 @@ class ALOHAPoseDataset(Dataset):
     # def replay_joints(self):
 
     # tell the stage from eef pose
-    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.2):
+    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.1):
         #compute ee pose and see if they are too close
         eepose_l = qpos_to_eepose(left_jpose, 0)
         eepose_r = qpos_to_eepose(right_jpose, 1)

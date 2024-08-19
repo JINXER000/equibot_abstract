@@ -19,6 +19,12 @@ https://wandb.ai/neuralogic/equibot/runs/bdwdh2iv?nw=nwuserjosephchen
 - when using 50 demos, we observe that at 50k step,  the encoder output goes up, and rotation error drops as well!
 https://wandb.ai/neuralogic/equibot/runs/33c0qst9?nw=nwuserjosephchen
 
+- however, when training grasp + jpose, jpose is not accurate...
+https://wandb.ai/neuralogic/equibot/runs/c9us76fl?nw=nwuserjosephchen
+
+- Using 2 layer encoder, output 1 grasp + 6 joints, worse..
+https://wandb.ai/neuralogic/equibot/runs/1evwj954?nw=nwuserjosephchen
+
 #### questions about convergence
 Is it because of the weight initialization of the encoder? we need more point clouds?
 I found that vec_layer use kaiming initialization. 

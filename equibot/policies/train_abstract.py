@@ -88,11 +88,11 @@ def main(cfg):
                 )
                 wandb.log({"epoch": epoch_ix}, step=global_step)
 
-            # # to tensorboard
-            for k, v in train_metrics.items():
-                v_ts_cpu = torch.tensor(v)
-                agent.actor.writer.add_scalar(f"train/{k}", v_ts_cpu, epoch_ix)
-            agent.actor.writer.flush()
+            # # # to tensorboard
+            # for k, v in train_metrics.items():
+            #     v_ts_cpu = torch.tensor(v)
+            #     agent.actor.writer.add_scalar(f"train/{k}", v_ts_cpu, epoch_ix)
+            # agent.actor.writer.flush()
             
             del train_metrics
             global_step += 1
@@ -115,12 +115,12 @@ def main(cfg):
                     step=global_step,
                 )
 
-            # # to tensorboard
-            train_step = epoch_ix * len(train_loader)+batch_ix
-            for k, v in eval_metrics.items():
-                v_ts_cpu = torch.tensor(v)
-                agent.actor.writer.add_scalar(f"train/{k}", v_ts_cpu, train_step)
-            agent.actor.writer.flush()
+            # # # to tensorboard
+            # train_step = epoch_ix * len(train_loader)+batch_ix
+            # for k, v in eval_metrics.items():
+            #     v_ts_cpu = torch.tensor(v)
+            #     agent.actor.writer.add_scalar(f"train/{k}", v_ts_cpu, train_step)
+            # agent.actor.writer.flush()
 
         # save ckpt
         if (
