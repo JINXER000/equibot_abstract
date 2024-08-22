@@ -257,7 +257,7 @@ class ALOHAPoseDataset(Dataset):
 
                     grasp_nums = len(grasp_poses)
                     joint_data = f['demo_joint_vals'][()]
-                    stage = cfg.tamp_type
+                    stage = 'precondition'
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]
                         right_jpose = joint_data[i][7:13]
@@ -299,7 +299,7 @@ class ALOHAPoseDataset(Dataset):
     # def replay_joints(self):
 
     # tell the stage from eef pose
-    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.1):
+    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.15):
         #compute ee pose and see if they are too close
         eepose_l = qpos_to_eepose(left_jpose, 0)
         eepose_r = qpos_to_eepose(right_jpose, 1)

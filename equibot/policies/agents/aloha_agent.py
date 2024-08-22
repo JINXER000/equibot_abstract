@@ -25,7 +25,8 @@ class ALOHAAgent(object):
                 num_training_steps=cfg.data.dataset.num_training_steps,
             )
         self.device = cfg.device
-        self.num_eef = cfg.env.num_eef
+        # self.num_eef = cfg.env.num_eef
+        self.num_eef = self.actor.num_eef
         self.dof = cfg.env.dof
         self.num_points = cfg.data.dataset.num_points
         self.obs_mode = cfg.model.obs_mode

@@ -6,10 +6,11 @@
 [x] use grasp pose relative to obj. before normalizing pc, subtract the pc with pc center. --> NO need, as when producing pc_feat, it already subtracted the centroid.
 [x] Use grasp data for riemann to train. --> still rot incorrect
 [x] Visualize the grasp diffusion history. 
-[] feat_dict["so3"] and feat_dict["inv"] seems to be so small. Is it because of nomalizer? Also evaluate the folding and see the feat_dict. 
+[x] feat_dict["so3"] and feat_dict["inv"] seems to be so small. Is it because of nomalizer?  --> It becomes better with more data. 
 [x] Make grasp_xyz normalizer different --> still incorrect
 [x] perform orthogonization on rotation mat
-[] find out why joint error is big in evaluation. Should we use 6 dof only?
+[] find out why joint error is big in evaluation. Should we use 6 dof only? Still no use. Should we use txt joint data?
+[] Try if training joints and set grasp as rand is OK?
 
 
 ### representative runs

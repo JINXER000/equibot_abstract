@@ -40,19 +40,18 @@ class ALOHAPolicy(nn.Module):
             self.encoder = None
         self.encoder_out_dim = cfg.model.encoder.c_dim
 
-        self.num_eef = cfg.env.num_eef
+        # self.num_eef = cfg.env.num_eef
         self.dof = cfg.env.dof # 6
         self.eef_dim = 3 # xyz, dir1, dir2
+        self.num_eef = len([x for x in self.symb_mask[:2] if x != 'None'])
         num_scalar_dims = self.dof * self.num_eef # joint pose
-        # assume the symb mask is 2*[jpose, grasp, other_obj], then the activated_obsv is obj_grasp+ other_obj
-        # for now, jpose require no obs
-        activated_obsv = 0
-        self.obs_dim = self.encoder_out_dim + activated_obsv
+
+        self.obs_dim = self.encoder_out_dim
         self.noise_pred_net = VecConditionalUnet1D(
             input_dim=self.eef_dim,
             cond_dim=self.obs_dim* self.obs_horizon,
             scalar_cond_dim=0,
-            scalar_input_dim= 0 if self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None' else num_scalar_dims,
+            scalar_input_dim= num_scalar_dims,
             diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
             cond_predict_scale=True,
         )
