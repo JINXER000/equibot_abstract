@@ -14,12 +14,12 @@ from equibot.policies.utils.media import combine_videos, save_video
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 
-sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 import open3d as o3d
 
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 def rotate_points(conditional_pc, visualize=False):
     points = np.asarray(conditional_pc)
@@ -90,7 +90,7 @@ def run_eval(
         points_batch, gt_grasp_9d, joint_pose = process_batch(batch, agent)
     else:
         # # input dummy obs
-        ply_path = "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
+        ply_path = "/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
         points = ply2points(ply_path)
         points_batch = points.reshape(1, 1, -1, 3)  # batch size, Ho, N, 3
 
@@ -134,7 +134,7 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
     eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(
@@ -153,7 +153,7 @@ def main(cfg):
     agent.train(False)
 
     # draw encoder in tensorboard
-    writer = SummaryWriter()
+    # writer = SummaryWriter()
     # dummy_input = torch.randn(32, 2, 512, 3, device=device).float()
     # writer.add_graph(agent.actor.encoder, dummy_input)
 
@@ -180,13 +180,13 @@ def main(cfg):
             batch = fist_batch,
             history_bid = cfg.eval.history_bid,
         )
-        # print metrics
-        print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
-        for k, v in eval_metrics.items():
-            writer.add_scalar(f"eval/{k}", v, i)
+    #     # print metrics
+    #     print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
+    #     for k, v in eval_metrics.items():
+    #         writer.add_scalar(f"eval/{k}", v, i)
 
-    writer.flush()
-    writer.close()
+    # writer.flush()
+    # writer.close()
 
 
 if __name__ == "__main__":

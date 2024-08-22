@@ -168,9 +168,13 @@ class ALOHAAgent(object):
         ).long()
 
         vec_grasp_noise = torch.randn_like(gt_grasp_z, device=self.device)  
-        noisy_grasp = self.actor.noise_scheduler.add_noise(
-            gt_grasp_z, vec_grasp_noise, timesteps
-        )      
+        if self.symb_mask[2] == 'None' and self.symb_mask[3] == 'None':
+            # only jpose,  input Normal distribution
+            noisy_grasp = vec_grasp_noise 
+        else:
+            noisy_grasp = self.actor.noise_scheduler.add_noise(
+                gt_grasp_z, vec_grasp_noise, timesteps
+            )      
 
         
         if self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
@@ -194,10 +198,10 @@ class ALOHAAgent(object):
 
         # only qpose
         if self.symb_mask[2] == 'None' and self.symb_mask[3] == 'None':
-            loss = nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
+            loss = scalar_loss= nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
         # only grasp
         elif self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
-            loss = nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
+            loss = vec_loss = nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
         else:
             n_vec = np.prod(vec_grasp_noise_pred.shape)  # 3*3
             n_scalar = np.prod(scalar_jpose_noise_pred.shape)  # 2*6
