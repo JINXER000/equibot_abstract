@@ -177,7 +177,7 @@ class BaseDataset(Dataset):
         self.cache = dict()
         for fn in tqdm(self.file_names):
             # load the npz file and use the filename to create a new dictionary
-            data = np.load(fn)
+            data = np.load(fn, allow_pickle= True)
             self.cache[fn] = dict()
             for k in keys_to_keep:
                 assert k in data.keys(), f"Key {k} not found in {fn}"

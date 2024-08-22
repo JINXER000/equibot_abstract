@@ -19,7 +19,7 @@ sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
 from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 import open3d as o3d
 
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 def rotate_points(conditional_pc, visualize=False):
     points = np.asarray(conditional_pc)
@@ -153,7 +153,7 @@ def main(cfg):
     agent.train(False)
 
     # draw encoder in tensorboard
-    writer = SummaryWriter()
+    # writer = SummaryWriter()
     # dummy_input = torch.randn(32, 2, 512, 3, device=device).float()
     # writer.add_graph(agent.actor.encoder, dummy_input)
 
@@ -180,13 +180,13 @@ def main(cfg):
             batch = fist_batch,
             history_bid = cfg.eval.history_bid,
         )
-        # print metrics
-        print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
-        for k, v in eval_metrics.items():
-            writer.add_scalar(f"eval/{k}", v, i)
+    #     # print metrics
+    #     print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
+    #     for k, v in eval_metrics.items():
+    #         writer.add_scalar(f"eval/{k}", v, i)
 
-    writer.flush()
-    writer.close()
+    # writer.flush()
+    # writer.close()
 
 
 if __name__ == "__main__":

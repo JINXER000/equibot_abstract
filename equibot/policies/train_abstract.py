@@ -137,7 +137,7 @@ def main(cfg):
                     os.remove(fn)
             agent.save_snapshot(save_path)
 
-    agent.actor.writer.close()
+    # agent.actor.writer.close()
 
 
 if __name__ == "__main__":

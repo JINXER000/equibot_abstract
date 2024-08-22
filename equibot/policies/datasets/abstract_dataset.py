@@ -7,10 +7,10 @@ from collections import namedtuple
 from equibot.policies.utils.constants import qpos_to_eepose
 
 import hydra
-import sys
-sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+# import sys
+# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 # from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
 
 
@@ -74,11 +74,11 @@ class ALOHAPoseDataset(Dataset):
         raw_files = self.raw_file_names
 
         conditional_pc = None
-        grasp_xyz = None
+        grasp_trans = None
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
             # joint pose
-            if 'jpose' in file_name:
+            if  file_name == 'transfer_jpose.txt':
                 txt_path = os.path.join(self.root, 'raw', file_name)
                 jpos_mat = np.loadtxt(txt_path)  # contain 50 demos
 
@@ -96,7 +96,7 @@ class ALOHAPoseDataset(Dataset):
                     # data = {'demo_t': demo_t, 'joint_pose': joint_pose, 'mask': mask_data}
                     data = {'demo_t': demo_t, 'joint_pose': joint_pose}
                     data_list.append(data)
-            elif 'ply' in file_name:
+            elif  file_name  == 'graspobj_4.ply':
                 ply_path = os.path.join(self.root, 'raw', file_name)
                 import open3d as o3d
                 conditional_pc = o3d.io.read_point_cloud(ply_path)
@@ -106,15 +106,21 @@ class ALOHAPoseDataset(Dataset):
                 sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
                 conditional_pc = conditional_pc[sampled_indices]
 
-            elif 'npz' in file_name: # as a dummy input of vnn
+            elif  file_name == 'graspPose_4.npz': # as a dummy input of vnn
                 npz_path = os.path.join(self.root, 'raw', file_name)
                 data = np.load(npz_path)
-                grasp_xyz = data['seg_center'].reshape(1,1,3)
+                grasp_xyz = data['seg_center'].reshape(-1)
+                grasp_rot = data['axes'].reshape(3,3)
+                grasp_trans = np.zeros((1, 4, 4))
+                grasp_trans[0, :3, :3] = grasp_rot
+                grasp_trans[0, :3, 3] = grasp_xyz
+                grasp_trans[0, 3, 3] = 1
+
 
         assert conditional_pc is not None
         for i in range(len(data_list)):
             data_list[i]['pc'] = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
-            data_list[i]['grasp_xyz'] = torch.tensor(grasp_xyz).to(torch.float32)
+            data_list[i]['grasp_pose'] = torch.tensor(grasp_trans).to(torch.float32)
 
             # TODO: add grasp pose to data
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)

@@ -29,7 +29,10 @@ setup(name="equibot",
           "scikit-video",
           "einops",
           "diffusers",
-          "gym==0.26.2",
-          "pybullet==3.2.6",
-          "protobuf==3.20.0"
+          "gym",
+          "pybullet",
+          "protobuf==3.20.0",
+           "modern-robotics",
+           "open3d",
+           "h5py",
       ])

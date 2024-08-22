@@ -10,7 +10,7 @@ from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecC
 
 from equibot.policies.utils.misc import rotation_6d_to_matrix, matrix_to_rotation_6d
 
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 class ALOHAPolicy(nn.Module):
     # TODO: figure out the dimensions!
@@ -65,7 +65,7 @@ class ALOHAPolicy(nn.Module):
 
         self.noise_scheduler = hydra.utils.instantiate(cfg.model.noise_scheduler)
 
-        self.writer = SummaryWriter()
+        # self.writer = SummaryWriter()
 
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized paraGen Policy with {num_parameters} parameters")

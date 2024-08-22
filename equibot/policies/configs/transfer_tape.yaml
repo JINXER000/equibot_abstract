@@ -1,15 +1,15 @@
 defaults:
   - base
 
-use_wandb: true
+use_wandb: false
 
 training:
-  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt01999.pth"
+  ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt00100.pth"
   eval_interval: 1
 
 env:
   env_class: 'tape'
-  num_eef: 1
+  num_eef: 2
   dof: 6
   max_episode_length: 50
 
@@ -17,6 +17,8 @@ agent:
   agent_name: aloha
 
 model:
+  # noise_scheduler:
+  #   num_train_timesteps: 1000
   encoder:
     backbone_type: vn_pointnet
     backbone_args: 
@@ -24,11 +26,12 @@ model:
 data:
   dataset:
     num_points: 512
+    symb_mask: ['qpose_left', 'qpose_right', None, None, None]
     # symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
-    symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
+    # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
-    dataset_type: 'hdf5'
+    dataset_type: 'txt'
 
 eval:
   history_bid: 10

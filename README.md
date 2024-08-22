@@ -116,11 +116,22 @@ python -m equibot.policies.train --config-name fold_mobile_equibot \
 ```
 in my case, I can use the command below for training:
 
+
+
 ```
 python -m equibot.policies.train --config-name fold_mobile_equibot \
     prefix=sim_mobile_fold_7dof_equibot \
     data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/fold/pcs/
 ```
+
+```
+cd equibot/policies/
+python train_abstract.py --config-name transfer_tape \
+    prefix=aloha_transfer_tape \
+    data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/
+```
+
+
 ### Evaluation
 
 The commands below evaluate the trained EquiBot policy on the four different setups mentioned in the paper: `Original`, `R+Su`, `R+Sn`, and `R+Sn+P`. To run these evaluations for the DP baseline, replace all occurrences of `equibot` to`dp`. For the log directory, fill `[log_dir]` with the absolute path to the log directory. By default, this directory is `./log`.

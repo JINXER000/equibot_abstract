@@ -167,11 +167,11 @@ class VecConditionalUnet1D(nn.Module):
         )
 
         if scalar_input_dim > 0:
-            self.final_linear = nn.Sequential(
-                VecLNA(start_dim, start_dim, nn.Mish(),mode= "so3", return_tuple=False),
-                VecLinear(start_dim, 0, s_out=scalar_input_dim),
-            )
-            # self.final_linear = VecLinear(start_dim, 0, s_out=scalar_input_dim)
+            # self.final_linear = nn.Sequential(
+            #     VecLNA(start_dim, start_dim, nn.Mish(),mode= "so3", return_tuple=False),
+            #     VecLinear(start_dim, 0, s_out=scalar_input_dim),
+            # )
+            self.final_linear = VecLinear(start_dim, 0, s_out=scalar_input_dim)
 
         self.diffusion_step_encoder = diffusion_step_encoder
         self.up_modules = up_modules
