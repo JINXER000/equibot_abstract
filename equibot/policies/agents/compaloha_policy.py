@@ -120,6 +120,7 @@ class CompALOHAPolicy(ALOHAPolicy):
 
     
     def forward(self, obs, history_bid=-1):
+        ###### preprocess data #######
         pc = obs["pc"]
         pc = pc.repeat(1, self.obs_horizon, 1, 1)
         pc = self.pc_normalizer.normalize(pc)
@@ -138,6 +139,25 @@ class CompALOHAPolicy(ALOHAPolicy):
         pc_feat = feat_dict["so3"]  
         obs_cond_vec = pc_feat.reshape(batch_size, -1, 3)
 
+        if self.mask_type == 'both':
+            #### define EBM ####
+            def gradient_function(x, batch, t):
+                gradient = - self.denoise_fn(x, batch, t, eval=True) \
+                            * self._sqrt_recipm1_alphas_cumprod_custom[t]
+                # print('gradient_function', x.shape, gradient.shape)
+                return gradient
+
+
+            def noise_function():
+                return torch.randn(shape, device=device)
+            
+            # ULA sampler
+            samples_per_step = self.samples_per_step
+            step_sizes = self.step_sizes
+            sampler = AnnealedULASampler(samples_per_step, step_sizes, gradient_function, noise_function)
+
+        ##### start denoising #####
+
         initial_noise_scale = 1
         noisy_grasp = (
             torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
@@ -152,66 +172,54 @@ class CompALOHAPolicy(ALOHAPolicy):
         curr_action = [noisy_grasp, noisy_jpose]
         self.noise_scheduler.set_timestamps(self.num_diffusion_iters)
 
-
-        def gradient_function(x, batch, t):
-            gradient = - self.denoise_fn(x, batch, t, eval=True) \
-                        * self._sqrt_recipm1_alphas_cumprod_custom[t]
-            # print('gradient_function', x.shape, gradient.shape)
-            return gradient
-
-        def energy_function(x, batch, t):
-            score = - self.denoise_fn.neg_logp_unnorm(x, batch, t, eval=True) \
-                    * self._sqrt_recipm1_alphas_cumprod_custom[t]
-            print('energy_function', score.shape)
-            return score
-
-        def noise_function():
-            return torch.randn(shape, device=device)
-        
-        # ULA sampler
-        samples_per_step = self.samples_per_step
-        step_sizes = self.step_sizes
-        sampler = AnnealedULASampler(samples_per_step, step_sizes, gradient_function, noise_function)
-        
         denoise_history = []
         for k in self.noise_scheduler.timesteps:
-            # load from existing data statistics
-            # predict noise
-            grasp_noise_pred = ema_nets["grasp_noise_pred_net"](
-                sample=curr_action[0],
-                timestep=k,
-                scalar_sample=None,
-                cond=obs_cond_vec,
-            )
-
-            jpose_noise_pred = ema_nets["jpose_noise_pred_net"](
-                sample=torch.randn_like(curr_action[0]),
-                timestep=k,
-                scalar_sample=curr_action[1],
-                cond=None,
-            )
 
             ####### inverse diffusion step
             new_action = [None, None]
-            new_action[0] = self.noise_scheduler.step(
-                model_output=grasp_noise_pred, timestep=k, sample=curr_action[0]
-            ).prev_sample
 
-            new_action[1] = self.noise_scheduler.step(
-                model_output=jpose_noise_pred, timestep=k, sample=curr_action[1]
-            ).prev_sample
+            if self.mask_type != 'only_jpose':            
+                # load from existing data statistics
+                # predict noise
+                grasp_noise_pred = ema_nets["grasp_noise_pred_net"](
+                    sample=curr_action[0],
+                    timestep=k,
+                    scalar_sample=None,
+                    cond=obs_cond_vec,
+                )
+
+
+                new_action[0] = self.noise_scheduler.step(
+                    model_output=grasp_noise_pred, timestep=k, sample=curr_action[0]
+                ).prev_sample
+
+            if self.mask_type != 'only_grasp':
+
+                jpose_noise_pred = ema_nets["jpose_noise_pred_net"](
+                    sample=torch.randn_like(curr_action[0]),
+                    timestep=k,
+                    scalar_sample=curr_action[1],
+                    cond=None,
+                )
+
+                new_action[1] = self.noise_scheduler.step(
+                    model_output=jpose_noise_pred, timestep=k, sample=curr_action[1]
+                ).prev_sample
                    
-            # do EBM
-            if k % self.ebm_per_steps == 0:
-                pose_features = sampler.sample_step(pose_features, batch, t)
-                # print(f'p_sample_loop {j}/{self.num_timesteps}')
+            if self.mask_type == 'both':
+                # do EBM
+                if k % self.ebm_per_steps == 0:
+                    pose_features = sampler.sample_step(pose_features, batch, t)
+                    # print(f'p_sample_loop {j}/{self.num_timesteps}')
 
             # record history
             if history_bid >=0:
-                trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
-                assert trans_batch.shape[3] == 4
-                trans_mat = trans_batch[history_bid, 0].detach().cpu().numpy()
-                if noise_pred[1] is not None:
+                if self.mask_type != 'only_jpose':
+                    trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
+                    assert trans_batch.shape[3] == 4
+                    trans_mat = trans_batch[history_bid, 0].detach().cpu().numpy()
+                
+                if self.mask_type != 'only_grasp':
                     unnormed_joint = self.recover_jpose(noise_pred[1])
                     jpose_flat = unnormed_joint[history_bid].reshape(-1)
                     jpose_12d = np.zeros(12)

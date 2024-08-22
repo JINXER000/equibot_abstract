@@ -169,7 +169,7 @@ class ALOHAAgent(object):
         ).long()
 
         vec_grasp_noise = torch.randn_like(gt_grasp_z, device=self.device)  
-        if self.symb_mask[2] == 'None' and self.symb_mask[3] == 'None':
+        if self.actor.mask_type == 'only_jpose':
             # only jpose,  input Normal distribution
             noisy_grasp = vec_grasp_noise 
         else:
@@ -178,7 +178,7 @@ class ALOHAAgent(object):
             )      
 
         
-        if self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
+        if self.actor.mask_type == 'only_grasp':
             # only grasp
             noisy_jpose = None
         else:
@@ -198,10 +198,10 @@ class ALOHAAgent(object):
 
 
         # only qpose
-        if self.symb_mask[2] == 'None' and self.symb_mask[3] == 'None':
+        if self.actor.mask_type == 'only_jpose':
             loss = scalar_loss= nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
         # only grasp
-        elif self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
+        elif self.actor.mask_type == 'only_grasp':
             loss = vec_loss = nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
         else:
             n_vec = np.prod(vec_grasp_noise_pred.shape)  # 3*3
@@ -229,7 +229,7 @@ class ALOHAAgent(object):
                        obs_cond_vec.detach().cpu().numpy(), axis=1
                    ).mean(),
                    }
-        if self.symb_mask[0] != 'None' or self.symb_mask[1] != 'None': # pred joint
+        if self.actor.mask_type != 'only_grasp': # pred joint
             # metrics["mean_gt_jnoise_norm"] = np.linalg.norm(
             #         scalar_jpose_noise.detach().cpu().numpy(),
             #         axis=1,
@@ -242,7 +242,7 @@ class ALOHAAgent(object):
             #     ).mean(),
             metrics["scalar_loss"] = scalar_loss
 
-        if self.symb_mask[2] != 'None' or self.symb_mask[3] != 'None': # pred grasp
+        if self.actor.mask_type != 'only_jpose':  # pred grasp
             # metrics["mean_gt_eef_noise_norm"] = np.linalg.norm(
             #         vec_grasp_noise.detach().cpu().numpy(), axis=1
             #     ).mean(),

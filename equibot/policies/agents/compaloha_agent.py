@@ -20,6 +20,7 @@ class CompALOHAAgent(ALOHAAgent):
     def update(self, batch, vis=False):
         self.train()
 
+        ###### Load data, preprocessing ######
         batch = to_torch(batch, self.device)
         pc = batch["pc"]
         joint_data  = batch["joint_pose"]
@@ -50,8 +51,6 @@ class CompALOHAAgent(ALOHAAgent):
 
         gt_grasp_z = torch.cat([grasp_xyz, grasp_dir1, grasp_dir2], dim=-2)
 
-
-
         # scalar
         joint_data = self.jpose_normalizer.normalize(joint_data)
         scalar_jpose = self.actor._convert_jpose_to_vec(joint_data)
@@ -67,37 +66,51 @@ class CompALOHAAgent(ALOHAAgent):
             device=self.device,
         ).long()
 
-        vec_grasp_noise = torch.randn_like(gt_grasp_z, device=self.device)  
-        noisy_grasp = self.actor.noise_scheduler.add_noise(
-            gt_grasp_z, vec_grasp_noise, timesteps
-        )      
-        vec_grasp_noise_pred = self.actor.grasp_noise_pred_net_handle(
-            noisy_grasp,
-            timesteps,
-            scalar_sample = None, 
-            cond=obs_cond_vec,
-            scalar_cond=None,
-        )
-        
-        # TODO: use MLP to train the scalar part
-        scalar_jpose_noise = torch.randn_like(scalar_jpose, device=self.device)
-        noisy_jpose = self.actor.noise_scheduler.add_noise(
-            scalar_jpose, scalar_jpose_noise, timesteps
-        )
-        scalar_jpose_noise_pred = self.actor.jpose_noise_pred_net_handle(
-            torch.randn_like(noisy_grasp),
-            timesteps,
-            scalar_sample = noisy_jpose, 
-            cond=obs_cond_vec,
-            scalar_cond=None,
-        )
+        ######## train the pred net ########
 
-        weights = [0.5, 0.5]
+        metrics = {
+                   "cond_obsv": np.linalg.norm(
+                       obs_cond_vec.detach().cpu().numpy(), axis=1
+                   ).mean(),
+                   }
+        if self.actor.mask_type != 'only_grasp': # pred joint
+            scalar_jpose_noise = torch.randn_like(scalar_jpose, device=self.device)
+            noisy_jpose = self.actor.noise_scheduler.add_noise(
+                scalar_jpose, scalar_jpose_noise, timesteps
+            )
+            scalar_jpose_noise_pred = self.actor.jpose_noise_pred_net_handle(
+                torch.randn_like(noisy_grasp),
+                timesteps,
+                scalar_sample = noisy_jpose, 
+                cond=obs_cond_vec,
+                scalar_cond=None,
+            )
+            scalar_loss = nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
+            metrics["scalar_loss"] = scalar_loss
 
-        vec_loss= nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
-        scalar_loss = nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
 
-        loss = weights[0] * vec_loss + weights[1] * scalar_loss
+        if self.actor.mask_type != 'only_jpose':  # pred grasp
+            vec_grasp_noise = torch.randn_like(gt_grasp_z, device=self.device)  
+            noisy_grasp = self.actor.noise_scheduler.add_noise(
+                gt_grasp_z, vec_grasp_noise, timesteps
+            )      
+            vec_grasp_noise_pred = self.actor.grasp_noise_pred_net_handle(
+                noisy_grasp,
+                timesteps,
+                scalar_sample = None, 
+                cond=obs_cond_vec,
+                scalar_cond=None,
+            )
+            vec_loss= nn.functional.mse_loss(vec_grasp_noise_pred, vec_grasp_noise)
+            metrics["vec_loss"] = vec_loss
+
+        if self.actor.mask_type == 'both':
+            # sum up the loss
+            n_vec = np.prod(vec_grasp_noise_pred.shape)  # 3*3
+            n_scalar = np.prod(scalar_jpose_noise_pred.shape)  # 2*6
+            k = n_vec / (n_vec + n_scalar)
+            loss = k * vec_loss + (1 - k) * scalar_loss
+            metrics["loss"] = loss
 
         if torch.isnan(loss):
             print(f"Loss is nan, please investigate.")
@@ -111,17 +124,5 @@ class CompALOHAAgent(ALOHAAgent):
         self.lr_scheduler.step()
 
         self.actor.step_ema()
-
-        metrics = {"loss": loss,
-                   "cond_obsv": np.linalg.norm(
-                       obs_cond_vec.detach().cpu().numpy(), axis=1
-                   ).mean(),
-                   }
-        if self.symb_mask[0] != 'None' or self.symb_mask[1] != 'None': # pred joint
-            metrics["scalar_loss"] = scalar_loss
-
-        if self.symb_mask[2] != 'None' or self.symb_mask[3] != 'None': # pred grasp
-            metrics["vec_loss"] = vec_loss
-
 
         return metrics

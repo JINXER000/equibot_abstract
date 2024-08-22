@@ -66,6 +66,7 @@ class ALOHAPolicy(nn.Module):
         self.noise_scheduler = hydra.utils.instantiate(cfg.model.noise_scheduler)
 
         # self.writer = SummaryWriter()
+        self.mask_type = self.conclude_masks()
 
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized paraGen Policy with {num_parameters} parameters")
@@ -191,7 +192,7 @@ class ALOHAPolicy(nn.Module):
 
         initial_noise_scale = 1
         
-        if self.symb_mask[0] == 'None' and self.symb_mask[1] == 'None':
+        if self.mask_type == "only_grasp": 
             # only grasp
             noisy_action = (
                 torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
@@ -236,7 +237,7 @@ class ALOHAPolicy(nn.Module):
                 assert trans_batch.shape[3] == 4
                 trans_mat = trans_batch[history_bid, 0].detach().cpu().numpy()
                 if noise_pred[1] is not None:
-                    unnormed_joint = self.recover_jpose(noise_pred[1])
+                    unnormed_joint = self.recover_jpose(new_action[1])
                     jpose_flat = unnormed_joint[history_bid].reshape(-1)
                     jpose_12d = np.zeros(12)
                     if self.symb_mask[0] == 'None':  # only right
@@ -276,3 +277,17 @@ class ALOHAPolicy(nn.Module):
             metrics['joint_error'] = joint_mse
         
         return  denoise_history, metrics
+    
+    def conclude_masks(self):
+        has_grasp = False
+        has_jpose = False
+        if self.symb_mask[0] != 'None' or self.symb_mask[1] != 'None':
+            has_jpose = True
+        if self.symb_mask[2] != 'None' or self.symb_mask[3] != 'None':
+            has_grasp = True
+        if has_grasp and has_jpose:
+            return "both"
+        elif has_grasp:
+            return "only_grasp"
+        elif has_jpose:
+            return "only_jpose"
