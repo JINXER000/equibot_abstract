@@ -33,6 +33,9 @@ https://wandb.ai/neuralogic/equibot/runs/c9us76fl?nw=nwuserjosephchen
 - Using 2 layer encoder, output 1 grasp + 6 joints, worse..
 https://wandb.ai/neuralogic/equibot/runs/1evwj954?nw=nwuserjosephchen
 
+- 2 grasps conditioned on 1 pc:
+https://wandb.ai/neuralogic/equibot/runs/cp29pe8i?nw=nwuserjosephchen
+
 #### questions about convergence
 Is it because of the weight initialization of the encoder? we need more point clouds?
 I found that vec_layer use kaiming initialization. 

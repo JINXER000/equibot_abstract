@@ -135,10 +135,10 @@ class ALOHAPolicy(nn.Module):
             trans_mat_batch = trans_mat_batch.reshape(batch_size, horizon, 4, 4)
         else:
             assert grasp_num == 2
-            unnormed_grasp_xyz_pre = unnormed_grasp_xyz[:, 0, :].reshape(-1, 3)
+            unnormed_grasp_xyz_pre = unnormed_grasp_xyz[:, :, 0, :].reshape(-1, 3)
             rot6d_batch_pre = rot6d_batch[:, :, 0, :].reshape(-1, 6)
             rotation_mat_pre = rotation_6d_to_matrix(rot6d_batch_pre)
-            unnormed_grasp_xyz_eff = unnormed_grasp_xyz[:, 1, :].reshape(-1, 3)
+            unnormed_grasp_xyz_eff = unnormed_grasp_xyz[:, :, 1, :].reshape(-1, 3)
             rot6d_batch_eff = rot6d_batch[:, :, 1, :].reshape(-1, 6)
             rotation_mat_eff = rotation_6d_to_matrix(rot6d_batch_eff)
 
@@ -150,6 +150,7 @@ class ALOHAPolicy(nn.Module):
             trans_mat_batch[:, 4:7, 3] = unnormed_grasp_xyz_eff.reshape(-1, 3)
             trans_mat_batch[:, 7, 3] = 1
 
+        trans_mat_batch = trans_mat_batch.reshape(batch_size, horizon, -1, 4)
         return trans_mat_batch
 
 
@@ -158,18 +159,16 @@ class ALOHAPolicy(nn.Module):
 
 
     def recover_grasp(self, grasp_batch, scale, center):
-        # reshape dim to B,  3, 3
-        grasp_batch = torch.mean(grasp_batch, dim=1)
-        scale = torch.mean(scale, dim=1)
-        center = torch.mean(center, dim=1)
+        # reshape dim to B,  (3 or 6) , 3
+        grasp_batch = torch.mean(grasp_batch, dim=1, keepdim=True)
+        scale = torch.mean(scale, dim=1, keepdim=True)
+        center = torch.mean(center, dim=1, keepdim=True)
 
         ##### grasp processing
         if self.has_eff == False:
-            grasp_action = grasp_batch.reshape(-1, 3, 3)
-            grasp_xyz = grasp_action[:,0, :].reshape(-1, 1, 3)
+            grasp_xyz = grasp_batch[:, :,0, :]
         else:
-            grasp_action = grasp_batch.reshape(-1, 6, 3)
-            grasp_xyz = grasp_action[:, :2, :].reshape(-1, 2, 3)
+            grasp_xyz = grasp_batch[:, :, :2, :]
 
         # add back the offset
         grasp_xyz = grasp_xyz *scale + center
@@ -179,11 +178,15 @@ class ALOHAPolicy(nn.Module):
                     self.grasp_xyz_normalizer.unnormalize(grasp_xyz)
                 )
         
-        ##### rotation processing
+        ##### rotation processing : is rotation right?????
         if self.has_eff == False:
-            rot6d_batch = grasp_action[:, 1: , :].reshape(-1, 1, 1, 6)
+            rot6d_batch = grasp_batch[:, :, 1: , :].reshape(-1, 1, 1, 6)
         else:
-            rot6d_batch = grasp_action[:, 2:, :].reshape(-1, 1, 2, 6)
+            # rot6d_batch = grasp_batch[:, :, 2:, :].reshape(-1, 1, 2, 6)
+            grasp_dir1 = grasp_batch[:, :, 2:4, :]
+            grasp_dir2 = grasp_batch[:, :, 4:6, :]
+            rot6d_batch = torch.cat((grasp_dir1, grasp_dir2), dim=-1)
+            assert rot6d_batch.shape[-1] == 6
 
         trans_batch = self._convert_vec_to_trans(rot6d_batch, unnormed_grasp_xyz)
 
@@ -272,7 +275,8 @@ class ALOHAPolicy(nn.Module):
             if history_bid >=0:
                 trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
                 assert trans_batch.shape[3] == 4
-                trans_mat = trans_batch[history_bid, 0].detach().cpu().numpy()
+                trans_mat = trans_batch[history_bid].detach().cpu().numpy()
+                trans_mat = np.mean(trans_mat, axis=0)
                 if noise_pred[1] is not None:
                     unnormed_joint = self.recover_jpose(new_action[1])
                     jpose_flat = unnormed_joint[history_bid].reshape(-1)
@@ -313,6 +317,9 @@ class ALOHAPolicy(nn.Module):
             joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
             metrics['joint_error'] = joint_mse
         
+        if history_bid >= 0:
+            # print the grasp xyz
+            print(f"Grasp xyz: {unnormed_grasp_xyz[history_bid, 0]}")
         return  denoise_history, metrics
     
     def conclude_masks(self):

@@ -137,8 +137,8 @@ class ALOHAAgent(object):
         
         # # check if is same
         # rot6d_batch = torch.cat((grasp_dir1, grasp_dir2), dim=-1)
-        # assert rot6d_batch.shape[-1] == 6
-        # trans_mat_batch = self.actor._convert_vec_to_trans(rot6d_batch, grasp_xyz)
+        # assert rot6d_batch.shape[-1] == 6        
+        # trans_mat_batch = self.actor._convert_vec_to_trans(rot6d_batch, grasp_xyz_raw)
         # error = nn.functional.mse_loss(trans_mat_batch, grasp_pose)
         # print(f'recover error is {error.cpu().numpy()}')
         
@@ -351,7 +351,6 @@ class ALOHAAgent(object):
     def act(self, obs, history_bid = -1):
         self.train(False)
         assert isinstance(obs["pc"][0], np.ndarray)
-
 
         batch_size = obs["pc"].shape[0]
         # batch_size = 1  # only support batch size 1 for now

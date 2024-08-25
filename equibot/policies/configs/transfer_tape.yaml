@@ -4,7 +4,7 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt01100.pth.onesideok"
+  ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt00500.pth"
   eval_interval: 1
 
 env:

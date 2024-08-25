@@ -74,6 +74,7 @@ def main(cfg):
 
 
     # train loop
+    min_eval_rot_error = 1e9
     global_step = 0
     for epoch_ix in tqdm(range(start_epoch_ix, cfg.training.num_epochs)):
         batch_ix = 0
@@ -86,7 +87,7 @@ def main(cfg):
                     {"train/" + k: v for k, v in train_metrics.items()},
                     step=global_step,
                 )
-                wandb.log({"epoch": epoch_ix}, step=global_step)
+                wandb.log({"train/epoch": epoch_ix}, step=global_step)
 
             # # # to tensorboard
             # for k, v in train_metrics.items():
@@ -114,6 +115,10 @@ def main(cfg):
                     {"eval/" + k: v for k, v in eval_metrics.items()},
                     step=global_step,
                 )
+            rot_error = eval_metrics["grasp_rotation_error"]
+            if rot_error < min_eval_rot_error:
+                min_eval_rot_error = rot_error
+                agent.save_snapshot(os.path.join(log_dir, "ckpt_best.pth"))
 
             # # # to tensorboard
             # train_step = epoch_ix * len(train_loader)+batch_ix
