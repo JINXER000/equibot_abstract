@@ -7,11 +7,11 @@ from collections import namedtuple
 from equibot.policies.utils.constants import qpos_to_eepose
 
 import hydra
-# import sys
-# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-# from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
+import sys
+sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
 
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
@@ -28,16 +28,6 @@ class ALOHAPoseDataset(Dataset):
         self.pre_filter = pre_filter
         self.composed_inference = False
 
-        # # Calculate mask
-        # self.dims = self.calc_dims(self.symb_mask)
-        # # mask = []
-        # # for i in range(len(self.symb_mask)):
-        # #     if self.symb_mask[i] is None:
-        # #         mask += [True for _ in range(self.dims[i].dim)]
-        # #     else:
-        # #         mask += [False for _ in range(self.dims[i].dim)]
-        
-        # # self.mask = torch.tensor(mask, dtype=torch.bool)
         
         # Process the data
         self.process_select(cfg)
@@ -56,6 +46,8 @@ class ALOHAPoseDataset(Dataset):
             self.process_txt(cfg)
         elif cfg.dataset_type == 'one_hdf5':
             self.process_one_hdf5(cfg)
+        elif cfg.dataset_type == 'hdf5_preeff':
+            self.process_50demos_preeff(cfg)
         else:
             raise NotImplementedError('Dataset type not implemented!')
 
@@ -248,10 +240,7 @@ class ALOHAPoseDataset(Dataset):
                 import h5py
                 with h5py.File(hdf5_path, 'r') as f:
 
-                    if cfg.tamp_type == 'precondition':
-                        conditional_pc = f['start_grasps']['obj_points'][()]
-                    elif cfg.tamp_type == 'effect':
-                        conditional_pc = f['end_grasps']['obj_points'][()]
+                    conditional_pc = f['start_grasps']['obj_points'][()]
                     tgt_size = cfg.num_points
                     sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
                     conditional_pc = conditional_pc[sampled_indices]
@@ -281,31 +270,74 @@ class ALOHAPoseDataset(Dataset):
                             joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
 
                         grasp_id = np.random.randint(0, grasp_nums-1)
-                        pc_tensort = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
+                        pc_tensor = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
                         grasp_tensor = torch.tensor(grasp_poses[grasp_id]).to(torch.float32).reshape(1, 4, 4)
-                        data = {'joint_pose': joint_pose, 'pc': pc_tensort, \
+                        data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
                                 'grasp_pose':grasp_tensor}
                         data_list.append(data)
-
-        # change_grasp_every = np.ceil(len(data_list) / len(grasp_poses))
-        # change_grasp_id = 0
-        # for i in range(len(data_list)):
-        #     data_list[i]['pc'] = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
-
-        #     data_list[i]['grasp_pose'] = torch.tensor(grasp_poses[change_grasp_id]).to(torch.float32).reshape(1, 4, 4)
-
-        #     # update the grasp every change_grasp_every
-        #     if i % change_grasp_every == 0:
-        #         change_grasp_id +=1
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 file!')
 
-    # def replay_joints(self):
+    # add eff grasp
+    def process_50demos_preeff(self, cfg):
+        print('Processing hdf5 dataset...')
+        data_list = []
+        raw_files = self.raw_file_names
+
+        conditional_pc = None
+        for file_id in range(len(raw_files)):
+            file_name = raw_files[file_id]
+            
+            if 'hdf5' in  file_name:
+                hdf5_path = os.path.join(self.root, 'raw', file_name)
+                import h5py
+                with h5py.File(hdf5_path, 'r') as f:
+
+                    conditional_pc = f['start_grasps']['obj_points'][()]
+                    tgt_size = cfg.num_points
+                    sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
+                    conditional_pc = conditional_pc[sampled_indices]
+
+                    pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
+                    eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
+
+                    joint_data = f['demo_joint_vals'][()]
+                    stage = 'precondition'
+                    for i in range(len(joint_data)):
+                        left_jpose = joint_data[i][:6]
+                        right_jpose = joint_data[i][7:13]
+
+                        # only include jpose before OR after the action
+                        stage = self.which_stage(stage, left_jpose, right_jpose)
+                        if stage != cfg.tamp_type:
+                            continue
+
+                        if self.symb_mask[0] == 'None':
+                            joint_pose = right_jpose.reshape(1, 1, 6)
+                        elif self.symb_mask[1] == 'None':
+                            joint_pose = left_jpose.reshape(1, 1, 6)
+                        else: # num_eef ==2
+                            joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
+
+                        pc_tensor = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
+                        pred_grasp_id = np.random.randint(0, len(pred_grasp_poses)-1)
+                        pred_grasp_tensor = torch.tensor(pred_grasp_poses[pred_grasp_id]).to(torch.float32).reshape(1, 4, 4)
+                        eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
+                        eff_grasp_tensor = torch.tensor(eff_grasp_poses[eff_grasp_id]).to(torch.float32).reshape(1, 4, 4)
+                        data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
+                                'pred_grasp_pose':pred_grasp_tensor,
+                                'eff_grasp_pose':eff_grasp_tensor}
+                        data_list.append(data)
+
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print('processed all hdf5 file!')
+
 
     # tell the stage from eef pose
-    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.15):
+    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.18):
         #compute ee pose and see if they are too close
         eepose_l = qpos_to_eepose(left_jpose, 0)
         eepose_r = qpos_to_eepose(right_jpose, 1)

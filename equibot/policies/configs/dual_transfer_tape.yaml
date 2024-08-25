@@ -9,7 +9,7 @@ training:
 
 env:
   env_class: 'tape'
-  num_eef: 2
+  num_eef: 1
   dof: 6
   max_episode_length: 50
 
@@ -27,11 +27,12 @@ data:
   dataset:
     num_points: 512
     # symb_mask: ['qpose_left', 'qpose_right', None, None, None]
-    symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
-    # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
+    # symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
+    symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
-    dataset_type: 'hdf5_predeff'
+    dataset_type: 'hdf5'
+    task_name: 'tape'
 
 eval:
   history_bid: 10

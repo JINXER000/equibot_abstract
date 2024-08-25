@@ -9,9 +9,16 @@
 [x] feat_dict["so3"] and feat_dict["inv"] seems to be so small. Is it because of nomalizer?  --> It becomes better with more data. 
 [x] Make grasp_xyz normalizer different --> still incorrect
 [x] perform orthogonization on rotation mat
-[] find out why joint error is big in evaluation. Should we use 6 dof only? Still no use. Should we use txt joint data?
-[] Try if training joints and set grasp as rand is OK?
+[x] find out why joint error is big in evaluation. Should we use 6 dof only? Still no use. Should we use txt joint data?
 
+- recap: the rotation error is solved with more data. the joint visulaizaiton error actually comes from the bug in evaluation. 
+
+#### simple case: only 1 input pc
+[] place the cup on a shelf: equibot  ee xyz and rot relative to the cup is fixed, but it can add goal point as additional conditional input. To figure out if square, can, and tool_hang  tasks can be done. 
+[] bimanual transfer tape: the goal point cannot be specified. But I think this can be done, as the 2 eef relative position is known. 
+
+#### complex case: input 2 pcs
+observation: by input the pointcloud of random, the joint pose is not affected. So we can use unconditional score and conditional score to compose the final score. 
 
 ### representative runs
 - when using only one grasp and point cloud, the rotation error is large:

@@ -72,7 +72,15 @@ def process_batch(batch, agent):
 
     # # perform transformation
     # pc = rotate_points(pc)
-    
+
+    # ###### Below is to test if input random point cloud, the prediction of jpose is ok
+    # points_mean = np.mean(pc, axis=-2, keepdims=True)
+    # points_var = np.var(pc, axis=-2, keepdims=True)
+    # random_points = np.random.randn(pc.shape[0], pc.shape[1], pc.shape[2], pc.shape[3])
+    # random_points = random_points - np.mean(random_points, axis=-2, keepdims=True) + points_mean
+    # random_points = random_points * np.sqrt(points_var) / np.sqrt(np.var(random_points, axis=-2, keepdims=True))
+    # pc = random_points
+
     return pc, grasp_pose, joint_pose
 
 def run_eval(
@@ -114,7 +122,7 @@ def run_eval(
     return metrics
 
 
-@hydra.main(config_path="configs", config_name="fold_synthetic")
+@hydra.main(config_path="configs", config_name="transfer_tape")
 def main(cfg):
     assert cfg.mode == "eval"
     device = torch.device(cfg.device)
