@@ -1,10 +1,10 @@
 defaults:
   - base
 
-use_wandb: false
+use_wandb: true
 
 training:
-  ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt01100.pth.onesideok"
+  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt01100.pth.onesideok"
   eval_interval: 1
 
 env:
@@ -32,6 +32,8 @@ data:
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
     dataset_type: 'hdf5_predeff'
+    # dataset_type: 'hdf5'
+
 
 eval:
   history_bid: 10

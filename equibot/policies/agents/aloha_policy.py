@@ -28,6 +28,7 @@ class ALOHAPolicy(nn.Module):
         self.obs_horizon = cfg.model.obs_horizon
         self.action_horizon = cfg.model.ac_horizon
         self.symb_mask = cfg.data.dataset.symb_mask
+        self.has_eff = (cfg.data.dataset.dataset_type == 'hdf5_predeff')
 
         if hasattr(cfg.model, "num_diffusion_iters"):
             self.num_diffusion_iters = cfg.model.num_diffusion_iters
@@ -42,7 +43,10 @@ class ALOHAPolicy(nn.Module):
 
         # self.num_eef = cfg.env.num_eef
         self.dof = cfg.env.dof # 6
-        self.eef_dim = 3 # xyz, dir1, dir2
+        if self.has_eff == False:
+            self.eef_dim = 3 # xyz, dir1, dir2
+        else:
+            self.eef_dim = 6
         self.num_eef = len([x for x in self.symb_mask[:2] if x != 'None'])
         num_scalar_dims = self.dof * self.num_eef # joint pose
 
@@ -95,26 +99,56 @@ class ALOHAPolicy(nn.Module):
     
     def _convert_trans_to_vec(self, grasp_trans_arr):
         batch_size, horizon, _, _ = grasp_trans_arr.shape
-        grasp_xyz = grasp_trans_arr[:, :, :3, 3].reshape(batch_size, horizon, 1, 3)  # B, H, 3, 1
+        grasp_xyz = grasp_trans_arr[:, :, :3, 3].reshape(batch_size, horizon, 1, 3)  # B, H, 1, 3
         grasp_rot =  grasp_trans_arr[:, :, :3, :3].reshape(-1, 3, 3) # B*H, 3, 3
         rot6d = matrix_to_rotation_6d(grasp_rot) # B*H, 6
         rot_dir1 = rot6d[:, :3].reshape(batch_size, horizon, 1, 3)
         rot_dir2 = rot6d[:, 3:].reshape(batch_size, horizon, 1, 3)
 
+        if self.has_eff:
+            eff_grasp_xyz = grasp_trans_arr[:, :, 4:7, 3].reshape(batch_size, horizon, 1, 3)
+            eff_grasp_rot =  grasp_trans_arr[:, :, 4:7, :3].reshape(-1, 3, 3)
+            eff_rot6d = matrix_to_rotation_6d(eff_grasp_rot)
+            eff_rot_dir1 = eff_rot6d[:, :3].reshape(batch_size, horizon, 1, 3)
+            eff_rot_dir2 = eff_rot6d[:, 3:].reshape(batch_size, horizon, 1, 3)
+
+            # combine pred and eff tensors
+            grasp_xyz = torch.cat((grasp_xyz, eff_grasp_xyz), dim=2)
+            rot_dir1 = torch.cat((rot_dir1, eff_rot_dir1), dim=2)
+            rot_dir2 = torch.cat((rot_dir2, eff_rot_dir2), dim=2)
+
         return grasp_xyz, rot_dir1, rot_dir2
     
     def _convert_vec_to_trans(self, rot6d_batch, unnormed_grasp_xyz):
-        batch_size, horizon, _, _ = rot6d_batch.shape
-        rot6d_batch = rot6d_batch.reshape(-1, 6)
-        rotation_mat_ts = rotation_6d_to_matrix(rot6d_batch)
-        rotation_mat = rotation_mat_ts
+        batch_size, horizon, grasp_num, vec_dim = rot6d_batch.shape
+        if self.has_eff == False:
+            assert grasp_num == 1
+            rot6d_batch = rot6d_batch.reshape(-1, 6)
+            rotation_mat_ts = rotation_6d_to_matrix(rot6d_batch)
+            rotation_mat = rotation_mat_ts
 
-        trans_mat_batch = torch.zeros((rot6d_batch.shape[0], 4, 4), device=rot6d_batch.device)
-        trans_mat_batch[:, :3, :3] = rotation_mat
-        trans_mat_batch[:, :3, 3] = unnormed_grasp_xyz.reshape(-1, 3)
-        trans_mat_batch[:, 3, 3] = 1
+            trans_mat_batch = torch.zeros((batch_size * horizon, 4, 4), device=rot6d_batch.device)
+            trans_mat_batch[:, :3, :3] = rotation_mat
+            trans_mat_batch[:, :3, 3] = unnormed_grasp_xyz.reshape(-1, 3)
+            trans_mat_batch[:, 3, 3] = 1
 
-        trans_mat_batch = trans_mat_batch.reshape(batch_size, horizon, 4, 4)
+            trans_mat_batch = trans_mat_batch.reshape(batch_size, horizon, 4, 4)
+        else:
+            assert grasp_num == 2
+            unnormed_grasp_xyz_pre = unnormed_grasp_xyz[:, 0, :].reshape(-1, 3)
+            rot6d_batch_pre = rot6d_batch[:, :, 0, :].reshape(-1, 6)
+            rotation_mat_pre = rotation_6d_to_matrix(rot6d_batch_pre)
+            unnormed_grasp_xyz_eff = unnormed_grasp_xyz[:, 1, :].reshape(-1, 3)
+            rot6d_batch_eff = rot6d_batch[:, :, 1, :].reshape(-1, 6)
+            rotation_mat_eff = rotation_6d_to_matrix(rot6d_batch_eff)
+
+            trans_mat_batch = torch.zeros((batch_size * horizon, 8, 4), device=rot6d_batch.device)
+            trans_mat_batch[:, :3, :3] = rotation_mat_pre
+            trans_mat_batch[:, :3, 3] = unnormed_grasp_xyz_pre.reshape(-1, 3)
+            trans_mat_batch[:, 3, 3] = 1
+            trans_mat_batch[:, 4:7, :3] = rotation_mat_eff
+            trans_mat_batch[:, 4:7, 3] = unnormed_grasp_xyz_eff.reshape(-1, 3)
+            trans_mat_batch[:, 7, 3] = 1
 
         return trans_mat_batch
 
@@ -128,25 +162,28 @@ class ALOHAPolicy(nn.Module):
         grasp_batch = torch.mean(grasp_batch, dim=1)
         scale = torch.mean(scale, dim=1)
         center = torch.mean(center, dim=1)
-        grasp_action = grasp_batch.reshape(-1, 3, 3)
 
+        ##### grasp processing
+        if self.has_eff == False:
+            grasp_action = grasp_batch.reshape(-1, 3, 3)
+            grasp_xyz = grasp_action[:,0, :].reshape(-1, 1, 3)
+        else:
+            grasp_action = grasp_batch.reshape(-1, 6, 3)
+            grasp_xyz = grasp_action[:, :2, :].reshape(-1, 2, 3)
 
         # add back the offset
-        grasp_xyz = grasp_action[:,0, :].reshape(-1, 1, 3)
         grasp_xyz = grasp_xyz *scale + center
 
         # un-normalize
         unnormed_grasp_xyz = (
                     self.grasp_xyz_normalizer.unnormalize(grasp_xyz)
                 )
-
-        # # try for debug
-        # grasp_action = (
-        #             self.grasp_xyz_normalizer.unnormalize(grasp_action)
-        #         )
-        # # then both xyz and rot in grasp_action are normalized
         
-        rot6d_batch = grasp_action[:, 1: , :].reshape(-1, 1, 1, 6)
+        ##### rotation processing
+        if self.has_eff == False:
+            rot6d_batch = grasp_action[:, 1: , :].reshape(-1, 1, 1, 6)
+        else:
+            rot6d_batch = grasp_action[:, 2:, :].reshape(-1, 1, 2, 6)
 
         trans_batch = self._convert_vec_to_trans(rot6d_batch, unnormed_grasp_xyz)
 
@@ -255,7 +292,7 @@ class ALOHAPolicy(nn.Module):
             curr_action = tuple(new_action)
 
         # calculate mes of xyz and rot
-        trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
+        _, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
 
         gt_grasp_xyz, gt_dir1, gt_dir2 = self._convert_trans_to_vec(obs['gt_grasp'])
         gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)

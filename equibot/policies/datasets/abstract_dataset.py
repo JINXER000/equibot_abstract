@@ -46,8 +46,8 @@ class ALOHAPoseDataset(Dataset):
             self.process_txt(cfg)
         elif cfg.dataset_type == 'one_hdf5':
             self.process_one_hdf5(cfg)
-        elif cfg.dataset_type == 'hdf5_preeff':
-            self.process_50demos_preeff(cfg)
+        elif cfg.dataset_type == 'hdf5_predeff':
+            self.process_50demos_predeff(cfg)
         else:
             raise NotImplementedError('Dataset type not implemented!')
 
@@ -281,7 +281,7 @@ class ALOHAPoseDataset(Dataset):
         print('processed all hdf5 file!')
 
     # add eff grasp
-    def process_50demos_preeff(self, cfg):
+    def process_50demos_predeff(self, cfg):
         print('Processing hdf5 dataset...')
         data_list = []
         raw_files = self.raw_file_names
@@ -299,6 +299,13 @@ class ALOHAPoseDataset(Dataset):
                     tgt_size = cfg.num_points
                     sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
                     conditional_pc = conditional_pc[sampled_indices]
+                    start_offset = np.mean(conditional_pc, axis=0)
+
+                    end_pc = f['end_grasps']['obj_points'][()]
+                    sampled_indices = np.random.choice(end_pc.shape[0], tgt_size, replace=False)
+                    end_pc = end_pc[sampled_indices]
+                    end_offset = np.mean(end_pc, axis=0)
+                    offset_diff = start_offset - end_offset
 
                     pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
                     eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
@@ -325,10 +332,15 @@ class ALOHAPoseDataset(Dataset):
                         pred_grasp_id = np.random.randint(0, len(pred_grasp_poses)-1)
                         pred_grasp_tensor = torch.tensor(pred_grasp_poses[pred_grasp_id]).to(torch.float32).reshape(1, 4, 4)
                         eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
-                        eff_grasp_tensor = torch.tensor(eff_grasp_poses[eff_grasp_id]).to(torch.float32).reshape(1, 4, 4)
+
+                        #### substract the offset using center of the object
+                        eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
+                        eff_grasp[:3, 3] += offset_diff
+                        
+                        eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
+                        grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
                         data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
-                                'pred_grasp_pose':pred_grasp_tensor,
-                                'eff_grasp_pose':eff_grasp_tensor}
+                                'grasp_pose':grasp_tensor}
                         data_list.append(data)
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
