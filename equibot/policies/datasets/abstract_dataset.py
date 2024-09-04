@@ -29,10 +29,12 @@ class ALOHAPoseDataset(Dataset):
         self.composed_inference = False
 
         
-        # Process the data
-        self.process_select(cfg)
-        # if not os.path.exists(self.processed_file_path):
-        #     self.process_select(cfg)
+        # # Process the data
+        # self.process_select(cfg)
+
+        if not os.path.exists(self.processed_file_path):
+            print('NOTE: dataset already processed!')
+            self.process_select(cfg)
         
         # Load processed data
         self.data, self.slices = torch.load(self.processed_file_path)
@@ -334,6 +336,7 @@ class ALOHAPoseDataset(Dataset):
                         eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
 
                         #### substract the offset using center of the object
+                        #### TODO: use ICP to estimate the offset
                         eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
                         eff_grasp[:3, 3] += offset_diff
                         
@@ -394,7 +397,7 @@ def main(cfg):
         tmp_pc = batch['pc'][0].reshape(-1, 3).numpy()
         for i in range(batch['joint_pose'].shape[0]):
             jpose = batch['joint_pose'][i].reshape(-1).numpy()
-            grasp_pose = batch['grasp_pose'][i].reshape(4,4).numpy()
+            grasp_pose = batch['grasp_pose'][i].reshape(-1,4).numpy()
             action_slice = (grasp_pose, jpose)
             # action_slice = (None, jpose)
             history_list.append(action_slice)

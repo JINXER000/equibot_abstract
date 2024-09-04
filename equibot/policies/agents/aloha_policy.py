@@ -178,7 +178,7 @@ class ALOHAPolicy(nn.Module):
                     self.grasp_xyz_normalizer.unnormalize(grasp_xyz)
                 )
         
-        ##### rotation processing : is rotation right?????
+        ##### rotation processing 
         if self.has_eff == False:
             rot6d_batch = grasp_batch[:, :, 1: , :].reshape(-1, 1, 1, 6)
         else:
@@ -189,6 +189,8 @@ class ALOHAPolicy(nn.Module):
             assert rot6d_batch.shape[-1] == 6
 
         trans_batch = self._convert_vec_to_trans(rot6d_batch, unnormed_grasp_xyz)
+
+        trans_batch = trans_batch.detach().cpu().numpy()
 
         return trans_batch, unnormed_grasp_xyz, rot6d_batch
 
@@ -209,6 +211,8 @@ class ALOHAPolicy(nn.Module):
 
     def forward(self, obs, history_bid = -1):
         pc = obs["pc"]
+        # for real-robot, the pc is in world frame
+        pc_raw_mean = pc.mean(dim=2, keepdim=True).reshape(-1, 3).detach().cpu().numpy()
         pc = pc.repeat(1, self.obs_horizon, 1, 1)
         pc = self.pc_normalizer.normalize(pc)
         
@@ -275,7 +279,7 @@ class ALOHAPolicy(nn.Module):
             if history_bid >=0:
                 trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
                 assert trans_batch.shape[3] == 4
-                trans_mat = trans_batch[history_bid].detach().cpu().numpy()
+                trans_mat = trans_batch[history_bid]
                 trans_mat = np.mean(trans_mat, axis=0)
                 if noise_pred[1] is not None:
                     unnormed_joint = self.recover_jpose(new_action[1])
@@ -295,32 +299,56 @@ class ALOHAPolicy(nn.Module):
             # record the denoised action
             curr_action = tuple(new_action)
 
-        # calculate mes of xyz and rot
-        _, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
+        trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
 
-        gt_grasp_xyz, gt_dir1, gt_dir2 = self._convert_trans_to_vec(obs['gt_grasp'])
-        gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
-        gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
-        gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1)
+        metrics = {}
+        if obs['gt_grasp'] is not None:
+            # calculate mes of xyz and rotation
 
-        xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
-        rot_mse = torch.nn.functional.mse_loss(rot6d_batch.reshape(gt_grasp_rot6d.shape), gt_grasp_rot6d)
+            gt_grasp_xyz, gt_dir1, gt_dir2 = self._convert_trans_to_vec(obs['gt_grasp'])
+            gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
+            gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
+            gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1)
 
-        metrics = {'grasp_xyz_error': xyz_mse, 
-                   'grasp_rotation_error': rot_mse}
+            xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
+            rot_mse = torch.nn.functional.mse_loss(rot6d_batch.reshape(gt_grasp_rot6d.shape), gt_grasp_rot6d)
 
-        # calculate joint error
+            metrics = {'grasp_xyz_error': xyz_mse, 
+                    'grasp_rotation_error': rot_mse}
+
+        
         if new_action[1] is not None:
             unnormed_joint = self.recover_jpose(new_action[1])
-            gt_joint = obs['joint_pose']
-            unnormed_joint = torch.tensor(unnormed_joint, device=self.device)
-            joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
-            metrics['joint_error'] = joint_mse
+
+            if obs['joint_pose'] is not None:
+                # calculate joint error
+                gt_joint = obs['joint_pose']
+                unnormed_joint = torch.tensor(unnormed_joint, device=self.device)
+                joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
+                metrics['joint_error'] = joint_mse
         
         if history_bid >= 0:
             # print the grasp xyz
             print(f"Grasp xyz: {unnormed_grasp_xyz[history_bid, 0]}")
-        return  denoise_history, metrics
+
+        if len(metrics.values()) > 0:
+            return  denoise_history, metrics
+        
+        else:
+            assert batch_size == 1
+
+            # # transform grasp pose from world frame to object frame
+            # # center = torch.mean(center, dim=1).reshape(-1, 3).detach().cpu().numpy()
+            # trans_batch[:, :, :3, 3] = trans_batch[:, :, :3, 3] - pc_raw_mean
+            # trans_batch[:, :, 4:7, 3] = trans_batch[:, :, 4:7, 3] - pc_raw_mean
+
+            # output final grasps and jposes
+            action_dict = {}
+            action_dict['grasp'] = trans_batch.reshape(-1, 4)
+            if new_action[1] is not None:
+                action_dict['jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
+
+            return denoise_history, action_dict
     
     def conclude_masks(self):
         has_grasp = False
