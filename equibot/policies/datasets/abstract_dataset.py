@@ -7,11 +7,11 @@ from collections import namedtuple
 from equibot.policies.utils.constants import qpos_to_eepose
 
 import hydra
-import sys
-sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
+# import sys
+# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+# from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
 
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
@@ -374,9 +374,9 @@ class ALOHAPoseDataset(Dataset):
 
         return sample
 
-@hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+@hydra.main(config_path="/home/chenyizhou/imitation_learning/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     batch_size = 32
