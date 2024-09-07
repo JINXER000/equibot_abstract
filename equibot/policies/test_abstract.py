@@ -83,6 +83,8 @@ def process_batch(batch, agent):
 
     return pc, grasp_pose, joint_pose
 
+
+
 def run_eval(
     agent,
     vis=False,
@@ -90,6 +92,7 @@ def run_eval(
     use_wandb=False,
     batch = None,
     history_bid = 0,
+    has_eff = False
 ):
     
 
@@ -116,7 +119,8 @@ def run_eval(
             os.makedirs(history_pic_dir)
         render_pose(unnormed_history, use_gui=True, \
                     directory = history_pic_dir, save_pic_every = 10,
-                    obj_points = points_batch[history_bid,0])
+                    obj_points = points_batch[history_bid,0],
+                    has_eff = has_eff)
 
 
     return metrics
@@ -187,6 +191,7 @@ def main(cfg):
             log_dir=log_dir,
             batch = fist_batch,
             history_bid = cfg.eval.history_bid,
+            has_eff = (cfg.data.dataset.dataset_type == 'hdf5_predeff')
         )
     #     # print metrics
     #     print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
