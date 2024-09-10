@@ -84,7 +84,7 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
     eval_dataset = DualAbsDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(

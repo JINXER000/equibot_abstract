@@ -10,6 +10,7 @@ import hydra
 import sys
 sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
 sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
 from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
 
@@ -29,12 +30,12 @@ class ALOHAPoseDataset(Dataset):
         self.composed_inference = False
 
         
-        # # Process the data
-        # self.process_select(cfg)
+        # Process the data
+        self.process_select(cfg)
 
-        if not os.path.exists(self.processed_file_path):
-            print('NOTE: dataset already processed!')
-            self.process_select(cfg)
+        # if not os.path.exists(self.processed_file_path):
+        #     print('NOTE: dataset already processed!')
+        #     self.process_select(cfg)
         
         # Load processed data
         self.data, self.slices = torch.load(self.processed_file_path)
@@ -377,9 +378,9 @@ class ALOHAPoseDataset(Dataset):
 
         return sample
 
-@hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+@hydra.main(config_path="/home/xuhang/Desktop/yzchen_ws/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     batch_size = 32

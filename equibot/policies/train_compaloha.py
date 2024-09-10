@@ -17,7 +17,7 @@ from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 from test_compaloha import run_eval
 # from torch.utils.tensorboard import SummaryWriter
 
-@hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="dual_transfer_tape")
+@hydra.main(config_path="/home/xuhang/Desktop/yzchen_ws/equibot_abstract/equibot/policies/configs", config_name="dual_transfer_tape")
 def main(cfg):
     assert cfg.mode == "train"
     np.random.seed(cfg.seed)

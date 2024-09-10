@@ -131,14 +131,14 @@ in my case, I can use the command below for training:
 ```
 python -m equibot.policies.train --config-name fold_mobile_equibot \
     prefix=sim_mobile_fold_7dof_equibot \
-    data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/fold/pcs/
+    data.dataset.path=/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/fold/pcs/
 ```
 
 ```
 cd equibot/policies/
 python train_abstract.py --config-name transfer_tape \
     prefix=aloha_transfer_tape \
-    data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/
+    data.dataset.path=/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/
 ```
 
 
