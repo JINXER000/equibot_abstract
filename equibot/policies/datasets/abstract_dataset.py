@@ -29,12 +29,12 @@ class ALOHAPoseDataset(Dataset):
         self.composed_inference = False
 
         
-        # # Process the data
-        # self.process_select(cfg)
+        # Process the data
+        self.process_select(cfg)
 
-        if not os.path.exists(self.processed_file_path):
-            print('NOTE: dataset already processed!')
-            self.process_select(cfg)
+        # if not os.path.exists(self.processed_file_path):
+        #     print('NOTE: dataset already processed!')
+        #     self.process_select(cfg)
         
         # Load processed data
         self.data, self.slices = torch.load(self.processed_file_path)

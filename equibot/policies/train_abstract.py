@@ -141,6 +141,7 @@ def main(cfg):
                 ]:
                     os.remove(fn)
             agent.save_snapshot(save_path)
+            # print(f"Saved checkpoint to {save_path}")
 
     # agent.actor.writer.close()
 

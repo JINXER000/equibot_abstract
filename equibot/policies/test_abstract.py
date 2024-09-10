@@ -111,7 +111,7 @@ def run_eval(
     # predict actions
     st = time.time()
     unnormed_history, metrics = agent.act(agent_obs, history_bid=history_bid)
-    print(f"Inference time: {time.time() - st:.3f}s")
+    # print(f"Inference time: {time.time() - st:.3f}s")
 
     if vis and history_bid >=0:
         history_pic_dir = os.path.join(log_dir, "history_pics")
