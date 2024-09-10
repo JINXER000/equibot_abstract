@@ -1,10 +1,10 @@
 defaults:
   - base
 
-use_wandb: true
+use_wandb: false
 
 training:
-  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
+  ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
   eval_interval: 1
 
 env:
