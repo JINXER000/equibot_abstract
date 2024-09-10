@@ -29,12 +29,12 @@ class ALOHAPoseDataset(Dataset):
         self.composed_inference = False
 
         
-        # # Process the data
-        # self.process_select(cfg)
+        # Process the data
+        self.process_select(cfg)
 
-        if not os.path.exists(self.processed_file_path):
-            print('NOTE: dataset already processed!')
-            self.process_select(cfg)
+        # if not os.path.exists(self.processed_file_path):
+        #     print('NOTE: dataset already processed!')
+        #     self.process_select(cfg)
         
         # Load processed data
         self.data, self.slices = torch.load(self.processed_file_path)
@@ -297,17 +297,18 @@ class ALOHAPoseDataset(Dataset):
                 import h5py
                 with h5py.File(hdf5_path, 'r') as f:
 
-                    conditional_pc = f['start_grasps']['obj_points'][()]
+                    start_pc = f['start_grasps']['obj_points'][()]
                     tgt_size = cfg.num_points
-                    sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
-                    conditional_pc = conditional_pc[sampled_indices]
-                    start_offset = np.mean(conditional_pc, axis=0)
+                    sampled_indices = np.random.choice(start_pc.shape[0], tgt_size, replace=False)
+                    start_pc = start_pc[sampled_indices]
+                    start_offset = np.min(start_pc, axis=0)
+                    conditional_pc = start_pc - start_offset
 
                     end_pc = f['end_grasps']['obj_points'][()]
                     sampled_indices = np.random.choice(end_pc.shape[0], tgt_size, replace=False)
                     end_pc = end_pc[sampled_indices]
-                    end_offset = np.mean(end_pc, axis=0)
-                    offset_diff = start_offset - end_offset
+                    end_offset = np.min(end_pc, axis=0)
+                    # offset_diff = start_offset - end_offset
 
                     pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
                     eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
@@ -332,15 +333,17 @@ class ALOHAPoseDataset(Dataset):
 
                         pc_tensor = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
                         pred_grasp_id = np.random.randint(0, len(pred_grasp_poses)-1)
-                        pred_grasp_tensor = torch.tensor(pred_grasp_poses[pred_grasp_id]).to(torch.float32).reshape(1, 4, 4)
-                        eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
-
-                        #### substract the offset using center of the object
-                        #### TODO: use ICP to estimate the offset
-                        eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
-                        eff_grasp[:3, 3] += offset_diff
+                        pred_grasp = pred_grasp_poses[pred_grasp_id].copy()
+                        pred_grasp[:3, 3] -= start_offset
+                        pred_grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
                         
+                        eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
+                        #### substract the offset using center of the object
+                        #### TODO: use ICP to estimate the rotation of the offset
+                        eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
+                        eff_grasp[:3, 3] -= end_offset
                         eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
+
                         grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
                         data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
                                 'grasp_pose':grasp_tensor}
