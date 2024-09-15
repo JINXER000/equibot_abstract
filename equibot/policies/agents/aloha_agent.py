@@ -224,7 +224,10 @@ class ALOHAAgent(object):
 
         self.actor.step_ema()
 
-        metrics = {"loss": loss,
+        lr = self.lr_scheduler.get_last_lr()[0]
+        log_loss = np.log(loss.detach().cpu().numpy())
+        metrics = {"log_loss": log_loss,
+                     "lr": lr,
                    "cond_obsv": np.linalg.norm(
                        obs_cond_vec.detach().cpu().numpy(), axis=1
                    ).mean(),
