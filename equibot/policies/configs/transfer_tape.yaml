@@ -4,7 +4,7 @@ defaults:
 use_wandb: false
 
 training:
-  ckpt: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
+  # ckpt: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
   eval_interval: 1
 
 env:
@@ -31,8 +31,8 @@ data:
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
-    dataset_type: 'hdf5_predeff'
-    # dataset_type: 'hdf5'
+    # dataset_type: 'hdf5_predeff'
+    dataset_type: 'sam_predeff'
 
 
 eval:

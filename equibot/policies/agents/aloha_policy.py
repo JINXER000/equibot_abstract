@@ -28,7 +28,7 @@ class ALOHAPolicy(nn.Module):
         self.obs_horizon = cfg.model.obs_horizon
         self.action_horizon = cfg.model.ac_horizon
         self.symb_mask = cfg.data.dataset.symb_mask
-        self.has_eff = (cfg.data.dataset.dataset_type == 'hdf5_predeff')
+        self.has_eff = ('predeff' in cfg.data.dataset.dataset_type)
 
         if hasattr(cfg.model, "num_diffusion_iters"):
             self.num_diffusion_iters = cfg.model.num_diffusion_iters
