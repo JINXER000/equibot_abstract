@@ -111,7 +111,7 @@ def isolated_main():
 
 ######### use o3d point cloud as test input
     import open3d as o3d
-    pcd = o3d.io.read_point_cloud("/home/user/yzchen_ws/docker_share_folder/bags/diffgen_debug.ply")
+    pcd = o3d.io.read_point_cloud("debugdiffgen.ply")
     input_pc = np.asarray(pcd.points)
 
 
