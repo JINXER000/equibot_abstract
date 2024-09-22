@@ -4,7 +4,7 @@ defaults:
 use_wandb: false
 
 training:
-  # ckpt: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
+  ckpt: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth.20"
   eval_interval: 1
 
 env:

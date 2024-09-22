@@ -17,6 +17,12 @@ from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
+def save_dbg_pc(pc):
+    import open3d as o3d
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pc)
+    o3d.io.write_point_cloud('debug_pc.ply', pcd)
+
 class ALOHAPoseDataset(Dataset):
     def __init__(self, cfg, mode, transform=None, pre_transform=None, pre_filter=None):
         super().__init__()
@@ -218,6 +224,7 @@ class ALOHAPoseDataset(Dataset):
 
                     joint_data = f['pred_joint_vals'][()]
                     stage = 'precondition'
+                    selected_joint_data = []
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]
                         right_jpose = joint_data[i][7:13]
@@ -234,29 +241,41 @@ class ALOHAPoseDataset(Dataset):
                         else: # num_eef ==2
                             joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
 
-                        ##  pc and grasp in precondition are with the same index
-                        random_pred_id = np.random.randint(0, pred_grasp_num)
-                        pred_pc = pred_pcs[random_pred_id].copy()
+                        selected_joint_data.append(joint_pose)
+
+                    for pred_grasp_id in range(pred_grasp_num):
+                        pred_pc = pred_pcs[pred_grasp_id].copy()
                         pred_offset = np.min(pred_pc, axis=0)
                         conditional_pc = pred_pc - pred_offset
                         pc_tensor = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
-                        pred_grasp = pred_grasp_poses[random_pred_id].copy()
+
+                        pred_grasp = pred_grasp_poses[pred_grasp_id].copy()
                         pred_grasp[:3, 3] -= pred_offset
                         pred_grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
 
-                        ## in eff, only 1 pc, and multiple grasps
+                        ### debug
+                        if pred_grasp[2, 3] > 0.13:
+                            save_dbg_pc(pred_pc)
+                            print('debug here')
+
                         eff_grasp_id = np.random.randint(0, eff_grasp_num)
                         #### substract the offset using center of the object
-                        #### TODO: use ICP to estimate the rotation of the offset
                         eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
                         eff_grasp[:3, 3] -= end_offset
                         eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
 
                         grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
+
+                        joint_id = np.random.randint(0, len(selected_joint_data))
+                        joint_pose = selected_joint_data[joint_id]
+
                         data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
                                 'grasp_pose':grasp_tensor}
                         data_list.append(data)
 
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print('processed all hdf5 file!')
     # add eff grasp
     def process_50demos_predeff(self, cfg):
         print('Processing hdf5 dataset...')

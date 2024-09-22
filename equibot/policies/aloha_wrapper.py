@@ -4,11 +4,10 @@ import torch
 import hydra
 import numpy as np
 
-
-sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha/')
-from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
+
+
 
 # from torch.utils.tensorboard import SummaryWriter
 
@@ -63,6 +62,9 @@ class pddl_wrapper(object):
             if require_preprocess:
                 history = [(postprocess_xyz(action_slice[0], pc_min), action_slice[1]) for action_slice in history]
 
+            sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha/')
+            from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+
             render_pose(history, use_gui=True, \
                         directory = history_pic_dir, save_pic_every = 10,
                         obj_points = points_vis,
@@ -92,28 +94,28 @@ def isolated_main():
 
     np.random.seed(cfg.seed)
 
-# ######### use dataset as test input
-#     # get eval datase
-#     cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
-#     eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
-#     num_workers = cfg.data.dataset.num_workers
-#     test_loader = torch.utils.data.DataLoader(
-#         eval_dataset,
-#         batch_size=1,
-#         num_workers=num_workers,
-#         shuffle=True,
-#         drop_last=True,
-#         pin_memory=True,
-#     )
+# # ######### use dataset as test input
+# #     # get eval datase
+# #     cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
+# #     eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
+# #     num_workers = cfg.data.dataset.num_workers
+# #     test_loader = torch.utils.data.DataLoader(
+# #         eval_dataset,
+# #         batch_size=1,
+# #         num_workers=num_workers,
+# #         shuffle=True,
+# #         drop_last=True,
+# #         pin_memory=True,
+# #     )
 
-#     data_iter = iter(test_loader)
-#     fist_batch = next(data_iter)
-#     input_pc = fist_batch['pc'][0].cpu().numpy()
-#     require_preprocess = False
+# #     data_iter = iter(test_loader)
+# #     fist_batch = next(data_iter)
+# #     input_pc = fist_batch['pc'][0].cpu().numpy()
+# #     require_preprocess = False
 
 ######### use o3d point cloud as test input
     import open3d as o3d
-    pcd = o3d.io.read_point_cloud("debugdiffgen.ply")
+    pcd = o3d.io.read_point_cloud("leaky.ply")
     input_pc = np.asarray(pcd.points)
     require_preprocess = True
 
