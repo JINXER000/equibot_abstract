@@ -4,3 +4,5 @@ data/
 .DS_Store
 *.egg-info
 .vscode
+history_pics
+temp

@@ -10,6 +10,7 @@
 [x] Make grasp_xyz normalizer different --> still incorrect
 [x] perform orthogonization on rotation mat
 [x] find out why joint error is big in evaluation. Should we use 6 dof only? Still no use. Should we use txt joint data?
+[] restructure the code: standardize the preprocess of pc; clean the import and yaml
 
 - recap: the rotation error is solved with more data. the joint visulaizaiton error actually comes from the bug in evaluation. 
 
