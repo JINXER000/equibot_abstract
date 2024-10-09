@@ -19,7 +19,8 @@
 [] bimanual transfer tape: the goal point cannot be specified. But I think this can be done, as the 2 eef relative position is known. 
 
 #### complex case: input 2 pcs
-observation: by input the pointcloud of random, the joint pose is not affected. So we can use unconditional score and conditional score to compose the final score. 
+1. observation: by input the pointcloud of random, the joint pose is not affected. So we can use unconditional score and conditional score to compose the final score. 
+2. As Ho is 2, we can input pc (O) of size 32, 2, 512, 3. As the Hp is 16, we can output (A) predgrasp 32, 16, 3, 3 or effgrasp 32, 16, 6, 3. The conditional distribution is SO(3) equivariant, as p(A|O) = p(RA | RO). 
 
 ### representative runs
 - when using only one grasp and point cloud, the rotation error is large:
@@ -132,14 +133,14 @@ in my case, I can use the command below for training:
 ```
 python -m equibot.policies.train --config-name fold_mobile_equibot \
     prefix=sim_mobile_fold_7dof_equibot \
-    data.dataset.path=/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/fold/pcs/
+    data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/fold/pcs/
 ```
 
 ```
 cd equibot/policies/
 python train_abstract.py --config-name transfer_tape \
     prefix=aloha_transfer_tape \
-    data.dataset.path=/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/
+    data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/
 ```
 
 
@@ -176,6 +177,17 @@ python -m equibot.policies.eval --config-name fold_mobile_equibot \
     env.args.randomize_rotation=true env.args.randomize_scale=true \
     +env.args.randomize_position=true +env.args.rand_pos_scale=0.5 env.vectorize=true
 ```
+
+In my 3090:
+```
+python -m equibot.policies.eval --config-name fold_mobile_equibot \
+    prefix="eval_rsnp_sim_mobile_fold_7dof_equibot_s1" mode=eval \
+    training.ckpt="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/sim_mobile_fold_7dof_equibot/ckpt01999.pth" \
+    env.args.scale_high=2 env.args.scale_aspect_limit=1.33 \
+    env.args.randomize_rotation=true env.args.randomize_scale=true env.args.use_wandb=false\
+    +env.args.randomize_position=true +env.args.rand_pos_scale=0.5 env.vectorize=true 
+```
+
 
 ## License
 

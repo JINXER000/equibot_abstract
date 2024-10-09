@@ -101,7 +101,7 @@ def run_eval(
         points_batch, gt_grasp_9d, joint_pose = process_batch(batch, agent)
     else:
         # # input dummy obs
-        ply_path = "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
+        ply_path = "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
         points = ply2points(ply_path)
         points_batch = points.reshape(1, 1, -1, 3)  # batch size, Ho, N, 3
 
@@ -146,7 +146,7 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
     eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(

@@ -41,6 +41,9 @@ def get_env_class(env_name):
     elif env_name == "close":
         from equibot.envs.sim_mobile.closing_env import ClosingEnv
         return ClosingEnv
+    elif env_name == "insert":
+        from equibot.envs.sim_mobile.insertion_env_todo import InsertionEnv
+        return InsertionEnv
     else:
         raise ValueError()
 

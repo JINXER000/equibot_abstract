@@ -116,9 +116,21 @@ class ALOHAAgent(object):
         pc = batch["pc"]
         joint_data  = batch["joint_pose"]
         grasp_pose = batch["grasp_pose"]
-        pc = pc.repeat(1, self.obs_horizon, 1, 1)
+
+        ## see the 2nd channel, corresponds to different grasp
+        obj_num = pc.shape[1]
+        if obj_num ==1:
+            pc = pc.repeat(1, self.obs_horizon, 1, 1)
+            grasp_pose = grasp_pose.repeat(1, self.pred_horizon, 1, 1)
+        elif obj_num == 2:
+            grasp_pose = grasp_pose.repeat(1, self.pred_horizon/2, 1, 1)
+        else:
+            raise NotImplementedError(f'obj_num {obj_num} not supported') 
+
+        
         joint_data = joint_data.repeat(1, self.pred_horizon, 1, 1)
-        grasp_pose = grasp_pose.repeat(1, self.pred_horizon, 1, 1)
+        
+
 
         if self.pc_scale is None:
             self._init_normalizers(batch)

@@ -230,7 +230,7 @@ class ALOHAPolicy(nn.Module):
         # scale = scale[:, 0, :, :]
 
         pc_feat = feat_dict["so3"]  
-        obs_cond_vec = pc_feat.reshape(batch_size, -1, 3)
+        obs_cond_vec = pc_feat.reshape(batch_size, -1, 3)  # B, Ho, 3
 
 
 
@@ -251,7 +251,7 @@ class ALOHAPolicy(nn.Module):
                 * initial_noise_scale,
             )
 
-        curr_action = noisy_action
+        curr_action = noisy_action  ## B, Hp, 6, 3
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
 
         denoise_history = []

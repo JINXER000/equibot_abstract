@@ -4,11 +4,11 @@ defaults:
 use_wandb: false
 
 training:
-  ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
+  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
   eval_interval: 1
 
 env:
-  env_class: 'tape'
+  env_class: 'mj_peg_hole'
   num_eef: 2
   dof: 6
   max_episode_length: 50
@@ -25,14 +25,14 @@ model:
       num_layers: 4
 data:
   dataset:
-    num_points: 512
+    num_points: 256
     # symb_mask: ['qpose_left', 'qpose_right', None, None, None]
-    symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
+    symb_mask: ['qpose_left', 'qpose_right', 'grasp_left', 'grasp_right', None]
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
     # dataset_type: 'hdf5_predeff'
-    dataset_type: 'sam_predeff'
+    dataset_type: 'mj_insertion_pred'
 
 
 eval:

@@ -52,7 +52,7 @@ class pddl_wrapper(object):
 
         if history_bid >=0:
             log_dir = os.getcwd()
-            # log_dir = '/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/eval/aloha_transfer_tape'
+            # log_dir = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/eval/aloha_transfer_tape'
             history_pic_dir = os.path.join(log_dir, "history_pics")
             if not os.path.exists(history_pic_dir):
                 os.makedirs(history_pic_dir)
@@ -96,7 +96,7 @@ def isolated_main():
 
 # # ######### use dataset as test input
 # #     # get eval datase
-# #     cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
+# #     cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
 # #     eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
 # #     num_workers = cfg.data.dataset.num_workers
 # #     test_loader = torch.utils.data.DataLoader(
@@ -115,7 +115,7 @@ def isolated_main():
 
 ######### use o3d point cloud as test input
     import open3d as o3d
-    pcd = o3d.io.read_point_cloud("leaky.ply")
+    pcd = o3d.io.read_point_cloud("debugdiffgen.ply")
     input_pc = np.asarray(pcd.points)
     require_preprocess = True
 
