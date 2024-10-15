@@ -42,26 +42,26 @@ def run_eval(
     history_bid = 0,
 ):
 
-    ## input obs from dataset
-    agent_obs = get_obs(batch)
+    # ## input obs from dataset
+    # agent_obs = get_obs(batch)
 
     # predict actions
     st = time.time()
-    unnormed_history, metrics = agent.act(agent_obs, history_bid=history_bid)
-    print(f"Inference time: {time.time() - st:.3f}s")
+    unnormed_history, metrics = agent.act(batch, history_bid=history_bid)
+    # print(f"Inference time: {time.time() - st:.3f}s")
 
     if vis and history_bid >=0:
         history_pic_dir = os.path.join(log_dir, "history_pics")
         if not os.path.exists(history_pic_dir):
             os.makedirs(history_pic_dir)
 
-        points_batch = agent_obs['right_pc']
+        points_batch = batch['right_pc']
         render_pose(unnormed_history, use_gui=True, \
                     directory = history_pic_dir, save_pic_every = 10,
                     obj_points = points_batch[history_bid,0])
 
 
-    return metrics
+    return unnormed_history, metrics
 
 
 @hydra.main(config_path="configs", config_name="dual_transfer_tape")
@@ -84,7 +84,7 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
     eval_dataset = DualAbsDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(
@@ -120,13 +120,14 @@ def main(cfg):
 
         log_dir = os.getcwd()
 
-        eval_metrics = run_eval(
+        unnormed_history, eval_metrics = run_eval(
             agent,
             vis=True,
             log_dir=log_dir,
             batch = fist_batch,
             history_bid = cfg.eval.history_bid,
         )
+
 
 
 

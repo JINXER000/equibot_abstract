@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from collections import namedtuple
@@ -35,9 +36,12 @@ class ALOHAPoseDataset(Dataset):
         self.pre_filter = pre_filter
         self.composed_inference = False
 
-        
-        # Process the data
-        self.process_select(cfg)
+        if mode == 'train':
+            # Process the data
+            print('Processing dataset...')
+            self.process_select(cfg)
+        else:
+            print('Loading dataset...')
 
         # if not os.path.exists(self.processed_file_path):
         #     print('NOTE: dataset already processed!')
@@ -46,7 +50,22 @@ class ALOHAPoseDataset(Dataset):
         # Load processed data
         self.data, self.slices = torch.load(self.processed_file_path)
 
+    @property
+    def raw_file_names(self):
+        return os.listdir(os.path.join(self.root, 'raw'))
+
+    @property
+    def processed_file_path(self):
+        return os.path.join(self.root, 'processed', 'data.pt')
+
+
     def process_select(self, cfg):
+
+        # self.norm_stat_dict = nn.ParameterDict({
+        #     'joint_pose': None,
+        #     'pc': None,
+        #     'grasp_pose': None,
+        # })
         if cfg.dataset_type == 'sam_predeff':
             self.process_sam_predeff(cfg)
         elif cfg.dataset_type == 'npz':
@@ -55,19 +74,10 @@ class ALOHAPoseDataset(Dataset):
             self.process_txt(cfg)
         elif cfg.dataset_type == 'hdf5_predeff':
             self.process_50demos_predeff(cfg)
-        elif cfg.dataset_type == 'mj_insertion_pred':
-            self.process_mj_insertion_pred(cfg)
         else:
             raise NotImplementedError('Dataset type not implemented!')
 
-
-    @property
-    def raw_file_names(self):
-        return os.listdir(os.path.join(self.root, 'raw'))
-
-    @property
-    def processed_file_path(self):
-        return os.path.join(self.root, 'processed', 'data.pt')
+        
 
     def process_txt(self, cfg):
         print('Processing dataset...')
@@ -342,84 +352,6 @@ class ALOHAPoseDataset(Dataset):
                         eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
 
                         grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
-                        data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
-                                'grasp_pose':grasp_tensor}
-                        data_list.append(data)
-
-        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
-        torch.save((data_list, None), self.processed_file_path)
-        print('processed all hdf5 file!')
-
-    ## TODO: need to postprocess to get the grasp pose
-    def process_mj_insertion_pred(self, cfg):
-        print('Processing mj hdf5 dataset...')
-        data_list = []
-        raw_files = self.raw_file_names
-
-        conditional_pc = None
-        for file_id in range(len(raw_files)):
-            file_name = raw_files[file_id]
-            
-            if 'hdf5' in  file_name:
-                hdf5_path = os.path.join(self.root, 'raw', file_name)
-                import h5py
-                with h5py.File(hdf5_path, 'r') as f:
-
-                    socket_pc = f['socket_grasps']['obj_points'][()]
-                    assert socket_pc.shape[0] == cfg.num_points
-                    # sampled_indices = np.random.choice(socket_pc.shape[0], tgt_size, replace=False)
-                    # socket_pc = socket_pc[sampled_indices]
-                    socket_offset = np.min(socket_pc, axis=0)
-                    # socket_pc_tensor = torch.tensor(socket_pc - socket_offset).unsqueeze(0).to(torch.float32)
-
-                    peg_pc = f['peg_grasps']['obj_points'][()]
-                    assert peg_pc.shape[0] == cfg.num_points
-                    # sampled_indices = np.random.choice(peg_pc.shape[0], tgt_size, replace=False)
-                    # peg_pc = peg_pc[sampled_indices]
-                    peg_offset = np.min(peg_pc, axis=0)
-                    # peg_pc_tensor = torch.tensor(peg_pc - peg_offset).unsqueeze(0).to(torch.float32)
-
-                    conditional_pc = np.array([socket_pc, peg_pc])
-                    pc_tensor = torch.tensor(conditional_pc).to(torch.float32).reshape(2, cfg.num_points, 3)
-
-                    ### process grasp and joint pose
-
-                    socket_grasp_poses = f['socket_grasps']['grasp_poses'][()]
-                    peg_grasp_poses = f['peg_grasps']['grasp_poses'][()]
-
-                    joint_data = f['pred_joint_vals'][()]
-                    stage = 'precondition'
-                    for i in range(len(joint_data)):
-                        left_jpose = joint_data[i][:6]
-                        right_jpose = joint_data[i][7:13]
-
-                        # only include jpose before OR after the action
-                        stage = self.which_stage(stage, left_jpose, right_jpose)
-                        if stage != cfg.tamp_type:
-                            continue
-
-                        if self.symb_mask[0] == 'None':
-                            joint_pose = right_jpose.reshape(1, 1, 6)
-                        elif self.symb_mask[1] == 'None':
-                            joint_pose = left_jpose.reshape(1, 1, 6)
-                        else: # num_eef ==2
-                            joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
-
-                        
-                        socket_grasp_id = np.random.randint(0, len(socket_grasp_poses)-1)
-                        socket_grasp = socket_grasp_poses[socket_grasp_id].copy()
-                        socket_grasp[:3, 3] -= socket_offset
-                        # socket_grasp_tensor = torch.tensor(socket_grasp).to(torch.float32).reshape(1, 4, 4)
-                        
-                        peg_grasp_id = np.random.randint(0, len(peg_grasp_poses)-1)
-                        peg_grasp = peg_grasp_poses[peg_grasp_id].copy()
-                        peg_grasp[:3, 3] -= peg_offset
-                        # peg_grasp_tensor = torch.tensor(peg_grasp).to(torch.float32).reshape(1, 4, 4)
-
-                        dual_grasp_arr = np.array([socket_grasp, peg_grasp])
-                        grasp_tensor = torch.tensor(dual_grasp_arr).to(torch.float32).reshape(2, 4, 4)
-
-                        # grasp_tensor = torch.cat((socket_grasp_tensor, peg_grasp_tensor), dim=1) # 1, 8, 4
                         data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
                                 'grasp_pose':grasp_tensor}
                         data_list.append(data)

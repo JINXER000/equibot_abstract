@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from equibot.policies.utils.norm import Normalizer
-from equibot.policies.utils.misc import to_torch
+from equibot.policies.utils.misc import to_torch, convert_trans_to_vec
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 
 from equibot.policies.agents.aloha_policy import ALOHAPolicy
@@ -47,6 +47,10 @@ class ALOHAAgent(object):
     def _init_actor(self):
         self.actor = ALOHAPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
         self.actor.ema.averaged_model.to(self.cfg.device)
+
+
+
+
 
     # NOTE: this initialization only on the 1st batch data
     def _init_normalizers(self, batch):
@@ -145,7 +149,7 @@ class ALOHAAgent(object):
         scale = feat_dict["scale"].reshape(batch_size, self.obs_horizon, 1, 1)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
         
         # proc grasp pose. first split flattened pose to xyz and dir, then normalize xyz. 
-        grasp_xyz_raw, grasp_dir1, grasp_dir2 = self.actor._convert_trans_to_vec(grasp_pose)
+        grasp_xyz_raw, grasp_dir1, grasp_dir2 = convert_trans_to_vec(grasp_pose, has_eff=self.actor.has_eff)
         
         # # check if is same
         # rot6d_batch = torch.cat((grasp_dir1, grasp_dir2), dim=-1)
@@ -305,7 +309,7 @@ class ALOHAAgent(object):
         # # calculate mes of xyz and rot
         # trans_batch, unnormed_grasp_xyz, rot6d_batch = self.actor.recover_grasp(new_action[0], scale, center)
 
-        # gt_grasp_xyz, gt_dir1, gt_dir2 = self.actor._convert_trans_to_vec(grasp_pose)
+        # gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(grasp_pose, has_eff=self.actor.has_eff)
         # gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
         # gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
         # gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1)
@@ -365,33 +369,41 @@ class ALOHAAgent(object):
 
     def act(self, obs, history_bid = -1):
         self.train(False)
-        assert isinstance(obs["pc"][0], np.ndarray)
+        # assert isinstance(obs["pc"][0], np.ndarray)
 
-        batch_size = obs["pc"].shape[0]
-        # batch_size = 1  # only support batch size 1 for now
-        assert history_bid < batch_size # batch to select as denoising history
+        # batch_size = obs["pc"].shape[0]
+        # # batch_size = 1  # only support batch size 1 for now
+        # assert history_bid < batch_size # batch to select as denoising history
 
-        xyzs = []
+        # xyzs = []
 
-        for batch_idx in range(obs['pc'].shape[0]):
-            for horizon_id in range(obs['pc'].shape[1]):
-                xyz = obs['pc'][batch_idx][horizon_id]
-                if self.shuffle_pc:
-                    choice = np.random.choice(
-                        xyz.shape[0], self.num_points, replace=True
-                    )
-                    xyz = xyz[choice, :]
-                    xyzs.append(xyz)
-                else:
-                    # only input certain amount of points
-                    step = xyz.shape[0] // self.num_points
-                    xyz = xyz[::step, :][: self.num_points]
-                    xyzs.append(xyz)
-        batch_pc = np.array(xyzs).reshape(obs['pc'].shape[0], obs['pc'].shape[1], -1, 3)
-        torch_obs = dict(
-            pc=torch.tensor(batch_pc).to(self.device).float(), 
-            gt_grasp = torch.tensor(obs['gt_grasp']).to(self.device).float(),
-            joint_pose = torch.tensor(obs['joint_pose']).to(self.device).float(),)
+        # for batch_idx in range(obs['pc'].shape[0]):
+        #     for horizon_id in range(obs['pc'].shape[1]):
+        #         xyz = obs['pc'][batch_idx][horizon_id]
+        #         if self.shuffle_pc:
+        #             choice = np.random.choice(
+        #                 xyz.shape[0], self.num_points, replace=True
+        #             )
+        #             xyz = xyz[choice, :]
+        #             xyzs.append(xyz)
+        #         else:
+        #             # only input certain amount of points
+        #             step = xyz.shape[0] // self.num_points
+        #             xyz = xyz[::step, :][: self.num_points]
+        #             xyzs.append(xyz)
+        # batch_pc = np.array(xyzs).reshape(obs['pc'].shape[0], obs['pc'].shape[1], -1, 3)
+        
+        if isinstance(obs["pc"][0], np.ndarray):
+            torch_obs = dict(
+                pc=torch.tensor(obs["pc"]).to(self.device).float(), 
+                gt_grasp = torch.tensor(obs['grasp_pose']).to(self.device).float(),
+                joint_pose = torch.tensor(obs['joint_pose']).to(self.device).float(),)
+        else: 
+            torch_obs = dict(
+                pc=obs["pc"].to(self.device).float(), 
+                gt_grasp = obs['grasp_pose'].to(self.device).float(),
+                joint_pose = obs['joint_pose'].to(self.device).float(),)
+            
         denoise_history, metrics = self.actor(torch_obs, history_bid=history_bid)
 
 

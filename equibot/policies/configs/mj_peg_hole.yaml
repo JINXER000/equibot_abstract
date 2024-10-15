@@ -1,16 +1,16 @@
 defaults:
   - base
 
-use_wandb: false
+# use_wandb: true
 
 training:
-  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
-  eval_interval: 1
+  ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/mj_peg_hole/ckpt00800.pth"
+  # eval_interval: 1
 
 env:
   env_class: 'mj_peg_hole'
-  num_eef: 2
-  dof: 6
+  num_eef: 1
+  dof: 7
   max_episode_length: 50
 
 agent:
@@ -31,8 +31,8 @@ data:
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
-    # dataset_type: 'hdf5_predeff'
-    dataset_type: 'mj_insertion_pred'
+    dataset_type: 'mj_socket_test'
+    # dataset_type: 'mj_insertion_pred'
 
 
 eval:
