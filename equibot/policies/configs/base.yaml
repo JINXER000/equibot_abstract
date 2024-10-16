@@ -85,7 +85,8 @@ training:
   num_epochs: 2000
   lr: 3e-5
   weight_decay: 1e-6
-  num_eval_episodes: 10
+  # num_eval_episodes: 10
+  num_eval_episodes: 1
   eval_interval: 1000000 # do not eval during training
   save_interval: 100
   vis_interval: 100

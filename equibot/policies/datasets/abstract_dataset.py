@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from collections import namedtuple
@@ -16,6 +17,12 @@ import hydra
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
+def save_dbg_pc(pc):
+    import open3d as o3d
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pc)
+    o3d.io.write_point_cloud('debug_pc.ply', pcd)
+
 class ALOHAPoseDataset(Dataset):
     def __init__(self, cfg, mode, transform=None, pre_transform=None, pre_filter=None):
         super().__init__()
@@ -28,9 +35,12 @@ class ALOHAPoseDataset(Dataset):
         self.pre_filter = pre_filter
         self.composed_inference = False
 
-        
-        # Process the data
-        self.process_select(cfg)
+        if mode == 'train':
+            # Process the data
+            print('Processing dataset...')
+            self.process_select(cfg)
+        else:
+            print('Loading dataset...')
 
         # if not os.path.exists(self.processed_file_path):
         #     print('NOTE: dataset already processed!')
@@ -39,7 +49,22 @@ class ALOHAPoseDataset(Dataset):
         # Load processed data
         self.data, self.slices = torch.load(self.processed_file_path)
 
+    @property
+    def raw_file_names(self):
+        return os.listdir(os.path.join(self.root, 'raw'))
+
+    @property
+    def processed_file_path(self):
+        return os.path.join(self.root, 'processed', 'data.pt')
+
+
     def process_select(self, cfg):
+
+        # self.norm_stat_dict = nn.ParameterDict({
+        #     'joint_pose': None,
+        #     'pc': None,
+        #     'grasp_pose': None,
+        # })
         if cfg.dataset_type == 'sam_predeff':
             self.process_sam_predeff(cfg)
         elif cfg.dataset_type == 'npz':
@@ -51,14 +76,7 @@ class ALOHAPoseDataset(Dataset):
         else:
             raise NotImplementedError('Dataset type not implemented!')
 
-
-    @property
-    def raw_file_names(self):
-        return os.listdir(os.path.join(self.root, 'raw'))
-
-    @property
-    def processed_file_path(self):
-        return os.path.join(self.root, 'processed', 'data.pt')
+        
 
     def process_txt(self, cfg):
         print('Processing dataset...')
@@ -335,6 +353,8 @@ class ALOHAPoseDataset(Dataset):
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 file!')
+
+
 
 
     # tell the stage from eef pose

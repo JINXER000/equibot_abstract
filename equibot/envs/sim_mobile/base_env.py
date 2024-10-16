@@ -476,7 +476,8 @@ class BaseEnv(object):
 
     def _reset_sim(self):
         if not hasattr(self, "sim"):
-            sim = self.sim = bclient.BulletClient(connection_mode=pybullet.DIRECT)
+            sim = self.sim = bclient.BulletClient(connection_mode=pybullet.GUI)
+            # sim = self.sim = bclient.BulletClient(connection_mode=pybullet.DIRECT)
         else:
             sim = self.sim
         args = self.args
