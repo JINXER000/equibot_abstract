@@ -8,7 +8,7 @@ from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
 from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
 
-from equibot.policies.utils.misc import convert_trans_to_vec, convert_vec_to_trans
+from equibot.policies.utils.misc import convert_trans_to_vec, convert_vec_to_trans, ActionSlice
 
 # from torch.utils.tensorboard import SummaryWriter
 
@@ -223,10 +223,13 @@ class ALOHAPolicy(nn.Module):
                    
             # record history
             if history_bid >=0:
+                action_slice = ActionSlice(mode="single")
                 trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
                 assert trans_batch.shape[3] == 4
                 trans_mat = trans_batch[history_bid]
                 trans_mat = np.mean(trans_mat, axis=0)
+                action_slice.update('grasp', trans_mat)
+                
                 if noise_pred[1] is not None:
                     unnormed_joint = self.recover_jpose(new_action[1])
                     jpose_flat = unnormed_joint[history_bid].reshape(-1)
@@ -237,9 +240,9 @@ class ALOHAPolicy(nn.Module):
                         jpose_12d[:6] = jpose_flat
                     else:
                         jpose_12d = jpose_flat
-                    action_slice = (trans_mat, jpose_12d)
-                else:
-                    action_slice = (trans_mat, None)
+                    # action_slice = (trans_mat, jpose_12d)
+                    action_slice.update('jpose', jpose_12d)
+
                 denoise_history.append(action_slice)
 
             # record the denoised action
@@ -248,10 +251,10 @@ class ALOHAPolicy(nn.Module):
         trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
 
         metrics = {}
-        if obs['gt_grasp'] is not None:
+        if obs['grasp'] is not None:
             # calculate mes of xyz and rotation
 
-            gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(obs['gt_grasp'], has_eff=self.has_eff)
+            gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(obs['grasp'], has_eff=self.has_eff)
             gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
             gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)
             gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1)
@@ -266,9 +269,9 @@ class ALOHAPolicy(nn.Module):
         if new_action[1] is not None:
             unnormed_joint = self.recover_jpose(new_action[1])
 
-            if obs['joint_pose'] is not None:
+            if obs['jpose'] is not None:
                 # calculate joint error
-                gt_joint = obs['joint_pose']
+                gt_joint = obs['jpose']
                 unnormed_joint = torch.tensor(unnormed_joint, device=self.device)
                 joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
                 metrics['joint_error'] = joint_mse
@@ -277,11 +280,8 @@ class ALOHAPolicy(nn.Module):
             # print the grasp xyz
             print(f"Grasp xyz: {unnormed_grasp_xyz[history_bid, 0]}")
 
-        if len(metrics.values()) > 0:
-            return  denoise_history, metrics
-        
-        else:
-            assert batch_size == 1
+        action_dict = {}
+        if batch_size == 1:
 
             # # transform grasp pose from world frame to object frame
             # # center = torch.mean(center, dim=1).reshape(-1, 3).detach().cpu().numpy()
@@ -289,12 +289,11 @@ class ALOHAPolicy(nn.Module):
             # trans_batch[:, :, 4:7, 3] = trans_batch[:, :, 4:7, 3] - pc_raw_mean
 
             # output final grasps and jposes
-            action_dict = {}
             action_dict['grasp'] = trans_batch.reshape(-1, 4)
             if new_action[1] is not None:
                 action_dict['jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
 
-            return denoise_history, action_dict
+        return action_dict,metrics, denoise_history
     
     def conclude_masks(self):
         has_grasp = False

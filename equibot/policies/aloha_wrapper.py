@@ -4,10 +4,11 @@ import torch
 import hydra
 import numpy as np
 
-from equibot.policies.agents.aloha_agent import ALOHAAgent  
-from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
+from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch
+# from equibot.policies.agents.aloha_agent import ALOHAAgent  
+# from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
 
-from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
+# from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
 
@@ -15,211 +16,152 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 # from torch.utils.tensorboard import SummaryWriter
 
 
-# required when input raw point cloud Nx3
-def preprocess_pc(points, tgt_size, is_mj = False):
-    input_pc = np.asarray(points)
-    assert input_pc.shape[1] == 3
-    pc_min = np.min(input_pc, axis=0)
-    input_pc = input_pc - pc_min
-    sampled_indices = np.random.choice(input_pc.shape[0], tgt_size, replace=False)
-    input_pc = input_pc[sampled_indices]
-    return input_pc, pc_min
+# # required when input raw point cloud Nx3
+# def preprocess_pc(points, tgt_size, is_mj = False):
+#     input_pc = np.asarray(points)
+#     assert input_pc.shape[1] == 3
+#     pc_min = np.min(input_pc, axis=0)
+#     input_pc = input_pc - pc_min
+#     sampled_indices = np.random.choice(input_pc.shape[0], tgt_size, replace=False)
+#     input_pc = input_pc[sampled_indices]
+#     return input_pc, pc_min
 
-def postprocess_xyz(trans, pc_min):
-    trans[:3, 3] += pc_min
-    trans[4:7, 3] += pc_min
-    return trans
+# def postprocess_xyz(trans, pc_min):
+#     trans[:3, 3] += pc_min
+#     trans[4:7, 3] += pc_min
+#     return trans
 
 
 
 class pddl_wrapper(object):
     def __init__(self, cfg):
          # load the network
-        self.agent = ALOHAAgent(cfg)
+        self.cfg = cfg
+        self.agent = get_agent(cfg.agent.agent_name)(cfg)
         self.agent.train(False)
         self.agent.load_snapshot(cfg.training.ckpt)
-        self.has_eff = (cfg.data.dataset.dataset_type == 'hdf5_predeff')
-        self.pc_min = np.zeros(3)
 
+        # self.dataset = get_dataset(cfg, "train")
+        self.dataset = DualAbsDataset(cfg.data.dataset , "test")
+        num_workers = cfg.data.dataset.num_workers
+        self.test_loader = torch.utils.data.DataLoader(
+            self.dataset,
+            batch_size=1,
+            num_workers=num_workers,
+            shuffle=False,
+            drop_last=True,
+            pin_memory=True,
+        )
+    def get_obs_from_datset(self):
+        data_iter = iter(self.test_loader)
+        fist_batch = next(data_iter)
+        return fist_batch
+    
+    def get_obs_from_ply(self, ply_paths = {}):
+        import open3d as o3d
+        for k, v in ply_paths.items():
+            pcd = o3d.io.read_point_cloud(v)
+            input_pc = np.asarray(pcd.points)
+            data_batch = {}
+            data_batch[k] = torch.tensor(input_pc).unsqueeze(0).unsqueeze(0).float()
+        return data_batch
 
-
-
-    def predict_single(self, points, history_bid = -1, require_preprocess = True):
-        points_vis = points.copy()
-        if require_preprocess:
-            points, pc_min = preprocess_pc(points, self.agent.cfg.data.dataset.num_points)
-
-        points_batch = torch.tensor(points).float().cuda().reshape(1, 1, -1, 3)
-        agent_obs = {"pc": points_batch, "gt_grasp": None, 'joint_pose': None}
-        history, action_dict = self.agent.actor(agent_obs, history_bid=history_bid)
-
-        if history_bid >=0:
-            log_dir = os.getcwd()
-            # log_dir = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/eval/aloha_transfer_tape'
-            history_pic_dir = os.path.join(log_dir, "history_pics")
-            if not os.path.exists(history_pic_dir):
-                os.makedirs(history_pic_dir)
-
-            # points_np = points_batch[history_bid,0].cpu().numpy()
+    ## do not use it during training
+    def centralize_obs(self, obs):
+        centralize_obs = obs.copy()
+        offset_dict = {}
+        for k, v in obs.items():
+            if 'pc' in k:
+                pc = v.numpy().reshape(-1, 3)
+                centered_pc, offset = self.dataset.centralize_cond_pc(pc)
+                centralize_obs[k] = torch.tensor(centered_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
                 
-            if require_preprocess:
-                history = [(postprocess_xyz(action_slice[0], pc_min), action_slice[1]) for action_slice in history]
+                grasp_key = k.replace('pc', 'grasp')
+                centralize_obs[grasp_key] = None
+                joint_key = k.replace('pc', 'jpose') 
+                centralize_obs[joint_key] = None
 
-            sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha/')
-            from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+                offset_dict[grasp_key] = offset
 
-            render_pose(history, use_gui=True, \
-                        directory = history_pic_dir, save_pic_every = 10,
-                        obj_points = points_vis,
-                        has_eff = self.has_eff)
-            
-        if require_preprocess:
-            action_dict['grasp'] = postprocess_xyz(action_dict['grasp'], pc_min)
+        return centralize_obs, offset_dict
+    
+    def decentralize_history(self, history, offset_dict):
+        for action_slice in history:
+            for k, v in offset_dict:
+                action_slice.data[k] = self.dataset.decentralize_grasp(action_slice.data[k], offset_dict[k])
+        return history
+    
+    def decentralize_action(self, action_dict, offset_dict):
+        for k, v in offset_dict.items():
+            action_dict[k] = self.dataset.decentralize_grasp(action_dict[k], offset_dict[k])
         return action_dict
+    
+    def predict_action(self, history_bid = -1, ply_paths = None):
+        if ply_paths is  None:
+            agent_obs = self.get_obs_from_datset()
+            obs_c = to_torch(agent_obs, self.cfg.device)
+        else:
+            agent_obs = self.get_obs_from_ply(ply_paths)    
+            obs_c, offset_dict = self.centralize_obs(agent_obs)
 
 
-
-class comp_pddl_wrapper(object):
-    def __init__(self, cfg):
-         # load the network
-        self.agent = CompALOHAAgent(cfg)
-        self.agent.train(False)
-        self.agent.load_snapshot(cfg.training.ckpt)
-        self.has_eff = (cfg.data.dataset.dataset_type == 'hdf5_predeff')
-        self.pc_min = np.zeros(3)
-
-    def predict_double(self, left_pts, right_pts, history_bid = -1, require_preprocess = True):
+        ## if pc is in the world frame. No need to normalize it and get the offset, as center will be calculated in actor
         
-        if require_preprocess:
-            left_pts, left_pc_min = preprocess_pc(left_pts, self.agent.cfg.data.dataset.num_points)
-            right_pts, right_pc_min = preprocess_pc(right_pts, self.agent.cfg.data.dataset.num_points)
-
-        left_points_batch = torch.tensor(left_pts).float().cuda().reshape(1, 1, -1, 3)
-        right_points_batch = torch.tensor(right_pts).float().cuda().reshape(1, 1, -1, 3)
-        agent_obs = {"left_pc":left_points_batch, "right_pc":right_points_batch}
-        action_dict, eval_metrics, denoise_history = self.agent.actor(agent_obs, history_bid=history_bid)
+        action_c, eval_metrics, history_c = \
+            self.agent.actor(obs_c, history_bid=history_bid)
 
         if history_bid >=0:
             log_dir = os.getcwd()
-            # log_dir = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/eval/aloha_transfer_tape'
             history_pic_dir = os.path.join(log_dir, "history_pics")
             if not os.path.exists(history_pic_dir):
                 os.makedirs(history_pic_dir)
 
-            # points_np = points_batch[history_bid,0].cpu().numpy()
-                
-            if require_preprocess:
-                raise NotImplementedError("Not implemented for dual arm yet")
-                history = [(postprocess_xyz(action_slice[0], pc_min), action_slice[1]) for action_slice in history]
+            if ply_paths is not None:
+                ## move the gripper to the world frame
+                history_w =  self.decentralize_history(history_c, offset_dict)
+            else:
+                history_w = history_c
 
             sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha/')
             from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose, render_history
 
-            points_vis = np.stack([left_pts, right_pts], axis=0)
-            render_history(denoise_history, use_gui=True, \
+            render_history(history_w, use_gui=True, \
                         directory = history_pic_dir, save_pic_every = 10,
-                        obj_points = points_vis,
-                        has_eff = self.has_eff)
+                        agent_obs = agent_obs,
+                        has_eff = self.dataset.has_eff, side = None)
             
-        if require_preprocess:
-            action_dict['grasp'] = postprocess_xyz(action_dict['grasp'], pc_min)
-        return action_dict
+        if ply_paths is not None:
+            action_w = self.decentralize_action(action_c, offset_dict)
+        else:
+            action_w = action_c
+        return action_w
 
 
 
-def single_main():
-    # https://stackoverflow.com/questions/60674012/how-to-get-a-hydra-config-without-using-hydra-main
-    from hydra import compose, initialize
-    from omegaconf import OmegaConf
-
-    # with initialize(version_base=None, config_path="configs", job_name="test_app"):
-    #     cfg = compose(config_name="transfer_tape", overrides=["prefix=aloha_transfer_tape", "mode=eval", "use_wandb=false"])
+def infer_and_render(dataset_path, config_name, overrides, ply_paths = None):
+    with hydra.initialize(config_path="configs", job_name="test_app"):
+        cfg = hydra.compose(config_name=config_name, overrides=overrides)
     
-    with initialize(version_base=None, config_path="configs", job_name="test_app"):
-        cfg = compose(config_name="mj_peg_hole", overrides=["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"])
-
-    # print(OmegaConf.to_yaml(cfg))
-
     assert cfg.mode == "eval"
 
     np.random.seed(cfg.seed)
 
-######### use dataset as test input
-    # get eval datase
-    # cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
-    # eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
-    eval_dataset = DualAbsDataset(cfg.data.dataset, "test")
-    num_workers = cfg.data.dataset.num_workers
-    test_loader = torch.utils.data.DataLoader(
-        eval_dataset,
-        batch_size=1,
-        num_workers=num_workers,
-        shuffle=False,
-        drop_last=True,
-        pin_memory=True,
-    )
-
-    data_iter = iter(test_loader)
-    fist_batch = next(data_iter)
-    input_pc = fist_batch['pc'][0][0].cpu().numpy()
-    require_preprocess = False
-
-# ######### use o3d point cloud as test input
-#     import open3d as o3d
-#     pcd = o3d.io.read_point_cloud("debugdiffgen.ply")
-#     input_pc = np.asarray(pcd.points)
-#     require_preprocess = True
-
+    cfg.data.dataset.path = dataset_path
     tamp_wrapper = pddl_wrapper(cfg)
-    action_dict = tamp_wrapper.predict_single(input_pc, history_bid = 0, require_preprocess=require_preprocess)
 
+
+    action_dict = tamp_wrapper.predict_action(ply_paths = None, history_bid=0)
+
+    return action_dict
+
+def main():
+    dataset_path = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
+    config_name = "mj_peg_hole"
+    overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
+    action_dict = infer_and_render(dataset_path, config_name, overrides)
     print(action_dict)
 
 
-def double_main():
-
-    from hydra import compose, initialize
-    from omegaconf import OmegaConf
-
-    with initialize(version_base=None, config_path="configs", job_name="test_app"):
-        cfg = compose(config_name="mj_peg_hole", overrides=["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"])
-    
-    assert cfg.mode == "eval"
-
-    np.random.seed(cfg.seed)
-
-######### use dataset as test input
-    # get eval datase
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
-    eval_dataset = DualAbsDataset(cfg.data.dataset, "test")
-    num_workers = cfg.data.dataset.num_workers
-    test_loader = torch.utils.data.DataLoader(
-        eval_dataset,
-        batch_size=1,
-        num_workers=num_workers,
-        shuffle=False,
-        drop_last=True,
-        pin_memory=True,
-    )
-
-    data_iter = iter(test_loader)
-    fist_batch = next(data_iter)
-    left_pc = fist_batch['left_pc'][0].cpu().numpy()
-    right_pc = fist_batch['right_pc'][0].cpu().numpy()
-    require_preprocess = False
-
-######### use o3d point cloud as test input
-    # import open3d as o3d
-    # pcd = o3d.io.read_point_cloud("debugdiffgen.ply")
-    # input_pc = np.asarray(pcd.points)
-    # require_preprocess = True
-
-    tamp_wrapper = comp_pddl_wrapper(cfg)
-    action_dict = tamp_wrapper.predict_double(left_pc, right_pc, history_bid = 0, require_preprocess=require_preprocess)
-
-    print(action_dict)
 
 if __name__ == "__main__":
-    single_main()
-    # double_main()
+    main()

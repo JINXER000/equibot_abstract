@@ -67,8 +67,8 @@ def ply2points(ply_path):
 def process_batch(batch, agent):
 
     pc = batch["pc"].cpu().numpy()
-    grasp_pose = batch["grasp_pose"].cpu().numpy()
-    joint_pose = batch["joint_pose"].cpu().numpy()
+    grasp_pose = batch['grasp'].cpu().numpy()
+    joint_pose = batch['jpose'].cpu().numpy()
 
     # # perform transformation
     # pc = rotate_points(pc)
@@ -105,12 +105,12 @@ def run_eval(
         points = ply2points(ply_path)
         points_batch = points.reshape(1, 1, -1, 3)  # batch size, Ho, N, 3
 
-    agent_obs = {"pc": points_batch, "gt_grasp": gt_grasp_9d, 'joint_pose': joint_pose}
+    agent_obs = {"pc": points_batch, 'grasp': gt_grasp_9d, 'jpose': joint_pose}
 
 
     # predict actions
     st = time.time()
-    unnormed_history, metrics = agent.act(agent_obs, history_bid=history_bid)
+    action_dict, metrics, unnormed_history = agent.act(agent_obs, history_bid=history_bid)
     # print(f"Inference time: {time.time() - st:.3f}s")
 
     if vis and history_bid >=0:

@@ -36,6 +36,12 @@ class ALOHAPoseDataset(Dataset):
         self.pre_filter = pre_filter
         self.composed_inference = False
 
+        self.mj_offset = np.array([0.0, 0.5, 0.0])
+        self.pc_shape = (cfg.num_points, 3)
+        self.has_eff = ('predeff' in cfg.dataset_type)
+        self.is_mj = ('mj' in cfg.dataset_type)
+
+
         if mode == 'train':
             # Process the data
             print('Processing dataset...')
@@ -58,13 +64,44 @@ class ALOHAPoseDataset(Dataset):
     def processed_file_path(self):
         return os.path.join(self.root, 'processed', 'data.pt')
 
-
+    def centralize_cond_pc(self,  pc):
+        input_pc = np.asarray(pc)
+        assert len(input_pc.shape) == 2 
+        if input_pc.shape[0] > self.pc_shape[0]:
+            sampled_indices = np.random.choice(input_pc.shape[0], self.pc_shape[0], replace=False)
+            input_pc = input_pc[sampled_indices]
+        elif input_pc.shape[0] < self.pc_shape[0]:
+            raise ValueError('Input pc shape is not enough points!')
+        
+        ## get pc in the world frame (the origin in the middle of robots)
+        if self.is_mj:
+            input_pc = input_pc - self.mj_offset
+        pc_offset = np.min(input_pc, axis=0)
+        input_pc = input_pc - pc_offset
+        return input_pc, pc_offset
+    
+    def centralize_grasp(self, grasp, pc_offset):
+        grasp[:3, 3] -= pc_offset
+        if self.has_eff:
+            grasp[4:7, 3] -= pc_offset
+        return grasp
+    
+    def decentralize_cond_pc(self,  pc, pc_offset):
+        pc = pc + pc_offset
+        return pc
+    
+    def decentralize_grasp(self,  grasp, pc_offset):
+        grasp[:3, 3] += pc_offset
+        if self.has_eff:
+            grasp[4:7, 3] += pc_offset
+        return grasp
+    
     def process_select(self, cfg):
 
         # self.norm_stat_dict = nn.ParameterDict({
-        #     'joint_pose': None,
+        #     'jpose': None,
         #     'pc': None,
-        #     'grasp_pose': None,
+        #     'grasp': None,
         # })
         if cfg.dataset_type == 'sam_predeff':
             self.process_sam_predeff(cfg)
@@ -104,8 +141,8 @@ class ALOHAPoseDataset(Dataset):
                     demo_t = line_rcd[0].unsqueeze(0)
                     # mask_data = self.mask[:joint_pose.shape[1]].unsqueeze(0)
                     # # NOTE: unsqueeze(0) is important, making each x into a shape of [1, 12]
-                    # data = {'demo_t': demo_t, 'joint_pose': joint_pose, 'mask': mask_data}
-                    data = {'demo_t': demo_t, 'joint_pose': joint_pose}
+                    # data = {'demo_t': demo_t, 'jpose': joint_pose, 'mask': mask_data}
+                    data = {'demo_t': demo_t, 'jpose': joint_pose}
                     data_list.append(data)
             elif  file_name  == 'graspobj_4.ply':
                 ply_path = os.path.join(self.root, 'raw', file_name)
@@ -131,7 +168,7 @@ class ALOHAPoseDataset(Dataset):
         assert conditional_pc is not None
         for i in range(len(data_list)):
             data_list[i]['pc'] = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
-            data_list[i]['grasp_pose'] = torch.tensor(grasp_trans).to(torch.float32)
+            data_list[i]['grasp'] = torch.tensor(grasp_trans).to(torch.float32)
 
             # TODO: add grasp pose to data
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
@@ -162,7 +199,7 @@ class ALOHAPoseDataset(Dataset):
             line_rcd = torch.tensor(jpos_mat[i], dtype=torch.float32) # t, arm_left_6d, arm_right_6d
             joint_pose = line_rcd[1:].reshape(-1, cfg.dof).unsqueeze(0)
 
-            data_slice = {'joint_pose': joint_pose}
+            data_slice = {'jpose': joint_pose}
 
             # update the grasp every change_grasp_every
             if i % change_grasp_every == 0:
@@ -194,7 +231,7 @@ class ALOHAPoseDataset(Dataset):
                 change_grasp_id += 1
 
             data_slice['pc'] = cur_pc
-            data_slice['grasp_pose'] = cur_grasp_pose
+            data_slice['grasp'] = cur_grasp_pose
             data_list.append(data_slice)
 
 
@@ -281,8 +318,8 @@ class ALOHAPoseDataset(Dataset):
                         joint_id = np.random.randint(0, len(selected_joint_data))
                         joint_pose = selected_joint_data[joint_id]
 
-                        data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
-                                'grasp_pose':grasp_tensor}
+                        data = {'jpose': joint_pose, 'pc': pc_tensor, \
+                                'grasp':grasp_tensor}
                         data_list.append(data)
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
@@ -352,8 +389,8 @@ class ALOHAPoseDataset(Dataset):
                         eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
 
                         grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
-                        data = {'joint_pose': joint_pose, 'pc': pc_tensor, \
-                                'grasp_pose':grasp_tensor}
+                        data = {'jpose': joint_pose, 'pc': pc_tensor, \
+                                'grasp':grasp_tensor}
                         data_list.append(data)
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
@@ -407,9 +444,9 @@ def main(cfg):
     for batch_id, batch in enumerate(test_loader):
         history_list = []
         tmp_pc = batch['pc'][0].reshape(-1, 3).numpy()
-        for i in range(batch['joint_pose'].shape[0]):
-            jpose = batch['joint_pose'][i].reshape(-1).numpy()
-            grasp_pose = batch['grasp_pose'][i].reshape(-1,4).numpy()
+        for i in range(batch['jpose'].shape[0]):
+            jpose = batch['jpose'][i].reshape(-1).numpy()
+            grasp_pose = batch['grasp'][i].reshape(-1,4).numpy()
             action_slice = (grasp_pose, jpose)
             # action_slice = (None, jpose)
             history_list.append(action_slice)

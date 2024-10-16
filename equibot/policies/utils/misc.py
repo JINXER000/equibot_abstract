@@ -49,8 +49,16 @@ def get_env_class(env_name):
 
 
 def get_dataset(cfg, mode="train"):
-    from equibot.policies.datasets.dataset import BaseDataset
-    return BaseDataset(cfg.data.dataset, mode)
+    agent_name = cfg.agent.agent_name
+    if agent_name == "aloha":
+        from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
+        return ALOHAPoseDataset(cfg.data.dataset, mode)
+    elif agent_name == "compaloha":
+        from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
+        return DualAbsDataset(cfg.data.dataset, mode)
+    else:
+        from equibot.policies.datasets.dataset import BaseDataset
+        return BaseDataset(cfg.data.dataset, mode)
 
 
 def get_agent(agent_name):
@@ -60,6 +68,12 @@ def get_agent(agent_name):
     elif agent_name == "equibot":
         from equibot.policies.agents.equibot_agent import EquiBotAgent
         return EquiBotAgent
+    elif agent_name == "aloha":
+        from equibot.policies.agents.aloha_agent import ALOHAAgent
+        return ALOHAAgent
+    elif agent_name == "compaloha":
+        from equibot.policies.agents.compaloha_agent import CompALOHAAgent
+        return CompALOHAAgent
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
 
@@ -182,5 +196,3 @@ class ActionSlice(object):
         return self.data[key]
     
 
-
-    
