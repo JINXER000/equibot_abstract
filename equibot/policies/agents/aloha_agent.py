@@ -404,7 +404,7 @@ class ALOHAAgent(object):
                 grasp = obs['grasp'].to(self.device).float(),
                 jpose = obs['jpose'].to(self.device).float(),)
             
-        denoise_history, metrics = self.actor(torch_obs, history_bid=history_bid)
+        action_dict,metrics, denoise_history = self.actor(torch_obs, history_bid=history_bid)
 
 
         return denoise_history, metrics

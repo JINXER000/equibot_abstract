@@ -180,7 +180,7 @@ class CompALOHAAgent(object):
             cond=left_obs_vec,
             scalar_cond=None,
         )
-        left_vec_loss = nn.functional.mse_loss(left_vec_noise_pred, gt_left_grasp_z)
+        left_vec_loss = nn.functional.mse_loss(left_vec_noise_pred, left_grasp_noise)
         metrics["left_vec_loss"] = left_vec_loss
         left_scalar_loss = nn.functional.mse_loss(left_scalar_noise_pred, left_jpose_noise)
         metrics["left_scalar_loss"] = left_scalar_loss
@@ -197,7 +197,7 @@ class CompALOHAAgent(object):
         #     cond=right_obs_vec,
         #     scalar_cond=None,
         # )
-        # right_vec_loss = nn.functional.mse_loss(right_vec_noise_pred, gt_right_grasp_z)
+        # right_vec_loss = nn.functional.mse_loss(right_vec_noise_pred, right_grasp_noise)
         # metrics["right_vec_loss"] = right_vec_loss
         # right_scalar_loss = nn.functional.mse_loss(right_scalar_noise_pred, right_jpose_noise)
         # metrics["right_scalar_loss"] = right_scalar_loss

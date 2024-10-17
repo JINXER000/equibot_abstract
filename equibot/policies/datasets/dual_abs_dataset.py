@@ -67,13 +67,13 @@ class DualAbsDataset(ALOHAPoseDataset):
                         right_jpose = np.concatenate((right_jpose, np.array([joint_data[i][-1]])))
                         right_jpose_tensor = torch.tensor(right_jpose).to(torch.float32).reshape(1, 1, -1)
                         
-                        socket_grasp_id = np.random.randint(0, len(socket_grasp_poses)-1)
-                        socket_grasp = socket_grasp_poses[socket_grasp_id].copy()
+                        grasp_id = np.random.randint(0, len(socket_grasp_poses)-1)
+
+                        socket_grasp = socket_grasp_poses[grasp_id].copy()
                         socket_grasp = self.centralize_grasp(socket_grasp, socket_offset)
                         socket_grasp_tensor = torch.tensor(socket_grasp).to(torch.float32).reshape(1, 4, 4)
                         
-                        peg_grasp_id = np.random.randint(0, len(peg_grasp_poses)-1)
-                        peg_grasp = peg_grasp_poses[peg_grasp_id].copy()
+                        peg_grasp = peg_grasp_poses[grasp_id].copy()
                         peg_grasp = self.centralize_grasp(peg_grasp, peg_offset)
                         peg_grasp_tensor = torch.tensor(peg_grasp).to(torch.float32).reshape(1, 4, 4)
 

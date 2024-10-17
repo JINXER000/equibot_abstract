@@ -1,10 +1,10 @@
 defaults:
   - base
 
-use_wandb: false
+use_wandb: true
 
 training:
-  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/mj_peg_hole/ckpt00800.pth.singlealoha"
+  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/mj_peg_hole/ckpt00400.pth"
   eval_interval: 1
 
 env:
@@ -14,7 +14,8 @@ env:
   max_episode_length: 50
 
 agent:
-  agent_name: aloha
+  # agent_name: aloha
+  agent_name: compaloha
 
 model:
   # noise_scheduler:
