@@ -55,7 +55,7 @@ class ALOHAAgent(object):
     # NOTE: this initialization only on the 1st batch data
     def _init_normalizers(self, batch):
         if self.jpose_normalizer is None: # normalize to [0, max]
-            joint_data  = batch["joint_pose"]
+            joint_data  = batch['jpose']
             flattend_joint_data = joint_data.view(-1, self.dof)
             indices = [[0, 1, 2, 3, 4, 5]]
 
@@ -118,8 +118,8 @@ class ALOHAAgent(object):
 
         batch = to_torch(batch, self.device)
         pc = batch["pc"]
-        joint_data  = batch["joint_pose"]
-        grasp_pose = batch["grasp_pose"]
+        joint_data  = batch['jpose']
+        grasp_pose = batch['grasp']
 
         ## see the 2nd channel, corresponds to different grasp
         obj_num = pc.shape[1]
@@ -396,13 +396,13 @@ class ALOHAAgent(object):
         if isinstance(obs["pc"][0], np.ndarray):
             torch_obs = dict(
                 pc=torch.tensor(obs["pc"]).to(self.device).float(), 
-                gt_grasp = torch.tensor(obs['grasp_pose']).to(self.device).float(),
-                joint_pose = torch.tensor(obs['joint_pose']).to(self.device).float(),)
+                grasp = torch.tensor(obs['grasp']).to(self.device).float(),
+                jpose = torch.tensor(obs['jpose']).to(self.device).float(),)
         else: 
             torch_obs = dict(
                 pc=obs["pc"].to(self.device).float(), 
-                gt_grasp = obs['grasp_pose'].to(self.device).float(),
-                joint_pose = obs['joint_pose'].to(self.device).float(),)
+                grasp = obs['grasp'].to(self.device).float(),
+                jpose = obs['jpose'].to(self.device).float(),)
             
         denoise_history, metrics = self.actor(torch_obs, history_bid=history_bid)
 
