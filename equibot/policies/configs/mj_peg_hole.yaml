@@ -4,8 +4,9 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/mj_peg_hole/ckpt00400.pth"
+  # ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/mj_peg_hole/ckpt00300.pth.compaloha"
   eval_interval: 1
+  num_epochs: 1000
 
 env:
   env_class: 'mj_peg_hole'

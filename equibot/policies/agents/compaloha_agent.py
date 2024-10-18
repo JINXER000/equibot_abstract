@@ -3,7 +3,8 @@ import torch
 from torch import nn
 
 from equibot.policies.utils.norm import Normalizer
-from equibot.policies.utils.misc import to_torch
+from equibot.policies.utils.misc import to_torch, \
+    anneal_loss_scaling, origin_loss_scaling, manual_loss_scaling
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 
 from equibot.policies.agents.compaloha_policy import CompALOHAPolicy
@@ -92,7 +93,7 @@ class CompALOHAAgent(object):
 
 
 
-    def update(self, batch, vis=False):
+    def update(self, batch, epoch_ix=None):
         self.train()
 
         ###### Load data, preprocessing using mask ######
@@ -185,25 +186,28 @@ class CompALOHAAgent(object):
         left_scalar_loss = nn.functional.mse_loss(left_scalar_noise_pred, left_jpose_noise)
         metrics["left_scalar_loss"] = left_scalar_loss
 
-        ## debug: only use left network
-        total_loss = left_scalar_loss + left_vec_loss
-        metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
-
-
-        # right_vec_noise_pred, right_scalar_noise_pred = self.actor.right_noise_pred_net_handle(
-        #     noisy_right_grasp,
-        #     timesteps,
-        #     scalar_sample = noisy_right_jpose, 
-        #     cond=right_obs_vec,
-        #     scalar_cond=None,
-        # )
-        # right_vec_loss = nn.functional.mse_loss(right_vec_noise_pred, right_grasp_noise)
-        # metrics["right_vec_loss"] = right_vec_loss
-        # right_scalar_loss = nn.functional.mse_loss(right_scalar_noise_pred, right_jpose_noise)
-        # metrics["right_scalar_loss"] = right_scalar_loss
-
-        # total_loss = left_scalar_loss + right_scalar_loss + left_vec_loss + right_vec_loss
+        # ## debug: only use left network
+        # total_loss = left_scalar_loss + left_vec_loss
         # metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
+
+
+        right_vec_noise_pred, right_scalar_noise_pred = self.actor.right_noise_pred_net_handle(
+            noisy_right_grasp,
+            timesteps,
+            scalar_sample = noisy_right_jpose, 
+            cond=right_obs_vec,
+            scalar_cond=None,
+        )
+        right_vec_loss = nn.functional.mse_loss(right_vec_noise_pred, right_grasp_noise)
+        metrics["right_vec_loss"] = right_vec_loss
+        right_scalar_loss = nn.functional.mse_loss(right_scalar_noise_pred, right_jpose_noise)
+        metrics["right_scalar_loss"] = right_scalar_loss
+
+        # total_loss = anneal_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, \
+                                        #  epoch_ix, self.cfg.training.num_epochs)
+        # total_loss = origin_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss)
+        total_loss = manual_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, alpha=0.8)
+        metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
 
         if torch.isnan(total_loss):
             print(f"Loss is nan, please investigate.")
@@ -220,6 +224,10 @@ class CompALOHAAgent(object):
 
         return metrics
     
+
+
+
+
     def fix_checkpoint_keys(self, state_dict):
         fixed_state_dict = dict()
         for k, v in state_dict.items():

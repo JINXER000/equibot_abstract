@@ -74,7 +74,7 @@ def main(cfg):
         batch_ix = 0
         for batch in tqdm(train_loader, leave=False, desc="Batches"):
             train_metrics = agent.update(
-                batch, vis=epoch_ix % cfg.training.vis_interval == 0 and batch_ix == 0
+                batch, epoch_ix=epoch_ix 
             )
             if cfg.use_wandb:
                 wandb.log(
