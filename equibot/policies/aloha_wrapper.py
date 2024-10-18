@@ -52,6 +52,12 @@ class pddl_wrapper(object):
             drop_last=True,
             pin_memory=True,
         )
+
+        self.vis_side = None
+        if cfg.data.dataset.dataset_type =='mj_insertion_pred' :
+            self.vis_side = 'left'
+
+
     def get_obs_from_datset(self):
         data_iter = iter(self.test_loader)
         fist_batch = next(data_iter)
@@ -125,10 +131,11 @@ class pddl_wrapper(object):
             sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha/')
             from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose, render_history
 
+
             render_history(history_w, use_gui=True, \
                         directory = history_pic_dir, save_pic_every = 10,
                         agent_obs = agent_obs,
-                        has_eff = self.dataset.has_eff, side = None)
+                        has_eff = self.dataset.has_eff, side = self.vis_side)
             
         if ply_paths is not None:
             action_w = self.decentralize_action(action_c, offset_dict)
