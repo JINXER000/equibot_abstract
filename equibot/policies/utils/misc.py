@@ -196,3 +196,19 @@ class ActionSlice(object):
         return self.data[key]
     
 
+def anneal_loss_scaling( vec_loss, scalar_loss, current_epoch, total_epochs):
+    alpha = min(1, current_epoch / total_epochs)
+    ## bias to vector loss at the begining, but gradually shift to scalar loss
+    loss = (1 - alpha) * vec_loss + (alpha) * scalar_loss
+    return loss
+
+def origin_loss_scaling(vec_loss, scalar_loss):
+    n_vec = np.prod(vec_loss.shape)
+    n_scalar = np.prod(scalar_loss.shape)
+    k = n_vec / (n_vec + n_scalar)
+    loss = k * vec_loss + (1 - k) * scalar_loss
+    return loss
+
+def manual_loss_scaling(vec_loss, scalar_loss, alpha):
+    loss = alpha * vec_loss + (1 - alpha) * scalar_loss
+    return loss

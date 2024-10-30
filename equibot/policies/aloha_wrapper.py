@@ -53,9 +53,7 @@ class pddl_wrapper(object):
             pin_memory=True,
         )
 
-        self.vis_side = None
-        if cfg.data.dataset.dataset_type =='mj_insertion_pred' :
-            self.vis_side = 'left'
+
 
 
     def get_obs_from_datset(self):
@@ -132,10 +130,14 @@ class pddl_wrapper(object):
             from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose, render_history
 
 
+            vis_sides = None
+            if self.cfg.data.dataset.dataset_type =='mj_insertion_pred' :
+                vis_sides = ['left', 'right']
+
             render_history(history_w, use_gui=True, \
-                        directory = history_pic_dir, save_pic_every = 10,
+                        directory = history_pic_dir, save_pic_every = -1,
                         agent_obs = agent_obs,
-                        has_eff = self.dataset.has_eff, side = self.vis_side)
+                        has_eff = self.dataset.has_eff, vis_sides = vis_sides)
             
         if ply_paths is not None:
             action_w = self.decentralize_action(action_c, offset_dict)
