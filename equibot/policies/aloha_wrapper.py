@@ -5,8 +5,8 @@ import hydra
 import numpy as np
 
 from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch
-# from equibot.policies.agents.aloha_agent import ALOHAAgent  
-# from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
+from equibot.policies.agents.aloha_agent import ALOHAAgent  
+from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
 
 # from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
@@ -34,8 +34,10 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
 
 class pddl_wrapper(object):
-    def __init__(self, cfg):
+    def __init__(self, cfg, dataset_path):
          # load the network
+        cfg.data.dataset.path = dataset_path
+
         self.cfg = cfg
         self.agent = get_agent(cfg.agent.agent_name)(cfg)
         self.agent.train(False)
@@ -43,7 +45,8 @@ class pddl_wrapper(object):
 
         # self.dataset = get_dataset(cfg, "train")
         self.dataset = DualAbsDataset(cfg.data.dataset , "test")
-        num_workers = cfg.data.dataset.num_workers
+        # num_workers = cfg.data.dataset.num_workers
+        num_workers = 0
         self.test_loader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=1,
@@ -63,35 +66,46 @@ class pddl_wrapper(object):
     
     def get_obs_from_ply(self, ply_paths = {}):
         import open3d as o3d
+        data_batch = {}
         for k, v in ply_paths.items():
             pcd = o3d.io.read_point_cloud(v)
             input_pc = np.asarray(pcd.points)
-            data_batch = {}
             data_batch[k] = torch.tensor(input_pc).unsqueeze(0).unsqueeze(0).float()
         return data_batch
 
     ## do not use it during training
     def centralize_obs(self, obs):
-        centralize_obs = obs.copy()
+        centralized_obs = obs.copy()
         offset_dict = {}
         for k, v in obs.items():
             if 'pc' in k:
                 pc = v.numpy().reshape(-1, 3)
                 centered_pc, offset = self.dataset.centralize_cond_pc(pc)
-                centralize_obs[k] = torch.tensor(centered_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
+                centralized_obs[k] = torch.tensor(centered_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
                 
                 grasp_key = k.replace('pc', 'grasp')
-                centralize_obs[grasp_key] = None
-                joint_key = k.replace('pc', 'jpose') 
-                centralize_obs[joint_key] = None
 
                 offset_dict[grasp_key] = offset
 
-        return centralize_obs, offset_dict
+        return centralized_obs, offset_dict
+    
+    def decentralize_obs(self, obs, offset_dict = None):
+        if offset_dict is None:
+            return obs
+        decentralize_obs = obs.copy()
+        for k, v in obs.items():
+            if 'pc' in k:
+                v_cpu = v.cpu().detach()
+                pc = v_cpu.numpy().reshape(-1, 3)
+                grasp_key = k.replace('pc', 'grasp')
+                decentralized_pc = self.dataset.decentralize_cond_pc(pc, offset_dict[grasp_key])
+                # decentralize_obs[k] = decentralized_pc
+                decentralize_obs[k] = torch.tensor(decentralized_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
+        return decentralize_obs
     
     def decentralize_history(self, history, offset_dict):
         for action_slice in history:
-            for k, v in offset_dict:
+            for k, v in offset_dict.items():
                 action_slice.data[k] = self.dataset.decentralize_grasp(action_slice.data[k], offset_dict[k])
         return history
     
@@ -100,19 +114,24 @@ class pddl_wrapper(object):
             action_dict[k] = self.dataset.decentralize_grasp(action_dict[k], offset_dict[k])
         return action_dict
     
-    def predict_action(self, history_bid = -1, ply_paths = None):
-        if ply_paths is  None:
-            agent_obs = self.get_obs_from_datset()
-            obs_c = to_torch(agent_obs, self.cfg.device)
-        else:
-            agent_obs = self.get_obs_from_ply(ply_paths)    
-            obs_c, offset_dict = self.centralize_obs(agent_obs)
-
-
-        ## if pc is in the world frame. No need to normalize it and get the offset, as center will be calculated in actor
+    def dict_tensor_to_numpy(self, dict_tensor):
+        dict_numpy = {}
+        for k, v in dict_tensor.items():
+            if isinstance(v, torch.Tensor):
+                dict_numpy[k] = v.cpu().detach().numpy()
+            else:
+                dict_numpy[k] = v
+        return dict_numpy
+    
+    def predict_action(self, obs_c,   offset_dict = None, history_bid = -1):
+        for k, v in obs_c.items():
+            if v is None:
+                continue
+            obs_c[k] = torch.tensor(v).float()
         
         action_c, eval_metrics, history_c = \
             self.agent.actor(obs_c, history_bid=history_bid)
+        action_c = self.dict_tensor_to_numpy(action_c)
 
         if history_bid >=0:
             log_dir = os.getcwd()
@@ -120,7 +139,7 @@ class pddl_wrapper(object):
             if not os.path.exists(history_pic_dir):
                 os.makedirs(history_pic_dir)
 
-            if ply_paths is not None:
+            if offset_dict is not None:
                 ## move the gripper to the world frame
                 history_w =  self.decentralize_history(history_c, offset_dict)
             else:
@@ -136,10 +155,10 @@ class pddl_wrapper(object):
 
             render_history(history_w, use_gui=True, \
                         directory = history_pic_dir, save_pic_every = -1,
-                        agent_obs = agent_obs,
+                        agent_obs = self.decentralize_obs(obs_c, offset_dict),
                         has_eff = self.dataset.has_eff, vis_sides = vis_sides)
             
-        if ply_paths is not None:
+        if offset_dict is not None:
             action_w = self.decentralize_action(action_c, offset_dict)
         else:
             action_w = action_c
@@ -155,11 +174,18 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None):
 
     np.random.seed(cfg.seed)
 
-    cfg.data.dataset.path = dataset_path
-    tamp_wrapper = pddl_wrapper(cfg)
+    tamp_wrapper = pddl_wrapper(cfg, dataset_path)
 
+    ## if pc is in the world frame. No need to normalize it and get the offset, as center will be calculated in actor
+    if ply_paths is  None:
+        agent_obs = tamp_wrapper.get_obs_from_datset()
+        obs_c = to_torch(agent_obs, tamp_wrapper.cfg.device)
+        offset_dict = None
+    else:
+        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths)    
+        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
 
-    action_dict = tamp_wrapper.predict_action(ply_paths = None, history_bid=0)
+    action_dict = tamp_wrapper.predict_action(history_bid=0, obs_c=obs_c, offset_dict=offset_dict)
 
     return action_dict
 
@@ -167,7 +193,9 @@ def main():
     dataset_path = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
     config_name = "mj_peg_hole"
     overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
-    action_dict = infer_and_render(dataset_path, config_name, overrides)
+
+    ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+    action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths)
     print(action_dict)
 
 

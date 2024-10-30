@@ -348,8 +348,8 @@ class CompALOHAPolicy(nn.Module):
             ## update action dict if only test
             batch_size = trans_batch.shape[0] 
             if batch_size == 1:
-                action_dict[side+'grasp'] = trans_batch.reshape(-1, 4)
-                action_dict[side+'jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
+                action_dict[side+'_grasp'] = trans_batch.reshape(-1, 4)
+                action_dict[side+'_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
 
             ## calc metrics if in training
             else:
