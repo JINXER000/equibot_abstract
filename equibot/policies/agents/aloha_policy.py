@@ -251,7 +251,7 @@ class ALOHAPolicy(nn.Module):
         trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(new_action[0], scale, center)
 
         metrics = {}
-        if obs['grasp'] is not None:
+        if 'grasp' in obs and  obs['grasp'] is not None:
             # calculate mes of xyz and rotation
 
             gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(obs['grasp'], has_eff=self.has_eff)
@@ -269,7 +269,7 @@ class ALOHAPolicy(nn.Module):
         if new_action[1] is not None:
             unnormed_joint = self.recover_jpose(new_action[1])
 
-            if obs['jpose'] is not None:
+            if 'jpose' in obs and obs['jpose'] is not None:
                 # calculate joint error
                 gt_joint = obs['jpose']
                 unnormed_joint = torch.tensor(unnormed_joint, device=self.device)

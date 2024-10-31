@@ -13,7 +13,7 @@ sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
 sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
 sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
 from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
+# from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
 
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
@@ -61,8 +61,9 @@ class ALOHAPoseDataset(Dataset):
         #     print('NOTE: dataset already processed!')
         #     self.process_select(cfg)
         
-        # Load processed data
-        self.data, self.slices = torch.load(self.processed_file_path)
+        if mode != 'inference': 
+            # Load processed data
+            self.data, self.slices = torch.load(self.processed_file_path)
 
     @property
     def raw_file_names(self):
@@ -302,10 +303,10 @@ class ALOHAPoseDataset(Dataset):
                         pred_grasp[:3, 3] -= pred_offset
                         pred_grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
 
-                        ### debug
-                        if pred_grasp[2, 3] > 0.13:
-                            save_dbg_pc(pred_pc)
-                            print('debug here')
+                        # ### debug
+                        # if pred_grasp[2, 3] > 0.13:
+                        #     save_dbg_pc(pred_pc)
+                        #     print('debug here')
 
                         eff_grasp_id = np.random.randint(0, eff_grasp_num)
                         #### substract the offset using center of the object

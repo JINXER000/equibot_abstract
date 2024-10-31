@@ -13,25 +13,12 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
 
 
-# from torch.utils.tensorboard import SummaryWriter
 
-
-# # required when input raw point cloud Nx3
-# def preprocess_pc(points, tgt_size, is_mj = False):
-#     input_pc = np.asarray(points)
-#     assert input_pc.shape[1] == 3
-#     pc_min = np.min(input_pc, axis=0)
-#     input_pc = input_pc - pc_min
-#     sampled_indices = np.random.choice(input_pc.shape[0], tgt_size, replace=False)
-#     input_pc = input_pc[sampled_indices]
-#     return input_pc, pc_min
-
-# def postprocess_xyz(trans, pc_min):
-#     trans[:3, 3] += pc_min
-#     trans[4:7, 3] += pc_min
-#     return trans
-
-
+def rotate_pc(pc, yaw = 0):
+    R = np.array([[np.cos(yaw), -np.sin(yaw), 0],
+                  [np.sin(yaw), np.cos(yaw), 0],
+                  [0, 0, 1]])
+    return np.dot(pc, R.T)
 
 class pddl_wrapper(object):
     def __init__(self, cfg, dataset_path):
@@ -43,33 +30,39 @@ class pddl_wrapper(object):
         self.agent.train(False)
         self.agent.load_snapshot(cfg.training.ckpt)
 
-        # self.dataset = get_dataset(cfg, "train")
-        self.dataset = DualAbsDataset(cfg.data.dataset , "test")
-        # num_workers = cfg.data.dataset.num_workers
-        num_workers = 0
-        self.test_loader = torch.utils.data.DataLoader(
-            self.dataset,
-            batch_size=1,
-            num_workers=num_workers,
-            shuffle=False,
-            drop_last=True,
-            pin_memory=True,
-        )
+        self.dataset = get_dataset(cfg, cfg.mode)
+        # self.dataset = DualAbsDataset(cfg.data.dataset , cfg.mode)
+
+        if cfg.mode != 'inference':
+            # num_workers = cfg.data.dataset.num_workers
+            num_workers = 0
+            self.test_loader = torch.utils.data.DataLoader(
+                self.dataset,
+                batch_size=1,
+                num_workers=num_workers,
+                shuffle=False,
+                drop_last=True,
+                pin_memory=True,
+            )
 
 
 
 
     def get_obs_from_datset(self):
+        assert self.cfg.mode != 'inference'
         data_iter = iter(self.test_loader)
         fist_batch = next(data_iter)
         return fist_batch
     
     def get_obs_from_ply(self, ply_paths = {}):
+        assert self.cfg.mode == 'inference'
         import open3d as o3d
         data_batch = {}
         for k, v in ply_paths.items():
             pcd = o3d.io.read_point_cloud(v)
             input_pc = np.asarray(pcd.points)
+            # ## rotate for 180 degree
+            # input_pc = rotate_pc(input_pc, np.pi)
             data_batch[k] = torch.tensor(input_pc).unsqueeze(0).unsqueeze(0).float()
         return data_batch
 
@@ -123,6 +116,14 @@ class pddl_wrapper(object):
                 dict_numpy[k] = v
         return dict_numpy
     
+    def infer_real(self, obs):
+        obs_tensor = {}
+        for k, v in obs.items():
+            obs_tensor[k] = torch.tensor(v).float()
+        obs_c, offset_dict = self.centralize_obs(obs_tensor)
+        action_dict = self.predict_action(obs_c, offset_dict)
+        return action_dict
+    
     def predict_action(self, obs_c,   offset_dict = None, history_bid = -1):
         for k, v in obs_c.items():
             if v is None:
@@ -170,7 +171,7 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None):
     with hydra.initialize(config_path="configs", job_name="test_app"):
         cfg = hydra.compose(config_name=config_name, overrides=overrides)
     
-    assert cfg.mode == "eval"
+    assert cfg.mode != "train"
 
     np.random.seed(cfg.seed)
 
@@ -189,12 +190,22 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None):
 
     return action_dict
 
-def main():
-    dataset_path = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
-    config_name = "mj_peg_hole"
-    overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
 
-    ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+
+def main():
+    ## mj sim
+    # dataset_path = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
+    # config_name = "mj_peg_hole"
+    # overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
+    # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+
+    ## aloha transfer tape
+    import pathlib
+    dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
+    config_name = "transfer_tape"
+    overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
+    ply_paths = {'pc': os.path.join(dataset_path, 'debug_diffgen.ply')}
+
     action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths)
     print(action_dict)
 
