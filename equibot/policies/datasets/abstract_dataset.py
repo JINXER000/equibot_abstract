@@ -17,6 +17,14 @@ import hydra
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
+def downsample_pc(pc, num_points):
+    if pc.shape[0] > num_points:
+        sampled_indices = np.random.choice(pc.shape[0], num_points, replace=False)
+        pc = pc[sampled_indices]
+    elif pc.shape[0] < num_points:
+        raise ValueError('Input pc shape is not enough points!')
+    return pc
+
 def save_dbg_pc(pc):
     import open3d as o3d
     pcd = o3d.geometry.PointCloud()
@@ -52,8 +60,9 @@ class ALOHAPoseDataset(Dataset):
         #     print('NOTE: dataset already processed!')
         #     self.process_select(cfg)
         
-        # Load processed data
-        self.data, self.slices = torch.load(self.processed_file_path)
+        if mode != 'inference': 
+            # Load processed data
+            self.data, self.slices = torch.load(self.processed_file_path)
 
     @property
     def raw_file_names(self):
@@ -66,11 +75,7 @@ class ALOHAPoseDataset(Dataset):
     def centralize_cond_pc(self,  pc):
         input_pc = np.asarray(pc)
         assert len(input_pc.shape) == 2 
-        if input_pc.shape[0] > self.pc_shape[0]:
-            sampled_indices = np.random.choice(input_pc.shape[0], self.pc_shape[0], replace=False)
-            input_pc = input_pc[sampled_indices]
-        elif input_pc.shape[0] < self.pc_shape[0]:
-            raise ValueError('Input pc shape is not enough points!')
+        input_pc= downsample_pc(input_pc, self.pc_shape[0])
         
         ## get pc in the world frame (the origin in the middle of robots)
         if self.is_mj:
@@ -149,9 +154,7 @@ class ALOHAPoseDataset(Dataset):
                 conditional_pc = o3d.io.read_point_cloud(ply_path)
                 conditional_pc = np.asarray(conditional_pc.points)
 
-                tgt_size = cfg.num_points
-                sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
-                conditional_pc = conditional_pc[sampled_indices]
+                conditional_pc = downsample_pc(conditional_pc, cfg.num_points)
 
             elif  file_name == 'graspPose_4.npz': # as a dummy input of vnn
                 npz_path = os.path.join(self.root, 'raw', file_name)
@@ -211,9 +214,7 @@ class ALOHAPoseDataset(Dataset):
 
                 conditional_pc = obj_pc
 
-                tgt_size = cfg.num_points
-                sampled_indices = np.random.choice(conditional_pc.shape[0], tgt_size, replace=False)
-                conditional_pc = conditional_pc[sampled_indices]
+                conditional_pc = downsample_pc(conditional_pc, cfg.num_points)
 
                 cur_pc =  torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
 
@@ -301,6 +302,14 @@ class ALOHAPoseDataset(Dataset):
                         pred_grasp[:3, 3] -= pred_offset
                         pred_grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
 
+<<<<<<< HEAD
+=======
+                        # ### debug
+                        # if pred_grasp[2, 3] > 0.13:
+                        #     save_dbg_pc(pred_pc)
+                        #     print('debug here')
+
+>>>>>>> 3120028af0e92bad639b6dfb8bd65bac4bc66df9
                         eff_grasp_id = np.random.randint(0, eff_grasp_num)
                         #### substract the offset using center of the object
                         eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
@@ -336,15 +345,15 @@ class ALOHAPoseDataset(Dataset):
                 with h5py.File(hdf5_path, 'r') as f:
 
                     start_pc = f['start_grasps']['obj_points'][()]
-                    tgt_size = cfg.num_points
-                    sampled_indices = np.random.choice(start_pc.shape[0], tgt_size, replace=False)
-                    start_pc = start_pc[sampled_indices]
-                    start_offset = np.min(start_pc, axis=0)
-                    conditional_pc = start_pc - start_offset
+                    # tgt_size = cfg.num_points
+                    # sampled_indices = np.random.choice(start_pc.shape[0], tgt_size, replace=False)
+                    # start_pc = start_pc[sampled_indices]
+                    # start_offset = np.min(start_pc, axis=0)
+                    # conditional_pc = start_pc - start_offset
 
                     end_pc = f['end_grasps']['obj_points'][()]
-                    sampled_indices = np.random.choice(end_pc.shape[0], tgt_size, replace=False)
-                    end_pc = end_pc[sampled_indices]
+                    # sampled_indices = np.random.choice(end_pc.shape[0], tgt_size, replace=False)
+                    # end_pc = end_pc[sampled_indices]
                     end_offset = np.min(end_pc, axis=0)
                     # offset_diff = start_offset - end_offset
 
@@ -369,6 +378,9 @@ class ALOHAPoseDataset(Dataset):
                         else: # num_eef ==2
                             joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
 
+                        downsampled_pc = downsample_pc(start_pc, cfg.num_points)
+                        start_offset = np.min(start_pc, axis=0)
+                        conditional_pc = downsampled_pc - start_offset
                         pc_tensor = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
                         pred_grasp_id = np.random.randint(0, len(pred_grasp_poses)-1)
                         pred_grasp = pred_grasp_poses[pred_grasp_id].copy()
