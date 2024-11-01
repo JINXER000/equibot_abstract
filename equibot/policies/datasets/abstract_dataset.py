@@ -9,10 +9,10 @@ from equibot.policies.utils.constants import qpos_to_eepose
 
 import hydra
 import sys
-sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
-from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+# sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
+# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 # from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
 
 

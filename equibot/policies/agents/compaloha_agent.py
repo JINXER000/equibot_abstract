@@ -154,13 +154,17 @@ class CompALOHAAgent(object):
         ## z_t
         left_jpose_noise = torch.randn_like(scalar_left_jpose, device=self.device)
         ## x_t = add_noise(x_0, z_t)
-        noisy_left_jpose = self.actor.noise_scheduler.add_noise(
-            scalar_left_jpose, left_jpose_noise, timesteps
-        )
-        right_jpose_noise = torch.randn_like(scalar_right_jpose, device=self.device)
-        noisy_right_jpose = self.actor.noise_scheduler.add_noise(
-            right_jpose_noise, scalar_right_jpose, timesteps
-        )
+        if self.actor.mask_type == 'only_grasp':
+            noisy_left_jpose = None
+            noisy_right_jpose = None
+        else:
+            noisy_left_jpose = self.actor.noise_scheduler.add_noise(
+                scalar_left_jpose, left_jpose_noise, timesteps
+            )
+            right_jpose_noise = torch.randn_like(scalar_right_jpose, device=self.device)
+            noisy_right_jpose = self.actor.noise_scheduler.add_noise(
+                right_jpose_noise, scalar_right_jpose, timesteps
+            )
 
         left_grasp_noise = torch.randn_like(gt_left_grasp_z, device=self.device)
         noisy_left_grasp = self.actor.noise_scheduler.add_noise(
@@ -181,14 +185,6 @@ class CompALOHAAgent(object):
             cond=left_obs_vec,
             scalar_cond=None,
         )
-        left_vec_loss = nn.functional.mse_loss(left_vec_noise_pred, left_grasp_noise)
-        metrics["left_vec_loss"] = left_vec_loss
-        left_scalar_loss = nn.functional.mse_loss(left_scalar_noise_pred, left_jpose_noise)
-        metrics["left_scalar_loss"] = left_scalar_loss
-
-        # ## debug: only use left network
-        # total_loss = left_scalar_loss + left_vec_loss
-        # metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
 
 
         right_vec_noise_pred, right_scalar_noise_pred = self.actor.right_noise_pred_net_handle(
@@ -198,17 +194,29 @@ class CompALOHAAgent(object):
             cond=right_obs_vec,
             scalar_cond=None,
         )
+
+        left_vec_loss = nn.functional.mse_loss(left_vec_noise_pred, left_grasp_noise)
+        metrics["left_vec_loss"] = left_vec_loss
         right_vec_loss = nn.functional.mse_loss(right_vec_noise_pred, right_grasp_noise)
         metrics["right_vec_loss"] = right_vec_loss
-        right_scalar_loss = nn.functional.mse_loss(right_scalar_noise_pred, right_jpose_noise)
-        metrics["right_scalar_loss"] = right_scalar_loss
 
-        # total_loss = anneal_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, \
-                                        #  epoch_ix, self.cfg.training.num_epochs)
-        # total_loss = origin_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss)
-        total_loss = manual_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, alpha=0.8)
-        metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
 
+        if self.actor.mask_type != 'only_grasp':
+            left_scalar_loss = nn.functional.mse_loss(left_scalar_noise_pred, left_jpose_noise)
+            metrics["left_scalar_loss"] = left_scalar_loss        
+            right_scalar_loss = nn.functional.mse_loss(right_scalar_noise_pred, right_jpose_noise)
+            metrics["right_scalar_loss"] = right_scalar_loss
+
+            # total_loss = anneal_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, \
+                                            #  epoch_ix, self.cfg.training.num_epochs)
+            # total_loss = origin_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss)
+            total_loss = manual_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, alpha=0.8)
+            metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
+
+        else:
+            total_loss = left_vec_loss + right_vec_loss
+            metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
+            
         if torch.isnan(total_loss):
             print(f"Loss is nan, please investigate.")
             import pdb
