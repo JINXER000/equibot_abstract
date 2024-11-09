@@ -110,7 +110,7 @@ def run_eval(
 
     # predict actions
     st = time.time()
-    action_dict, metrics, unnormed_history = agent.act(agent_obs, history_bid=history_bid)
+    action_dict, unnormed_history, metrics = agent.act(agent_obs, history_bid=history_bid)
     # print(f"Inference time: {time.time() - st:.3f}s")
 
     if vis and history_bid >=0:

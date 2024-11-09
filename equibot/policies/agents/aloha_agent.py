@@ -407,4 +407,4 @@ class ALOHAAgent(object):
         action_dict,metrics, denoise_history = self.actor(torch_obs, history_bid=history_bid)
 
 
-        return denoise_history, metrics
+        return action_dict, denoise_history, metrics

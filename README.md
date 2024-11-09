@@ -182,7 +182,7 @@ In my 3090:
 ```
 python -m equibot.policies.eval --config-name fold_mobile_equibot \
     prefix="eval_rsnp_sim_mobile_fold_7dof_equibot_s1" mode=eval \
-    training.ckpt="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/sim_mobile_fold_7dof_equibot/ckpt01999.pth" \
+    training.ckpt="/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/sim_mobile_fold_7dof_equibot/ckpt01999.pth" \
     env.args.scale_high=2 env.args.scale_aspect_limit=1.33 \
     env.args.randomize_rotation=true env.args.randomize_scale=true env.args.use_wandb=false\
     +env.args.randomize_position=true +env.args.rand_pos_scale=0.5 env.vectorize=true 

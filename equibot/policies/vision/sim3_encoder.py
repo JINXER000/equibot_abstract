@@ -10,9 +10,9 @@ import logging
 
 from equibot.policies.vision.vec_layers import VecLinear
 from equibot.policies.vision.vec_pointnet import VecPointNet
+from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 
-
-BACKBONE_DICT = {"vn_pointnet": VecPointNet}
+BACKBONE_DICT = {"vn_pointnet": VecPointNet, "VDGCNN": VecDGCNN_att_frozen}
 
 NORMALIZATION_METHOD = {"bn": nn.BatchNorm1d, "in": nn.InstanceNorm1d}
 
@@ -31,6 +31,7 @@ class SIM3Vec4Latent(nn.Module):
         backbone_args,
         mode="so3",
         normalization_method=None,
+        preload_path = None
     ):
         super().__init__()
         assert mode == "so3", NotImplementedError("TODO, add se3")
@@ -41,6 +42,19 @@ class SIM3Vec4Latent(nn.Module):
 
         self.backbone = BACKBONE_DICT[backbone_type](**backbone_args)
         self.fc_inv = VecLinear(c_dim, c_dim, mode=mode)
+
+        self.use_vdgcnn = "VDGCNN" in backbone_type
+        # if preload_path is not None:
+        #     enc_params = torch.load(preload_path)["model_state_dict"]
+        #     self.backbone.load_state_dict(
+        #          {".".join(k.split(".")[2:]): enc_params[k] for k in enc_params.keys() if "encoder" in k},
+        #     strict=True,
+        #     )
+
+        #     for param in self.backbone.parameters():
+        #         param.requires_grad = False
+
+        #     print(f"Preload encoder from {preload_path}")
 
     def forward(self, pcl, ret_perpoint_feat=False, target_norm=1.0):
         B, T, N, _ = pcl.shape
@@ -53,13 +67,19 @@ class SIM3Vec4Latent(nn.Module):
         z_center = centroid.permute(0, 2, 1)
 
         input_pcl = input_pcl / z_scale[:, None, None]
+        
+        if self.use_vdgcnn:
+            center, scale, so3_feat, inv_feat = self.backbone(input_pcl)
+            z_inv = inv_feat
+            z_so3 = so3_feat
 
-        x, x_perpoint = self.backbone(input_pcl)  # B,C,3
+        else:
+            x, x_perpoint = self.backbone(input_pcl)  # B,C,3
 
-        z_so3 = x
-        z_inv_dual, _ = self.fc_inv(x[..., None])
-        z_inv_dual = z_inv_dual.squeeze(-1)
-        z_inv = (z_inv_dual * z_so3).sum(-1)
+            z_so3 = x
+            z_inv_dual, _ = self.fc_inv(x[..., None])
+            z_inv_dual = z_inv_dual.squeeze(-1)
+            z_inv = (z_inv_dual * z_so3).sum(-1)
 
         ret = {
             "inv": z_inv,

@@ -13,16 +13,31 @@ env:
   dof: 6
   max_episode_length: 50
 
+
 agent:
   agent_name: aloha
 
 model:
   # noise_scheduler:
   #   num_train_timesteps: 1000
+
+### use vec_pointnet and train from scratch
+  # hidden_dim: 32
+  # encoder:
+  #   backbone_type: vn_pointnet
+  #   backbone_args: 
+  #     num_layers: 4
+  #     preload_path: 'None'
+
+
+### use VDGCNN and transfer from pretrained model
+  hidden_dim: 256
   encoder:
-    backbone_type: vn_pointnet
+    backbone_type: VDGCNN
     backbone_args: 
-      num_layers: 4
+      num_layers: 7
+      preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
+
 data:
   dataset:
     num_points: 512

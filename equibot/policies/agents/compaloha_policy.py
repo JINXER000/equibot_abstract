@@ -69,16 +69,18 @@ class CompALOHAPolicy(nn.Module):
 
         self.encoder_out_dim = cfg.model.encoder.c_dim
 
+        self.mask_type = self.conclude_masks()
+
         # self.num_eef = cfg.env.num_eef
         self.dof = cfg.env.dof # 6
         self.eef_dim = 3 # xyz, dir1, dir2
         self.num_eef = cfg.env.num_eef
-        num_scalar_dims = self.dof * self.num_eef # joint pose
+        num_scalar_dims = 0 if self.mask_type == "only_grasp" else self.dof * self.num_eef  
 
         self.obs_dim = self.encoder_out_dim
 
         self.left_noise_pred_net = VecConditionalUnet1D(
-            input_dim=self.eef_dim,
+            input_dim=self.eef_dim,  ## vec dim, rot is 2, xyz is 1
             cond_dim=self.obs_dim* self.obs_horizon,
             scalar_cond_dim=0,
             scalar_input_dim= num_scalar_dims,
@@ -105,6 +107,7 @@ class CompALOHAPolicy(nn.Module):
         self._init_torch_compile()
 
         self.noise_scheduler = hydra.utils.instantiate(cfg.model.noise_scheduler)
+
 
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized paraGen Policy with {num_parameters} parameters")
@@ -263,18 +266,32 @@ class CompALOHAPolicy(nn.Module):
         ##### start denoising #####
 
         initial_noise_scale = 1
-        noisy_left_xt = (
-            torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
-        * initial_noise_scale,
-            torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
+        if self.mask_type == "only_grasp": 
+            noisy_left_xt = (
+                torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
             * initial_noise_scale,
+                None
+                )
+            noisy_right_xt = (
+                torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
+            * initial_noise_scale,
+                None,
             )
-        noisy_right_xt = (
-            torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
-        * initial_noise_scale,
-            torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
+
+        else:
+
+            noisy_left_xt = (
+                torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
             * initial_noise_scale,
-        )
+                torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
+                * initial_noise_scale,
+                )
+            noisy_right_xt = (
+                torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
+            * initial_noise_scale,
+                torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
+                * initial_noise_scale,
+            )
 
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
 
@@ -297,9 +314,10 @@ class CompALOHAPolicy(nn.Module):
                 new_action[side][0] = self.noise_scheduler.step(
                     model_output=vec_noise_pred, timestep=k, sample=curr_action[side][0]
                 ).prev_sample
-                new_action[side][1] = self.noise_scheduler.step(
-                    model_output=scalar_noise_pred, timestep=k, sample=curr_action[side][1]
-                ).prev_sample
+                if scalar_noise_pred is not None:
+                    new_action[side][1] = self.noise_scheduler.step(
+                        model_output=scalar_noise_pred, timestep=k, sample=curr_action[side][1]
+                    ).prev_sample
 
             
 
@@ -323,9 +341,10 @@ class CompALOHAPolicy(nn.Module):
                     action_slice.update(side+'_grasp', trans_mat)
 
                     ## recover jpose
-                    unnormed_joint = self.recover_jpose(new_action[side][1], key=side+'_jpose')
-                    jpose_flat = unnormed_joint[history_bid].reshape(-1)       
-                    action_slice.update(side+'_jpose', jpose_flat)           
+                    if scalar_noise_pred is not None:
+                        unnormed_joint = self.recover_jpose(new_action[side][1], key=side+'_jpose')
+                        jpose_flat = unnormed_joint[history_bid].reshape(-1)       
+                        action_slice.update(side+'_jpose', jpose_flat)           
 
                 denoise_history.append(action_slice)
 
@@ -342,14 +361,16 @@ class CompALOHAPolicy(nn.Module):
             ## predicted values
             trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(\
                 final_action[side][0], scale[side], center[side], key=side+'_grasp')
-            unnormed_joint = self.recover_jpose(final_action[side][1], key=side+'_jpose')
-            unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
+            if final_action[side][1] is not None:
+                unnormed_joint = self.recover_jpose(final_action[side][1], key=side+'_jpose')
+                unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
 
             ## update action dict if only test
             batch_size = trans_batch.shape[0] 
             if batch_size == 1:
                 action_dict[side+'_grasp'] = trans_batch.reshape(-1, 4)
-                action_dict[side+'_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
+                if final_action[side][1] is not None:
+                    action_dict[side+'_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
 
             ## calc metrics if in training
             else:
@@ -361,11 +382,12 @@ class CompALOHAPolicy(nn.Module):
 
                 xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
                 rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
-                joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
-
                 eval_metrics[side+"_xyz_mse"] = xyz_mse
                 eval_metrics[side+"_rot_mse"] = rot_mse
-                eval_metrics[side+"_joint_mse"] = joint_mse
+
+                if final_action[side][1] is not None:
+                    joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
+                    eval_metrics[side+"_joint_mse"] = joint_mse
 
         return action_dict, eval_metrics
 

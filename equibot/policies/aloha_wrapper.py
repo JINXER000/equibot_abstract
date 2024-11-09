@@ -11,7 +11,7 @@ from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 # from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
-
+TAMP_PATH = '/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha/'
 
 
 def rotate_pc(pc, yaw = 0):
@@ -146,7 +146,7 @@ class pddl_wrapper(object):
             else:
                 history_w = history_c
 
-            sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha/')
+            sys.path.append(TAMP_PATH)
             from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose, render_history
 
 
@@ -193,18 +193,19 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None):
 
 
 def main():
-    ## mj sim
-    # dataset_path = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
-    # config_name = "mj_peg_hole"
-    # overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
-    # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+    # mj sim
+    dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
+    config_name = "mj_peg_hole"
+    overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
+    ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+    # ply_paths = None
 
-    ## aloha transfer tape
-    import pathlib
-    dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
-    config_name = "transfer_tape"
-    overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
-    ply_paths = {'pc': os.path.join(dataset_path, 'debug_diffgen.ply')}
+    # ## aloha transfer tape
+    # import pathlib
+    # dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
+    # config_name = "transfer_tape"
+    # overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
+    # ply_paths = {'pc': os.path.join(dataset_path, 'debug_diffgen.ply')}
 
     action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths)
     print(action_dict)

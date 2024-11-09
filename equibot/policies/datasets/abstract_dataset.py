@@ -49,16 +49,16 @@ class ALOHAPoseDataset(Dataset):
         self.is_mj = ('mj' in cfg.dataset_type)
 
 
-        if mode == 'train':
-            # Process the data
-            print('Processing dataset...')
-            self.process_select(cfg)
-        else:
-            print('Loading dataset...')
-
-        # if not os.path.exists(self.processed_file_path):
-        #     print('NOTE: dataset already processed!')
+        # if mode == 'train':
+        #     # Process the data
+        #     print('Processing dataset...')
         #     self.process_select(cfg)
+        # else:
+        #     print('Loading dataset...')
+
+        if not os.path.exists(self.processed_file_path):
+            print('NOTE: dataset already processed!')
+            self.process_select(cfg)
         
         if mode != 'inference': 
             # Load processed data
@@ -302,14 +302,6 @@ class ALOHAPoseDataset(Dataset):
                         pred_grasp[:3, 3] -= pred_offset
                         pred_grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
 
-<<<<<<< HEAD
-=======
-                        # ### debug
-                        # if pred_grasp[2, 3] > 0.13:
-                        #     save_dbg_pc(pred_pc)
-                        #     print('debug here')
-
->>>>>>> 3120028af0e92bad639b6dfb8bd65bac4bc66df9
                         eff_grasp_id = np.random.randint(0, eff_grasp_num)
                         #### substract the offset using center of the object
                         eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
@@ -360,7 +352,7 @@ class ALOHAPoseDataset(Dataset):
                     pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
                     eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
 
-                    joint_data = f['demo_joint_vals'][()]
+                    joint_data = f['pred_joint_vals'][()]
                     stage = 'precondition'
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]

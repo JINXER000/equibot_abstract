@@ -5,6 +5,7 @@ from torch import nn
 import numpy as np
 
 from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
+
 from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
 
@@ -75,6 +76,7 @@ class ALOHAPolicy(nn.Module):
 
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized paraGen Policy with {num_parameters} parameters")
+
 
     def _init_torch_compile(self):
         if self.use_torch_compile:
@@ -165,7 +167,7 @@ class ALOHAPolicy(nn.Module):
         batch_size =  pc.shape[0]
 
         ema_nets = self.ema.averaged_model
-        feat_dict = ema_nets["encoder"](pc, ret_perpoint_feat=True, target_norm=self.pc_scale)
+        feat_dict = ema_nets["encoder"](pc,  target_norm=self.pc_scale)
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.obs_horizon, 1, 1)
         )
