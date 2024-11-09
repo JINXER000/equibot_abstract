@@ -49,16 +49,16 @@ class ALOHAPoseDataset(Dataset):
         self.is_mj = ('mj' in cfg.dataset_type)
 
 
-        # if mode == 'train':
-        #     # Process the data
-        #     print('Processing dataset...')
-        #     self.process_select(cfg)
-        # else:
-        #     print('Loading dataset...')
-
-        if not os.path.exists(self.processed_file_path):
-            print('NOTE: dataset already processed!')
+        if mode == 'train':
+            # Process the data
+            print('Processing dataset...')
             self.process_select(cfg)
+        else:
+            print('Loading dataset...')
+
+        # if not os.path.exists(self.processed_file_path):
+        #     print('NOTE: dataset already processed!')
+        #     self.process_select(cfg)
         
         if mode != 'inference': 
             # Load processed data

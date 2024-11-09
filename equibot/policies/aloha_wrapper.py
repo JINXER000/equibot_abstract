@@ -11,7 +11,7 @@ from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 # from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
-TAMP_PATH = '/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha/'
+TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
 
 
 def rotate_pc(pc, yaw = 0):
@@ -48,21 +48,28 @@ class pddl_wrapper(object):
 
 
 
-    def get_obs_from_datset(self):
+    def get_obs_from_datset(self, applied_transform = None,**kwargs):
         assert self.cfg.mode != 'inference'
         data_iter = iter(self.test_loader)
         fist_batch = next(data_iter)
+
+        ## TODO: below is not checked!
+        if applied_transform is not None:
+            for k, v in fist_batch.items():
+                if 'pc' in k:
+                    fist_batch[k] = torch.tensor(rotate_pc(v.numpy().reshape(-1, 3), applied_transform)).reshape(1, 1, -1, 3).float()
         return fist_batch
     
-    def get_obs_from_ply(self, ply_paths = {}):
+    def get_obs_from_ply(self, ply_paths = {}, applied_transform = None, **kwargs):
         assert self.cfg.mode == 'inference'
         import open3d as o3d
         data_batch = {}
         for k, v in ply_paths.items():
             pcd = o3d.io.read_point_cloud(v)
             input_pc = np.asarray(pcd.points)
-            # ## rotate for 180 degree
-            # input_pc = rotate_pc(input_pc, np.pi)
+            
+            if applied_transform is not None:
+                input_pc = rotate_pc(input_pc, applied_transform)
             data_batch[k] = torch.tensor(input_pc).unsqueeze(0).unsqueeze(0).float()
         return data_batch
 
@@ -167,7 +174,7 @@ class pddl_wrapper(object):
 
 
 
-def infer_and_render(dataset_path, config_name, overrides, ply_paths = None):
+def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, **kwargs):
     with hydra.initialize(config_path="configs", job_name="test_app"):
         cfg = hydra.compose(config_name=config_name, overrides=overrides)
     
@@ -179,36 +186,61 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None):
 
     ## if pc is in the world frame. No need to normalize it and get the offset, as center will be calculated in actor
     if ply_paths is  None:
-        agent_obs = tamp_wrapper.get_obs_from_datset()
+        agent_obs = tamp_wrapper.get_obs_from_datset(**kwargs)
         obs_c = to_torch(agent_obs, tamp_wrapper.cfg.device)
         offset_dict = None
     else:
-        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths)    
+        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, **kwargs)    
         obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
 
     action_dict = tamp_wrapper.predict_action(history_bid=0, obs_c=obs_c, offset_dict=offset_dict)
+
+    ## TODO: if agent_obs has grasp value, then compare the difference.
+    if 'grasp' in agent_obs:
+        raise NotImplementedError('grasp rotation diff not implemented')
+        grasp_diff = agent_obs['grasp'] - action_dict['grasp']
+        print('grasp diff: ', grasp_diff)
+        action_dict['se3_diff'] = grasp_diff
 
     return action_dict
 
 
 
 def main():
-    # mj sim
-    dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
-    config_name = "mj_peg_hole"
-    overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
-    ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
-    # ply_paths = None
+    # # mj sim
+    # dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
+    # config_name = "mj_peg_hole"
+    # overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
+    # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+    # # ply_paths = None
 
-    # ## aloha transfer tape
-    # import pathlib
-    # dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
-    # config_name = "transfer_tape"
-    # overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
-    # ply_paths = {'pc': os.path.join(dataset_path, 'debug_diffgen.ply')}
+    ## aloha transfer tape
+    import pathlib
+    dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
+    config_name = "transfer_tape"
+    overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
+    ply_paths = {'pc': os.path.join(dataset_path, 'tape_OOD.ply')}
 
     action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths)
     print(action_dict)
+
+
+def eval_with_rotation():
+
+
+    ## aloha transfer tape
+    import pathlib
+    dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
+    config_name = "transfer_tape"
+    overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
+    ply_paths = {'pc': os.path.join(dataset_path, 'tape_OOD.ply')}
+
+    action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths, applied_transform = np.pi/2)
+    print(action_dict)
+
+    
+
+
 
 
 
