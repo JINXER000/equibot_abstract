@@ -197,8 +197,8 @@ def main():
     dataset_path = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
     config_name = "mj_peg_hole"
     overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
-    # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
-    ply_paths = None
+    ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+    # ply_paths = None
 
     # ## aloha transfer tape
     # import pathlib

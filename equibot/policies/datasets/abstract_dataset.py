@@ -358,7 +358,7 @@ class ALOHAPoseDataset(Dataset):
                     pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
                     eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
 
-                    joint_data = f['demo_joint_vals'][()]
+                    joint_data = f['pred_joint_vals'][()]
                     stage = 'precondition'
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]

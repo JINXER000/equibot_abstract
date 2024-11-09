@@ -5,6 +5,8 @@ from torch import nn
 import numpy as np
 
 from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
+from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att
+
 from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
 
@@ -38,7 +40,7 @@ class ALOHAPolicy(nn.Module):
         if self.obs_mode.startswith("pc"):
             self.encoder = SIM3Vec4Latent(**cfg.model.encoder) # hidden_dim = 32
         else:
-            self.encoder = None
+            self.encoder = self.load_pretrained_encoder(cfg)
         self.encoder_out_dim = cfg.model.encoder.c_dim
 
         # self.num_eef = cfg.env.num_eef
@@ -75,6 +77,35 @@ class ALOHAPolicy(nn.Module):
 
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized paraGen Policy with {num_parameters} parameters")
+
+    def load_pretrained_encoder(self, cfg):
+        net = VecDGCNN_att(
+            num_layers=7,
+            feat_dim=[32, 32, 64, 64, 128, 256, 512],
+            down_sample_layers=[2, 4, 5],
+            down_sample_factor=[4, 4, 4],
+            atten_start_layer=100,  ## REVISED
+            atten_multi_head_c=16,
+            use_res_global_conv=True,
+            res_global_start_layer=2,
+            scale_factor=64000.0,   ## REVISED
+            center_pred=True,       ## REVISED
+            
+        ).to(self.device)
+
+        w_enc_path = cfg.model.encoder.pretrained_path
+        f_param = torch.load(w_enc_path)
+        f_param = f_param["model_state_dict"]
+        net.load_state_dict(
+            {".".join(k.split(".")[2:]): f_param[k] for k in f_param.keys() if "encoder" in k},
+            strict=True,
+        )
+
+        for param in net.parameters():
+            param.requires_grad = False
+
+        return net
+
 
     def _init_torch_compile(self):
         if self.use_torch_compile:
