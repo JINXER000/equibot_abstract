@@ -133,14 +133,14 @@ in my case, I can use the command below for training:
 ```
 python -m equibot.policies.train --config-name fold_mobile_equibot \
     prefix=sim_mobile_fold_7dof_equibot \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/fold/pcs/
+    data.dataset.path=/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/fold/pcs/
 ```
 
 ```
 cd equibot/policies/
 python train_abstract.py --config-name transfer_tape \
     prefix=aloha_transfer_tape \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/
+    data.dataset.path=/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/
 ```
 
 
@@ -182,7 +182,7 @@ In my 3090:
 ```
 python -m equibot.policies.eval --config-name fold_mobile_equibot \
     prefix="eval_rsnp_sim_mobile_fold_7dof_equibot_s1" mode=eval \
-    training.ckpt="/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/sim_mobile_fold_7dof_equibot/ckpt01999.pth" \
+    training.ckpt="/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/sim_mobile_fold_7dof_equibot/ckpt01999.pth" \
     env.args.scale_high=2 env.args.scale_aspect_limit=1.33 \
     env.args.randomize_rotation=true env.args.randomize_scale=true env.args.use_wandb=false\
     +env.args.randomize_position=true +env.args.rand_pos_scale=0.5 env.vectorize=true 

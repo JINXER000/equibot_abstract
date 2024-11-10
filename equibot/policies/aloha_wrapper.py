@@ -4,7 +4,7 @@ import torch
 import hydra
 import numpy as np
 
-from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch
+from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch, rotate_around_z
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
 
@@ -57,7 +57,7 @@ class pddl_wrapper(object):
         if applied_transform is not None:
             for k, v in fist_batch.items():
                 if 'pc' in k:
-                    fist_batch[k] = torch.tensor(rotate_pc(v.numpy().reshape(-1, 3), applied_transform)).reshape(1, 1, -1, 3).float()
+                    fist_batch[k] = torch.tensor(rotate_around_z(v.numpy().reshape(-1, 3), applied_transform)).reshape(1, 1, -1, 3).float()
         return fist_batch
     
     def get_obs_from_ply(self, ply_paths = {}, applied_transform = None, **kwargs):
@@ -69,7 +69,7 @@ class pddl_wrapper(object):
             input_pc = np.asarray(pcd.points)
             
             if applied_transform is not None:
-                input_pc = rotate_pc(input_pc, applied_transform)
+                input_pc = rotate_around_z(input_pc, applied_transform)
             data_batch[k] = torch.tensor(input_pc).unsqueeze(0).unsqueeze(0).float()
         return data_batch
 
@@ -174,7 +174,7 @@ class pddl_wrapper(object):
 
 
 
-def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, **kwargs):
+def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, history_bid = -1, **kwargs):
     with hydra.initialize(config_path="configs", job_name="test_app"):
         cfg = hydra.compose(config_name=config_name, overrides=overrides)
     
@@ -193,14 +193,9 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, **k
         agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, **kwargs)    
         obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
 
-    action_dict = tamp_wrapper.predict_action(history_bid=0, obs_c=obs_c, offset_dict=offset_dict)
+    action_dict = tamp_wrapper.predict_action(history_bid=history_bid, obs_c=obs_c, offset_dict=offset_dict)
 
-    ## TODO: if agent_obs has grasp value, then compare the difference.
-    if 'grasp' in agent_obs:
-        raise NotImplementedError('grasp rotation diff not implemented')
-        grasp_diff = agent_obs['grasp'] - action_dict['grasp']
-        print('grasp diff: ', grasp_diff)
-        action_dict['se3_diff'] = grasp_diff
+
 
     return action_dict
 
@@ -208,7 +203,7 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, **k
 
 def main():
     # # mj sim
-    # dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
+    # dataset_path = '/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/mj_peg_hole/'
     # config_name = "mj_peg_hole"
     # overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
     # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
@@ -221,11 +216,11 @@ def main():
     overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
     ply_paths = {'pc': os.path.join(dataset_path, 'tape_OOD.ply')}
 
-    action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths)
+    action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths, history_bid=0)
     print(action_dict)
 
 
-def eval_with_rotation():
+def eval_with_rotation(ply_name = 'tape_OOD.ply', history_bid = -1):
 
 
     ## aloha transfer tape
@@ -233,16 +228,53 @@ def eval_with_rotation():
     dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
     config_name = "transfer_tape"
     overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
-    ply_paths = {'pc': os.path.join(dataset_path, 'tape_OOD.ply')}
-
-    action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths, applied_transform = np.pi/2)
-    print(action_dict)
-
+    ply_paths = {'pc': os.path.join(dataset_path, ply_name)}
     
+
+    with hydra.initialize(config_path="configs", job_name="test_app"):
+        cfg = hydra.compose(config_name=config_name, overrides=overrides)
+    
+    assert cfg.mode != "train"
+
+    np.random.seed(cfg.seed)
+
+    tamp_wrapper = pddl_wrapper(cfg, dataset_path)
+
+    agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths)    
+    obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
+
+    raw_action_dict = tamp_wrapper.predict_action(obs_c=obs_c, offset_dict=offset_dict, history_bid=history_bid)
+    ref_grasp_rot = raw_action_dict['grasp'][:3, :3]
+
+
+    rot_to_apply_ls = [np.pi/2, np.pi, 3*np.pi/2]
+    for rot in rot_to_apply_ls:
+        print('Rotate the input pc for: ', np.rad2deg(rot))
+        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, applied_transform=rot)    
+        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
+        action_dict = tamp_wrapper.predict_action(obs_c=obs_c,    
+                                                   offset_dict=offset_dict,
+                                                   history_bid=history_bid)
+        
+        grasp_rot = action_dict['grasp'][:3, :3]
+
+        print('rotation diff: ', rotation_diff(grasp_rot, ref_grasp_rot))
+        
+
+
+def rotation_diff(rot1, rot2):
+    theta = np.arccos(np.clip((np.trace(np.dot(rot1, rot2.T)) - 1) / 2, -1.0, 1.0))
+    deg = np.rad2deg(theta)
+    return deg
+
+
+
+
 
 
 
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    eval_with_rotation(ply_name='mug_ID.ply', history_bid=0)

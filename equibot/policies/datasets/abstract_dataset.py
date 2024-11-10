@@ -7,6 +7,10 @@ from tqdm import tqdm
 from collections import namedtuple
 from equibot.policies.utils.constants import qpos_to_eepose
 
+from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
+from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
+from equibot.policies.utils.misc import rotate_around_z
+
 import hydra
 # import sys
 # sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
@@ -114,6 +118,7 @@ class ALOHAPoseDataset(Dataset):
         elif cfg.dataset_type == 'txt':
             self.process_txt(cfg)
         elif cfg.dataset_type == 'hdf5_predeff':
+        
             self.process_50demos_predeff(cfg)
         else:
             raise NotImplementedError('Dataset type not implemented!')
@@ -322,7 +327,9 @@ class ALOHAPoseDataset(Dataset):
         print('processed all hdf5 file!')
 
     # add eff grasp
-    def process_50demos_predeff(self, cfg):
+    def process_50demos_predeff(self, cfg, est_effpose = False):
+        if est_effpose:
+            self.pretrained_encoder = VecDGCNN_att_frozen(preload_path= cfg.preload_path).cuda()    
         print('Processing hdf5 dataset...')
         data_list = []
         raw_files = self.raw_file_names
@@ -330,24 +337,24 @@ class ALOHAPoseDataset(Dataset):
         conditional_pc = None
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
-            
+
             if 'hdf5' in  file_name:
                 hdf5_path = os.path.join(self.root, 'raw', file_name)
                 import h5py
                 with h5py.File(hdf5_path, 'r') as f:
 
                     start_pc = f['start_grasps']['obj_points'][()]
-                    # tgt_size = cfg.num_points
-                    # sampled_indices = np.random.choice(start_pc.shape[0], tgt_size, replace=False)
-                    # start_pc = start_pc[sampled_indices]
-                    # start_offset = np.min(start_pc, axis=0)
-                    # conditional_pc = start_pc - start_offset
-
+ 
                     end_pc = f['end_grasps']['obj_points'][()]
-                    # sampled_indices = np.random.choice(end_pc.shape[0], tgt_size, replace=False)
-                    # end_pc = end_pc[sampled_indices]
-                    end_offset = np.min(end_pc, axis=0)
-                    # offset_diff = start_offset - end_offset
+
+                    if est_effpose:
+                        # end_pc = rotate_around_z(end_pc, np.pi)
+                        R_cuda, t_cuda = solve_pairwise_registration(self.pretrained_encoder, torch.tensor\
+                            (start_pc).unsqueeze(0).float().cuda(), torch.tensor(end_pc).unsqueeze(0).float().cuda())
+                        
+                        # debug_and_save(start_pc, end_pc, R_cuda, t_cuda)
+                    else:
+                        end_offset = np.min(end_pc, axis=0)
 
                     pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
                     eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
@@ -380,10 +387,23 @@ class ALOHAPoseDataset(Dataset):
                         pred_grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
                         
                         eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
-                        #### substract the offset using center of the object
-                        #### TODO: use ICP to estimate the rotation of the offset
+
+
                         eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
-                        eff_grasp[:3, 3] -= end_offset
+                        
+                        if est_effpose:
+                        ####  use ICP to estimate the rotation of the offset
+
+                            R_cpu = R_cuda.squeeze().cpu().numpy()
+                            t_cpu = t_cuda.squeeze().cpu().numpy()
+                            transform_mat = np.zeros((4, 4))
+                            transform_mat[:3, :3] = R_cpu
+                            transform_mat[:3, 3] = t_cpu
+                            transform_mat[3, 3] = 1
+                            eff_grasp = np.dot(transform_mat, eff_grasp)
+                        else:
+                            #### substract the offset using center of the object
+                            eff_grasp[:3, 3] -= end_offset
                         eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
 
                         grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
@@ -424,9 +444,9 @@ class ALOHAPoseDataset(Dataset):
 
         return sample
 
-@hydra.main(config_path="/home/chenyizhou/imitation_learning/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+@hydra.main(config_path="/home/xuhang/Desktop/yzchen_ws/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
-    cfg.data.dataset.path='/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     batch_size = 32

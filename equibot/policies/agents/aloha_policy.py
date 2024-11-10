@@ -278,10 +278,6 @@ class ALOHAPolicy(nn.Module):
                 joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
                 metrics['joint_error'] = joint_mse
         
-        if history_bid >= 0:
-            # print the grasp xyz
-            print(f"Grasp xyz: {unnormed_grasp_xyz[history_bid, 0]}")
-
         action_dict = {}
         if batch_size == 1:
 

@@ -364,8 +364,8 @@ def test_uninitialized():
 
 def test_pretrained():
 
-    w_enc_path = "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
-    dataset_dir = '/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
+    w_enc_path = "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/pretrained/mugs.pt"
+    dataset_dir = '/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
     ply_path = os.path.join(dataset_dir, 'debug_mugs.ply')
 
     import open3d as o3d
