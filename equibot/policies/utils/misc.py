@@ -2,9 +2,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-def to_torch(batch, device):
-    return {k: v.to(device) for k, v in batch.items()}
+def to_torch(batch, device):    return {k: v.to(device) for k, v in batch.items()}
 
+def to_tensor(dict):
+    return {k: torch.tensor(v).float() for k, v in dict.items()}
 
 def rotate_around_z(
     points,
@@ -29,6 +30,46 @@ def rotate_around_z(
     rotated_points = rotated_points.reshape(p_shape)
 
     return rotated_points
+
+### The function is to test the equivariance of the model
+## input np or torch tensor, output np
+def rotate_observation(obs, yaw_rotation):
+
+    from equibot.envs.sim_mobile.utils.transformations import euler2mat
+    rot_3x3 = euler2mat([0, 0, yaw_rotation]) 
+    trans_mat = np.eye(4)
+    trans_mat[:3, :3] = rot_3x3
+
+    obs_rotated = obs.copy()
+    for k, v in obs.items():
+        if 'pc' in k:
+            if isinstance(v, torch.Tensor):
+                pc_np = v.cpu().detach().numpy()
+            else:
+                pc_np = v
+            rotated_pc = rotate_around_z(pc_np, yaw_rotation)
+            obs_rotated[k] = rotated_pc
+
+        elif 'grasp' in k:
+            if isinstance(v, torch.Tensor):
+                grasp_np = v.cpu().detach().numpy()
+            else:
+                grasp_np = v
+
+            assert len(grasp_np.shape) == 4  # B, 1, 8, 4
+            assert trans_mat.shape == (4, 4)  # Transformation matrix should be 4x4
+
+            # Extract pre-grasp and eff-grasp components
+            pre_grasp = grasp_np[:, :, :4, :]  # Extract first 4 rows along the second last axis
+            rotated_grasp = np.einsum('ij,bnkj->bnki', trans_mat, pre_grasp)  # Batched matrix multiplication
+
+            if grasp_np.shape[2] == 8:
+                eff_grasp = grasp_np[:, :, 4:, :]  # Extract last 4 rows along the second last axis
+                rotated_eff_grasp = np.einsum('ij,bnkj->bnki', trans_mat, eff_grasp)  # Batched matrix multiplication
+                # Combine back along the third axis
+                rotated_grasp = np.concatenate([rotated_grasp, rotated_eff_grasp], axis=2)
+
+    return obs_rotated
 
 
 def get_env_class(env_name):

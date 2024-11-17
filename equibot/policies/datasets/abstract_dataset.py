@@ -52,6 +52,8 @@ class ALOHAPoseDataset(Dataset):
         self.has_eff = ('predeff' in cfg.dataset_type)
         self.is_mj = ('mj' in cfg.dataset_type)
 
+        self.is_obj_centric = cfg.is_obj_centric
+
 
         if mode == 'train':
             # Process the data
@@ -76,7 +78,7 @@ class ALOHAPoseDataset(Dataset):
     def processed_file_path(self):
         return os.path.join(self.root, 'processed', 'data.pt')
 
-    def centralize_cond_pc(self,  pc):
+    def centralize_cond_pc(self,  pc, obj_centric = True):
         input_pc = np.asarray(pc)
         assert len(input_pc.shape) == 2 
         input_pc= downsample_pc(input_pc, self.pc_shape[0])
@@ -85,7 +87,9 @@ class ALOHAPoseDataset(Dataset):
         if self.is_mj:
             input_pc = input_pc - self.mj_offset
         pc_offset = np.min(input_pc, axis=0)
-        input_pc = input_pc - pc_offset
+
+        if obj_centric:
+            input_pc = input_pc - pc_offset
         return input_pc, pc_offset
     
     def centralize_grasp(self, grasp, pc_offset):
@@ -98,8 +102,12 @@ class ALOHAPoseDataset(Dataset):
         pc = pc + pc_offset
         return pc
     
-    def decentralize_grasp(self,  grasp, pc_offset):
+      
+    def decentralize_grasp(self,  grasp, pc_offset, ref_grasp = None, **kwargs):
         grasp[:3, 3] += pc_offset
+        ##below for debug, visualize right grasp rot
+        if ref_grasp is not None:
+            grasp[:3, :3] = ref_grasp
         if self.has_eff:
             grasp[4:7, 3] += pc_offset
         return grasp
@@ -377,18 +385,18 @@ class ALOHAPoseDataset(Dataset):
                         else: # num_eef ==2
                             joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
 
-                        downsampled_pc = downsample_pc(start_pc, cfg.num_points)
-                        start_offset = np.min(start_pc, axis=0)
-                        conditional_pc = downsampled_pc - start_offset
+                        ## if obj_centric, cond_pc = raw_pc - offset; otherwise cond_pc = raw_pc
+                        conditional_pc, start_offset = self.centralize_cond_pc(start_pc, self.is_obj_centric)
+
                         pc_tensor = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
                         pred_grasp_id = np.random.randint(0, len(pred_grasp_poses)-1)
                         pred_grasp = pred_grasp_poses[pred_grasp_id].copy()
-                        pred_grasp[:3, 3] -= start_offset
+
+                        if self.is_obj_centric:
+                            pred_grasp[:3, 3] -= start_offset
                         pred_grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
                         
                         eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
-
-
                         eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
                         
                         if est_effpose:
@@ -404,6 +412,8 @@ class ALOHAPoseDataset(Dataset):
                         else:
                             #### substract the offset using center of the object
                             eff_grasp[:3, 3] -= end_offset
+                            if not self.is_obj_centric:
+                                eff_grasp[:3, 3] += start_offset
                         eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
 
                         grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
@@ -444,9 +454,9 @@ class ALOHAPoseDataset(Dataset):
 
         return sample
 
-@hydra.main(config_path="/home/xuhang/Desktop/yzchen_ws/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+@hydra.main(config_path="/home/chenyizhou/imitation_learning/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
-    cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     batch_size = 32

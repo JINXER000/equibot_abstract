@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from equibot.policies.utils.norm import Normalizer
-from equibot.policies.utils.misc import to_torch, convert_trans_to_vec
+from equibot.policies.utils.misc import to_torch, convert_trans_to_vec, rotate_observation, to_tensor
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 
 from equibot.policies.agents.aloha_policy import ALOHAPolicy
@@ -369,42 +369,16 @@ class ALOHAAgent(object):
 
     def act(self, obs, history_bid = -1):
         self.train(False)
-        # assert isinstance(obs["pc"][0], np.ndarray)
 
-        # batch_size = obs["pc"].shape[0]
-        # # batch_size = 1  # only support batch size 1 for now
-        # assert history_bid < batch_size # batch to select as denoising history
+        random_yaw = np.random.uniform(-np.pi, np.pi)
 
-        # xyzs = []
+        np_obs= rotate_observation(obs, random_yaw)
 
-        # for batch_idx in range(obs['pc'].shape[0]):
-        #     for horizon_id in range(obs['pc'].shape[1]):
-        #         xyz = obs['pc'][batch_idx][horizon_id]
-        #         if self.shuffle_pc:
-        #             choice = np.random.choice(
-        #                 xyz.shape[0], self.num_points, replace=True
-        #             )
-        #             xyz = xyz[choice, :]
-        #             xyzs.append(xyz)
-        #         else:
-        #             # only input certain amount of points
-        #             step = xyz.shape[0] // self.num_points
-        #             xyz = xyz[::step, :][: self.num_points]
-        #             xyzs.append(xyz)
-        # batch_pc = np.array(xyzs).reshape(obs['pc'].shape[0], obs['pc'].shape[1], -1, 3)
-        
-        if isinstance(obs["pc"][0], np.ndarray):
-            torch_obs = dict(
-                pc=torch.tensor(obs["pc"]).to(self.device).float(), 
-                grasp = torch.tensor(obs['grasp']).to(self.device).float(),
-                jpose = torch.tensor(obs['jpose']).to(self.device).float(),)
-        else: 
-            torch_obs = dict(
-                pc=obs["pc"].to(self.device).float(), 
-                grasp = obs['grasp'].to(self.device).float(),
-                jpose = obs['jpose'].to(self.device).float(),)
+        cpu_obs = to_tensor(np_obs)
+
+        gpu_obs = to_torch(cpu_obs, self.device)
             
-        action_dict,metrics, denoise_history = self.actor(torch_obs, history_bid=history_bid)
+        action_dict,metrics, denoise_history = self.actor(gpu_obs, history_bid=history_bid)
 
 
         return action_dict, denoise_history, metrics

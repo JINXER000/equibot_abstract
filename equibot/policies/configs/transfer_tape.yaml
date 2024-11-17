@@ -1,10 +1,10 @@
 defaults:
   - base
 
-use_wandb: false
+use_wandb: true
 
 training:
-  # ckpt: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
+  # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
   eval_interval: 1
 
 env:
@@ -36,7 +36,7 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/pretrained/mugs.pt"
+      preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
 
 data:
   dataset:
@@ -48,6 +48,8 @@ data:
     tamp_type: 'precondition'
     dataset_type: 'hdf5_predeff'
     # dataset_type: 'sam_predeff'
+
+    is_obj_centric: false
 
     preload_path: ${model.encoder.backbone_args.preload_path}
 

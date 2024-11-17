@@ -4,7 +4,7 @@ import torch
 import hydra
 import numpy as np
 
-from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch, rotate_around_z
+from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch, rotate_observation, to_tensor
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
 
@@ -14,11 +14,6 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
 
 
-def rotate_pc(pc, yaw = 0):
-    R = np.array([[np.cos(yaw), -np.sin(yaw), 0],
-                  [np.sin(yaw), np.cos(yaw), 0],
-                  [0, 0, 1]])
-    return np.dot(pc, R.T)
 
 class pddl_wrapper(object):
     def __init__(self, cfg, dataset_path):
@@ -48,19 +43,14 @@ class pddl_wrapper(object):
 
 
 
-    def get_obs_from_datset(self, applied_transform = None,**kwargs):
+    def get_obs_from_datset(self,**kwargs):
         assert self.cfg.mode != 'inference'
         data_iter = iter(self.test_loader)
         fist_batch = next(data_iter)
 
-        ## TODO: below is not checked!
-        if applied_transform is not None:
-            for k, v in fist_batch.items():
-                if 'pc' in k:
-                    fist_batch[k] = torch.tensor(rotate_around_z(v.numpy().reshape(-1, 3), applied_transform)).reshape(1, 1, -1, 3).float()
         return fist_batch
     
-    def get_obs_from_ply(self, ply_paths = {}, applied_transform = None, **kwargs):
+    def get_obs_from_ply(self, ply_paths = {}, **kwargs):
         assert self.cfg.mode == 'inference'
         import open3d as o3d
         data_batch = {}
@@ -68,8 +58,6 @@ class pddl_wrapper(object):
             pcd = o3d.io.read_point_cloud(v)
             input_pc = np.asarray(pcd.points)
             
-            if applied_transform is not None:
-                input_pc = rotate_around_z(input_pc, applied_transform)
             data_batch[k] = torch.tensor(input_pc).unsqueeze(0).unsqueeze(0).float()
         return data_batch
 
@@ -103,10 +91,10 @@ class pddl_wrapper(object):
                 decentralize_obs[k] = torch.tensor(decentralized_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
         return decentralize_obs
     
-    def decentralize_history(self, history, offset_dict):
+    def decentralize_history(self, history, offset_dict, **kwargs):
         for action_slice in history:
             for k, v in offset_dict.items():
-                action_slice.data[k] = self.dataset.decentralize_grasp(action_slice.data[k], offset_dict[k])
+                action_slice.data[k] = self.dataset.decentralize_grasp(action_slice.data[k], offset_dict[k], **kwargs)
         return history
     
     def decentralize_action(self, action_dict, offset_dict):
@@ -131,14 +119,19 @@ class pddl_wrapper(object):
         action_dict = self.predict_action(obs_c, offset_dict)
         return action_dict
     
-    def predict_action(self, obs_c,   offset_dict = None, history_bid = -1):
-        for k, v in obs_c.items():
-            if v is None:
-                continue
-            obs_c[k] = torch.tensor(v).float()
+    
+    def predict_action(self, obs_c,   offset_dict = None, history_bid = -1, **kwargs):
+        # for k, v in obs_c.items():
+        #     if v is None:
+        #         continue
+        #     obs_c[k] = torch.tensor(v).float()
+
+        obs_c = to_tensor(obs_c)
+
+        obs_gpu = to_torch(obs_c, self.cfg.device)
         
         action_c, eval_metrics, history_c = \
-            self.agent.actor(obs_c, history_bid=history_bid)
+            self.agent.actor(obs_gpu, history_bid=history_bid)
         action_c = self.dict_tensor_to_numpy(action_c)
 
         if history_bid >=0:
@@ -149,7 +142,7 @@ class pddl_wrapper(object):
 
             if offset_dict is not None:
                 ## move the gripper to the world frame
-                history_w =  self.decentralize_history(history_c, offset_dict)
+                history_w =  self.decentralize_history(history_c, offset_dict, **kwargs)
             else:
                 history_w = history_c
 
@@ -163,7 +156,7 @@ class pddl_wrapper(object):
 
             render_history(history_w, use_gui=True, \
                         directory = history_pic_dir, save_pic_every = -1,
-                        agent_obs = self.decentralize_obs(obs_c, offset_dict),
+                        agent_obs = self.decentralize_obs(obs_gpu, offset_dict),
                         has_eff = self.dataset.has_eff, vis_sides = vis_sides)
             
         if offset_dict is not None:
@@ -203,7 +196,7 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, his
 
 def main():
     # # mj sim
-    # dataset_path = '/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/mj_peg_hole/'
+    # dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
     # config_name = "mj_peg_hole"
     # overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
     # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
@@ -244,21 +237,31 @@ def eval_with_rotation(ply_name = 'tape_OOD.ply', history_bid = -1):
     obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
 
     raw_action_dict = tamp_wrapper.predict_action(obs_c=obs_c, offset_dict=offset_dict, history_bid=history_bid)
-    ref_grasp_rot = raw_action_dict['grasp'][:3, :3]
+    ref_grasp_angle = raw_action_dict['grasp'][:3, :3]
 
 
     rot_to_apply_ls = [np.pi/2, np.pi, 3*np.pi/2]
     for rot in rot_to_apply_ls:
-        print('Rotate the input pc for: ', np.rad2deg(rot))
-        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, applied_transform=rot)    
-        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
-        action_dict = tamp_wrapper.predict_action(obs_c=obs_c,    
-                                                   offset_dict=offset_dict,
-                                                   history_bid=history_bid)
-        
-        grasp_rot = action_dict['grasp'][:3, :3]
+        from equibot.envs.sim_mobile.utils.transformations import euler2mat
+        rot_3x3 = euler2mat([0, 0, rot])
+        rotated_ref_grasp = np.dot(rot_3x3, ref_grasp_angle)
 
-        print('rotation diff: ', rotation_diff(grasp_rot, ref_grasp_rot))
+        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, yaw_rotation=rot)    
+        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
+        input_obs = rotate_observation(agent_obs, rot)
+        action_dict = tamp_wrapper.predict_action(obs_c=input_obs,    
+                                                   offset_dict=offset_dict,
+                                                   history_bid=history_bid,
+                                                #    ref_grasp=rotated_ref_grasp,
+                                                   )
+        
+        
+        pred_grasp_angle = action_dict['grasp'][:3, :3]
+        
+
+
+
+        print('rotation diff: ', rotation_diff(pred_grasp_angle, rotated_ref_grasp))
         
 
 
