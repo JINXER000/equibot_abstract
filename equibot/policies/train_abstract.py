@@ -21,7 +21,7 @@ from equibot.policies.agents.aloha_agent import ALOHAAgent
 
 from test_abstract import run_eval
 
-@hydra.main(config_path="/home/chenyizhou/imitation_learning/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+@hydra.main(config_path="/home/xuhang/Desktop/yzchen_ws/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
     assert cfg.mode == "train"
     np.random.seed(cfg.seed)

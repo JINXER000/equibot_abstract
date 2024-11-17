@@ -229,10 +229,10 @@ class ALOHAPolicy(nn.Module):
                    
             # record history
             if history_bid >=0:
-                trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center, history_bid)
-                trans_mat = trans_batch[0, 0]
+                trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
+                trans_mat = trans_batch[0, 0].cpu().numpy()
                 if noise_pred[1] is not None:
-                    unnormed_joint = self.recover_jpose(noise_pred[1])
+                    unnormed_joint = self.recover_jpose(noise_pred[1]).cpu().numpy()
                     action_slice = (trans_mat, unnormed_joint[0])
                 else:
                     action_slice = (trans_mat, None)
@@ -247,6 +247,8 @@ class ALOHAPolicy(nn.Module):
         
         # gt_grasp_xyz = obs['gt_grasp'][:, 0, 0, :3].reshape(-1, 1, 3)
         # gt_grasp_rot6d = obs['gt_grasp'][:, 0, 0, 3:].reshape(-1, 1, 6)
+        if 'gt_grasp' not in obs:
+            return denoise_history, None
         gt_grasp_xyz, gt_dir1, gt_dir2 = self._convert_trans_to_vec(obs['gt_grasp'])
         gt_grasp_rot6d = torch.cat((gt_dir1, gt_dir2), dim=-1)
         gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1)

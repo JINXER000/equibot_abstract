@@ -8,7 +8,7 @@ from equibot.policies.utils.misc import  matrix_to_rotation_6d
 
 # import pytorch3d as pt
 
-DATASET_PATH = '/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape'
+DATASET_PATH = '/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape'
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
 class ALOHAPoseDataset(Dataset):

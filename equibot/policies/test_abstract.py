@@ -14,10 +14,9 @@ from equibot.policies.utils.media import combine_videos, save_video
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 
-# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-# import open3d as o3d
+sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha/')
+from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+import open3d as o3d
 
 def rotate_points(conditional_pc):
     points = np.asarray(conditional_pc.points)
@@ -41,19 +40,19 @@ def rotate_points(conditional_pc):
 
     # apply translation
     points_rotated += np.array([0.1, 2.1, 0.1])
-    # Update the point cloud with the rotated points
-    conditional_pc.points = o3d.utility.Vector3dVector(points_rotated)
+    # # Update the point cloud with the rotated points
+    # conditional_pc.points = o3d.utility.Vector3dVector(points_rotated)
 
-    # draw axis
-    axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-    o3d.visualization.draw_geometries([conditional_pc, axis])
+    # # draw axis
+    # axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+    # o3d.visualization.draw_geometries([conditional_pc, axis])
 
     return points_rotated   
 
 def ply2points(ply_path):
 
     conditional_pc = o3d.io.read_point_cloud(ply_path)
-    # points = rotate_points(conditional_pc)
+    points = rotate_points(conditional_pc)
     points = np.asarray(conditional_pc.points)
 
     return points
@@ -80,13 +79,14 @@ def run_eval(
     ## input obs from dataset
     if batch is not None:
         points_batch, gt_grasp_9d = process_batch(batch, agent)
+        agent_obs = {"pc": points_batch, "gt_grasp": gt_grasp_9d}
     else:
         # # input dummy obs
-        ply_path = "/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
+        ply_path = "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/debug_cup.ply"
         points = ply2points(ply_path)
         points_batch = points.reshape(1, 1, -1, 3)  # batch size, Ho, N, 3
-
-    agent_obs = {"pc": points_batch, "gt_grasp": gt_grasp_9d}
+        agent_obs = {"pc": points_batch}
+    
 
 
     # predict actions
@@ -126,7 +126,7 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path='/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
     eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(
@@ -165,7 +165,7 @@ def main(cfg):
             agent,
             vis=True,
             log_dir=log_dir,
-            batch = fist_batch,
+            batch = None, # fist_batch,
             history_bid = cfg.eval.history_bid,
         )
         # print metrics

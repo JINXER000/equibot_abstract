@@ -48,7 +48,7 @@ data:
     aug_zero_z_offset: false
     aug_center: [0., 0., 0.]
     shuffle_pc: true
-    num_workers: 12
+    num_workers: 0
     dof: ${env.dof}
     num_eef: ${env.num_eef}
     eef_dim: ${env.eef_dim}
