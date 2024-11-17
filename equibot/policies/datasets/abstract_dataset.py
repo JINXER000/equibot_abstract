@@ -54,6 +54,9 @@ class ALOHAPoseDataset(Dataset):
 
         self.is_obj_centric = cfg.is_obj_centric
 
+        self.num_eef = 2
+        self.dof = 6
+
 
         if mode == 'train':
             # Process the data
@@ -290,18 +293,13 @@ class ALOHAPoseDataset(Dataset):
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]
                         right_jpose = joint_data[i][7:13]
+                        joint_pose = np.vstack((left_jpose, right_jpose)).reshape(1, -1, self.dof)
+
 
                         # only include jpose before OR after the action
                         stage = self.which_stage(stage, left_jpose, right_jpose)
                         if stage != cfg.tamp_type:
                             continue
-
-                        if self.symb_mask[0] == 'None':
-                            joint_pose = right_jpose.reshape(1, 1, 6)
-                        elif self.symb_mask[1] == 'None':
-                            joint_pose = left_jpose.reshape(1, 1, 6)
-                        else: # num_eef ==2
-                            joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
 
                         selected_joint_data.append(joint_pose)
 
@@ -372,18 +370,12 @@ class ALOHAPoseDataset(Dataset):
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]
                         right_jpose = joint_data[i][7:13]
+                        joint_pose = np.vstack((left_jpose, right_jpose)).reshape(1, -1, self.dof)
 
                         # only include jpose before OR after the action
                         stage = self.which_stage(stage, left_jpose, right_jpose)
                         if stage != cfg.tamp_type:
                             continue
-
-                        if self.symb_mask[0] == 'None':
-                            joint_pose = right_jpose.reshape(1, 1, 6)
-                        elif self.symb_mask[1] == 'None':
-                            joint_pose = left_jpose.reshape(1, 1, 6)
-                        else: # num_eef ==2
-                            joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
 
                         ## if obj_centric, cond_pc = raw_pc - offset; otherwise cond_pc = raw_pc
                         conditional_pc, start_offset = self.centralize_cond_pc(start_pc, self.is_obj_centric)

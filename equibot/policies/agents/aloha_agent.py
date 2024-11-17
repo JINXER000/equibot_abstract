@@ -56,6 +56,7 @@ class ALOHAAgent(object):
     def _init_normalizers(self, batch):
         if self.jpose_normalizer is None: # normalize to [0, max]
             joint_data  = batch['jpose']
+            
             flattend_joint_data = joint_data.view(-1, self.dof)
             indices = [[0, 1, 2, 3, 4, 5]]
 

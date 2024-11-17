@@ -48,9 +48,14 @@ class ALOHAPolicy(nn.Module):
             self.eef_dim = 3 # xyz, dir1, dir2
         else:
             self.eef_dim = 6
+            
         # self.num_eef = len([x for x in self.symb_mask[:2] if x != 'None'])
         self.num_eef = cfg.env.num_eef
-        num_scalar_dims = self.dof * self.num_eef # joint pose
+        self.jpose_mask = np.ones((self.num_eef, self.dof))
+        for i in range(self.num_eef):
+            if self.symb_mask[i] == 'None':
+                self.jpose_mask[i] = 0
+        num_scalar_dims = np.sum(self.jpose_mask)
 
         self.obs_dim = self.encoder_out_dim
         self.noise_pred_net = VecConditionalUnet1D(
@@ -71,7 +76,6 @@ class ALOHAPolicy(nn.Module):
 
         self.noise_scheduler = hydra.utils.instantiate(cfg.model.noise_scheduler)
 
-        # self.writer = SummaryWriter()
         self.mask_type = self.conclude_masks()
 
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -88,8 +92,11 @@ class ALOHAPolicy(nn.Module):
 
     def _convert_jpose_to_vec(self, jpose, batch=None):
         # input: (B, 1, E , dof); output: (B, 1, ac_dim, 3) 
-        # jpose = jpose.reshape(jpose.shape[0], jpose.shape[1],  -1, 3)
-        jpose = jpose.reshape(jpose.shape[0], -1,  self.dof * self.num_eef)
+        
+        # # use mask to select the joint pose
+        # masked_jpose = jpose[:, :, self.jpose_mask == 1] 
+            
+        # jpose = masked_jpose.reshape(masked_jpose.shape[0], -1,  np.sum(self.jpose_mask))
         return jpose
     
     # def _convert_grasp_to_vec(self, grasp, batch = None):
