@@ -105,7 +105,7 @@ in my case, I can use the command below for training:
 ```
 python -m equibot.policies.train --config-name fold_mobile_equibot \
     prefix=sim_mobile_fold_7dof_equibot \
-    data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/fold/pcs/
+    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/fold/pcs/
 ```
 ### Evaluation
 

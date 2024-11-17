@@ -8,7 +8,7 @@ from equibot.policies.utils.misc import  matrix_to_rotation_6d
 
 # import pytorch3d as pt
 
-DATASET_PATH = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape'
+DATASET_PATH = '/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape'
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
 
 class ALOHAPoseDataset(Dataset):
@@ -151,7 +151,7 @@ class ALOHAPoseDataset(Dataset):
                 hdf5_path = os.path.join(self.root, 'raw', file_name)
                 import h5py
                 with h5py.File(hdf5_path, 'r') as f:
-                    joint_data = f['demo_joint_vals'][()]
+                    joint_data = f['pred_joint_vals'][()]
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]
                         right_jpose = joint_data[i][7:13]
@@ -274,7 +274,7 @@ class ALOHAPoseDataset(Dataset):
                         grasp_poses = f['end_grasps']['grasp_poses'][()]
 
                     grasp_nums = len(grasp_poses)
-                    joint_data = f['demo_joint_vals'][()]
+                    joint_data = f['pred_joint_vals'][()]
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]
                         right_jpose = joint_data[i][7:13]

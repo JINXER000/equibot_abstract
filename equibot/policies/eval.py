@@ -95,7 +95,7 @@ def run_eval(
             # predict actions
             st = time.time()
             ac, ac_dict = agent.act(agent_obs, return_dict=True)
-            print(f"Inference time: {time.time() - st:.3f}s")
+            print(f": {time.time() - st:.3f}s")
             if ac_dict is not None:
                 if (
                     "expected_eef_pos" in ac_dict

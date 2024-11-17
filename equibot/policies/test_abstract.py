@@ -14,10 +14,10 @@ from equibot.policies.utils.media import combine_videos, save_video
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 
-sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-import open3d as o3d
+# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+# import open3d as o3d
 
 def rotate_points(conditional_pc):
     points = np.asarray(conditional_pc.points)
@@ -82,7 +82,7 @@ def run_eval(
         points_batch, gt_grasp_9d = process_batch(batch, agent)
     else:
         # # input dummy obs
-        ply_path = "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
+        ply_path = "/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/raw/graspobj_4.ply"
         points = ply2points(ply_path)
         points_batch = points.reshape(1, 1, -1, 3)  # batch size, Ho, N, 3
 
@@ -92,7 +92,7 @@ def run_eval(
     # predict actions
     st = time.time()
     unnormed_history, metrics = agent.act(agent_obs, history_bid=history_bid)
-    print(f"Inference time: {time.time() - st:.3f}s")
+    print(f": {time.time() - st:.3f}s")
 
     if vis and history_bid >=0:
         history_pic_dir = os.path.join(log_dir, "history_pics")
@@ -126,7 +126,7 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
     eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(

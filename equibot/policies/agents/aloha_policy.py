@@ -171,7 +171,7 @@ class ALOHAPolicy(nn.Module):
         batch_size =  pc.shape[0]
 
         ema_nets = self.ema.averaged_model
-        feat_dict = ema_nets["encoder"](pc, ret_perpoint_feat=True, target_norm=self.pc_scale)
+        feat_dict = ema_nets["encoder"](pc,  target_norm=self.pc_scale)
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.obs_horizon, 1, 1)
         )

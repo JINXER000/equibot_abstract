@@ -340,7 +340,7 @@ class ALOHAAgent(object):
         # batch_size = 1  # only support batch size 1 for now
         assert history_bid < batch_size # batch to select as denoising history
 
-        xyzs = []
+        xyzs = [] 
 
         for batch_idx in range(obs['pc'].shape[0]):
             for horizon_id in range(obs['pc'].shape[1]):
