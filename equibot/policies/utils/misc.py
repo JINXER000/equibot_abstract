@@ -4,8 +4,16 @@ import torch.nn.functional as F
 
 def to_torch(batch, device):    return {k: v.to(device) for k, v in batch.items()}
 
-def to_tensor(dict):
-    return {k: torch.tensor(v).float() for k, v in dict.items()}
+def to_tensor(obs):
+    return {k: torch.tensor(v).float() for k, v in obs.items()}
+
+def to_np(obs):
+    for k, v in obs.items():
+        if isinstance(v, torch.Tensor):
+            obs[k] = v.cpu().detach().numpy()
+        else:
+            obs[k] = np.array(v)
+    return obs
 
 def rotate_around_z(
     points,
@@ -33,28 +41,22 @@ def rotate_around_z(
 
 ### The function is to test the equivariance of the model
 ## input np or torch tensor, output np
-def rotate_observation(obs, yaw_rotation):
+def rotate_observation(np_obs, yaw_rotation):
 
     from equibot.envs.sim_mobile.utils.transformations import euler2mat
     rot_3x3 = euler2mat([0, 0, yaw_rotation]) 
     trans_mat = np.eye(4)
     trans_mat[:3, :3] = rot_3x3
 
-    obs_rotated = obs.copy()
-    for k, v in obs.items():
+    obs_rotated = np_obs.copy()
+    for k, v in np_obs.items():
         if 'pc' in k:
-            if isinstance(v, torch.Tensor):
-                pc_np = v.cpu().detach().numpy()
-            else:
-                pc_np = v
+            pc_np = v
             rotated_pc = rotate_around_z(pc_np, yaw_rotation)
             obs_rotated[k] = rotated_pc
 
         elif 'grasp' in k:
-            if isinstance(v, torch.Tensor):
-                grasp_np = v.cpu().detach().numpy()
-            else:
-                grasp_np = v
+            grasp_np = v
 
             assert len(grasp_np.shape) == 4  # B, 1, 8, 4
             assert trans_mat.shape == (4, 4)  # Transformation matrix should be 4x4

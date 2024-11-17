@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from equibot.policies.utils.norm import Normalizer
-from equibot.policies.utils.misc import to_torch, convert_trans_to_vec, rotate_observation, to_tensor
+from equibot.policies.utils.misc import to_torch, convert_trans_to_vec, rotate_observation, to_tensor, to_np
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 
 from equibot.policies.agents.aloha_policy import ALOHAPolicy
@@ -371,12 +371,12 @@ class ALOHAAgent(object):
     def act(self, obs, history_bid = -1):
         self.train(False)
 
-        random_yaw = np.random.uniform(-np.pi, np.pi)
+        np_obs = to_np(obs)
 
-        np_obs= rotate_observation(obs, random_yaw)
+        # random_yaw = np.random.uniform(-np.pi, np.pi)
+        # np_obs= rotate_observation(obs, random_yaw)
 
         cpu_obs = to_tensor(np_obs)
-
         gpu_obs = to_torch(cpu_obs, self.device)
             
         action_dict,metrics, denoise_history = self.actor(gpu_obs, history_bid=history_bid)
