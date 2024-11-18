@@ -23,6 +23,7 @@ class VecPointNet(nn.Module):
         c_dim=128,
         num_layers=4,
         knn=16,
+        **kwargs,
     ):
         super().__init__()
 

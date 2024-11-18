@@ -151,7 +151,7 @@ class ALOHAPoseDataset(Dataset):
                 hdf5_path = os.path.join(self.root, 'raw', file_name)
                 import h5py
                 with h5py.File(hdf5_path, 'r') as f:
-                    joint_data = f['pred_joint_vals'][()]
+                    joint_data = f['demo_joint_vals'][()]
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:6]
                         right_jpose = joint_data[i][7:13]
@@ -274,18 +274,32 @@ class ALOHAPoseDataset(Dataset):
                         grasp_poses = f['end_grasps']['grasp_poses'][()]
 
                     grasp_nums = len(grasp_poses)
-                    joint_data = f['pred_joint_vals'][()]
-                    for i in range(len(joint_data)):
-                        left_jpose = joint_data[i][:6]
-                        right_jpose = joint_data[i][7:13]
-                        joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
-
-                        grasp_id = np.random.randint(0, grasp_nums-1)
-                        pc_tensort = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
+                    joint_data = f['demo_joint_vals'][()]
+                    joint_nums = len(joint_data)
+                    for grasp_id in range(grasp_nums):
                         grasp_tensor = torch.tensor(grasp_poses[grasp_id]).to(torch.float32).reshape(1, 4, 4)
+                        pc_tensort = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
+
+                        joint_id = np.random.randint(0, joint_nums-1)
+                        left_jpose = joint_data[joint_id][:6]
+                        right_jpose = joint_data[joint_id][7:13]
+                        joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
                         data = {'joint_pose': joint_pose, 'pc': pc_tensort, \
                                 'grasp_pose':grasp_tensor}
                         data_list.append(data)
+
+
+                    # for i in range(len(joint_data)):
+                    #     left_jpose = joint_data[i][:6]
+                    #     right_jpose = joint_data[i][7:13]
+                    #     joint_pose = np.concatenate((left_jpose, right_jpose)).reshape(1, 2, 6)
+
+                    #     grasp_id = np.random.randint(0, grasp_nums-1)
+                    #     pc_tensort = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
+                    #     grasp_tensor = torch.tensor(grasp_poses[grasp_id]).to(torch.float32).reshape(1, 4, 4)
+                    #     data = {'joint_pose': joint_pose, 'pc': pc_tensort, \
+                    #             'grasp_pose':grasp_tensor}
+                    #     data_list.append(data)
 
         # change_grasp_every = np.ceil(len(data_list) / len(grasp_poses))
         # change_grasp_id = 0
