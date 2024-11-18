@@ -65,11 +65,11 @@ def rotate_observation(np_obs, yaw_rotation):
 
             # Extract pre-grasp and eff-grasp components
             pre_grasp = grasp_np[:, :, :4, :]  # Extract first 4 rows along the second last axis
-            rotated_grasp = np.einsum('ij,bnkj->bnki', trans_mat, pre_grasp)  # Batched matrix multiplication
+            rotated_grasp = np.einsum('ij,bnjk->bnik', trans_mat, pre_grasp)  # Batched matrix multiplication
 
             if grasp_np.shape[2] == 8:
                 eff_grasp = grasp_np[:, :, 4:, :]  # Extract last 4 rows along the second last axis
-                rotated_eff_grasp = np.einsum('ij,bnkj->bnki', trans_mat, eff_grasp)  # Batched matrix multiplication
+                rotated_eff_grasp = np.einsum('ij,bnjk->bnik', trans_mat, eff_grasp)  # Batched matrix multiplication
                 # Combine back along the third axis
                 rotated_grasp = np.concatenate([rotated_grasp, rotated_eff_grasp], axis=2)
 

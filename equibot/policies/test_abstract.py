@@ -95,8 +95,8 @@ def run_eval(
 
     ## input obs from dataset
     if batch is not None:
-        points_batch, gt_grasp_9d = process_batch(batch, agent)
-        agent_obs = {"pc": points_batch, "gt_grasp": gt_grasp_9d}
+        points_batch, gt_grasp_9d, jpose_batch = process_batch(batch, agent)
+        agent_obs = {"pc": points_batch, "gt_grasp": gt_grasp_9d, 'jpose': jpose_batch}
     else:
         # # input dummy obs
         ply_path = "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/tape.ply"
@@ -149,7 +149,7 @@ def main(cfg):
     test_loader = torch.utils.data.DataLoader(
         eval_dataset,
         batch_size=32,
-        num_workers=num_workers,
+        num_workers=0,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
@@ -182,18 +182,26 @@ def main(cfg):
 
         log_dir = os.getcwd()
 
-        rotate_yaw_list = [0, np.pi/2, np.pi, np.pi/2*3]
+        eval_metrics = run_eval(
+            agent,
+            vis=True,
+            log_dir=log_dir,
+            batch =  fist_batch,
+            history_bid = cfg.eval.history_bid,
+        )
+        ### for ply
+        # rotate_yaw_list = [0, np.pi/2, np.pi, np.pi/2*3]
 
-        for rot_z in rotate_yaw_list:
-            eval_metrics = run_eval(
-                agent,
-                vis=True,
-                log_dir=log_dir,
-                batch = None, # fist_batch,
-                history_bid = cfg.eval.history_bid,
-                rotate_yaw_list = rotate_yaw_list,
-                rot_z = rot_z,
-            )
+        # for rot_z in rotate_yaw_list:
+        #     eval_metrics = run_eval(
+        #         agent,
+        #         vis=True,
+        #         log_dir=log_dir,
+        #         batch = None, # fist_batch,
+        #         history_bid = cfg.eval.history_bid,
+        #         rotate_yaw_list = rotate_yaw_list,
+        #         rot_z = rot_z,
+        #     )
         # print metrics
         print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
     #     for k, v in eval_metrics.items():
