@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from collections import namedtuple
-from equibot.policies.utils.misc import  matrix_to_rotation_6d
+from equibot.policies.utils.misc import to_torch, rotate_observation, to_tensor, to_np
 
 import hydra
 import sys
@@ -328,12 +328,12 @@ class ALOHAPoseDataset(Dataset):
 
         return sample
 
-@hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+@hydra.main(config_path="/home/xuhang/Desktop/yzchen_ws/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
-    num_workers = cfg.data.dataset.num_workers
-    batch_size = 32
+    num_workers = 0
+    batch_size = 1
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=batch_size,
@@ -344,18 +344,24 @@ def main(cfg):
     )
     
     for batch_id, batch in enumerate(test_loader):
-        history_list = []
-        tmp_pc = batch['pc'][0].reshape(-1, 3).numpy()
-        for i in range(batch['joint_pose'].shape[0]):
-            jpose = batch['joint_pose'][i].reshape(-1).numpy()
-            grasp_pose = batch['grasp_pose'][i].reshape(4,4).numpy()
-            action_slice = (grasp_pose, jpose)
-            # action_slice = (None, jpose)
-            history_list.append(action_slice)
+
+        rot_list = [0, np.pi/2, np.pi, np.pi/2*3]
+        for rot_z in rot_list:
+            np_obs= rotate_observation(batch, rot_z)
+            cpu_obs = to_tensor(np_obs)
+
+            history_list = []
+            tmp_pc = cpu_obs['pc'][0].reshape(-1, 3).numpy()
+            for i in range(cpu_obs['joint_pose'].shape[0]):
+                jpose = cpu_obs['joint_pose'][i].reshape(-1).numpy()
+                grasp_pose = cpu_obs['grasp_pose'][i].reshape(4,4).numpy()
+                action_slice = (grasp_pose, jpose)
+                # action_slice = (None, jpose)
+                history_list.append(action_slice)
 
 
-        render_pose(history_list, use_gui=True, \
-                    directory = None, obj_points = tmp_pc)
+            render_pose(history_list, use_gui=True, \
+                        directory = None, obj_points = tmp_pc)
 
 if __name__ == '__main__':
     main()

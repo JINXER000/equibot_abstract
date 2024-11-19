@@ -73,6 +73,8 @@ def rotate_observation(np_obs, yaw_rotation):
                 # Combine back along the third axis
                 rotated_grasp = np.concatenate([rotated_grasp, rotated_eff_grasp], axis=2)
 
+            obs_rotated[k] = rotated_grasp
+
     return obs_rotated
 
 

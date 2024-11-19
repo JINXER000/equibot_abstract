@@ -13,6 +13,7 @@ from tqdm import tqdm
 from equibot.policies.utils.media import combine_videos, save_video
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
+from equibot.policies.utils.misc import to_torch, rotate_observation, to_tensor, to_np
 
 sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha/')
 from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
@@ -23,18 +24,18 @@ def rotate_points(conditional_pc, visualize=False, rot_z = None):
     points = np.asarray(conditional_pc)
 
     theta = rot_z
-    # # rotate the pc around y axis for 90 deg, then rotate around x axis for 45 deg
+    # # # rotate the pc around y axis for 90 deg, then rotate around x axis for 45 deg
     # rotation_y = np.array([
-    #     [np.cos(np.pi / 2), 0, np.sin(np.pi / 2)],
+    #     [np.cos(np.pi / 3), 0, np.sin(np.pi / 3)],
     #     [0, 1, 0],
-    #     [-np.sin(np.pi / 2), 0, np.cos(np.pi / 2)]
+    #     [-np.sin(np.pi / 3), 0, np.cos(np.pi / 3)]
     # ])
 
     # # 45 degrees rotation around the x-axis
     # rotation_x = np.array([
     #     [1, 0, 0],
-    #     [0, np.cos(np.pi / 4), -np.sin(np.pi / 4)],
-    #     [0, np.sin(np.pi / 4), np.cos(np.pi / 4)]
+    #     [0, np.cos(np.pi / 3), -np.sin(np.pi / 3)],
+    #     [0, np.sin(np.pi / 3), np.cos(np.pi / 3)]
     # ])
 
     rotation_z = np.array([
@@ -48,7 +49,7 @@ def rotate_points(conditional_pc, visualize=False, rot_z = None):
     points_rotated = points @ rotation_z.T
 
     # apply translation
-    # points_rotated += np.array([-0.1, -0.1, 0.2])
+    points_rotated += np.array([-0.1, 0.1, 0.1])
 
     if visualize:
         # visualize the pc with open3d
@@ -61,21 +62,18 @@ def rotate_points(conditional_pc, visualize=False, rot_z = None):
 
     return points_rotated   
 
-def ply2points(ply_path, rot_z = None, **kwargs):
+def ply2points(ply_path):
 
     conditional_pc = o3d.io.read_point_cloud(ply_path)
-    if rot_z is not None:
-        points = rotate_points(conditional_pc.points, rot_z = rot_z)
-    else:
-        points = np.asarray(conditional_pc.points)
+    points = np.asarray(conditional_pc.points)
 
     return points
 
 def process_batch(batch, agent):
 
-    pc = batch["pc"].cpu().numpy()
-    grasp_pose = batch["grasp_pose"].cpu().numpy()
-    joint_pose = batch["joint_pose"].cpu().numpy()
+    pc = batch["pc"].cpu().detach().numpy()
+    grasp_pose = batch["grasp_pose"].detach().cpu().numpy()
+    joint_pose = batch["joint_pose"].detach().cpu().numpy()
 
     # # perform transformation
     # pc = rotate_points(pc)
@@ -89,6 +87,7 @@ def run_eval(
     use_wandb=False,
     batch = None,
     history_bid = 0,
+    rot_z = 0,
     **kwargs
 ):
     
@@ -96,11 +95,11 @@ def run_eval(
     ## input obs from dataset
     if batch is not None:
         points_batch, gt_grasp_9d, jpose_batch = process_batch(batch, agent)
-        agent_obs = {"pc": points_batch, "gt_grasp": gt_grasp_9d, 'jpose': jpose_batch}
+        agent_obs = {"pc": points_batch.copy(), "gt_grasp": gt_grasp_9d.copy(), 'jpose': jpose_batch.copy()}
     else:
         # # input dummy obs
         ply_path = "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/tape.ply"
-        points = ply2points(ply_path, **kwargs)
+        points = ply2points(ply_path)
         points_batch = points.reshape(1, 1, -1, 3)  # batch size, Ho, N, 3
         agent_obs = {"pc": points_batch}
     
@@ -108,7 +107,10 @@ def run_eval(
 
     # predict actions
     st = time.time()
-    unnormed_history, metrics = agent.act(agent_obs, history_bid=history_bid)
+    np_obs= rotate_observation(agent_obs, rot_z)
+    cpu_obs = to_tensor(np_obs)
+    gpu_obs = to_torch(cpu_obs, 'cuda')
+    unnormed_history, metrics = agent.act(gpu_obs, history_bid=history_bid)
     print(f": {time.time() - st:.3f}s")
 
     if vis and history_bid >=0:
@@ -117,7 +119,7 @@ def run_eval(
             os.makedirs(history_pic_dir)
         render_pose(unnormed_history, use_gui=True, \
                     directory = history_pic_dir, save_pic_every = 10,
-                    obj_points = points_batch[history_bid,0])
+                    obj_points = gpu_obs['pc'][history_bid,0])
 
 
     return metrics
@@ -145,10 +147,10 @@ def main(cfg):
     # get eval datase
     cfg.data.dataset.path='/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/transfer_tape/'
     eval_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
-    num_workers = cfg.data.dataset.num_workers
+    # num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(
         eval_dataset,
-        batch_size=32,
+        batch_size=1,
         num_workers=0,
         shuffle=True,
         drop_last=True,
@@ -156,15 +158,15 @@ def main(cfg):
     )
 
     data_iter = iter(test_loader)
-    fist_batch = next(data_iter)
+    try: 
+        fist_batch = next(data_iter)
+    except Exception as e:
+        print(e)
+        print(f"捕获到异常: {type(e).__name__}")
 
     agent = ALOHAAgent(cfg)
     agent.train(False)
 
-    # draw encoder in tensorboard
-    # writer = SummaryWriter()
-    # dummy_input = torch.randn(32, 2, 512, 3, device=device).float()
-    # writer.add_graph(agent.actor.encoder, dummy_input)
 
 
     if os.path.isdir(cfg.training.ckpt):
@@ -182,33 +184,21 @@ def main(cfg):
 
         log_dir = os.getcwd()
 
-        eval_metrics = run_eval(
-            agent,
-            vis=True,
-            log_dir=log_dir,
-            batch =  fist_batch,
-            history_bid = cfg.eval.history_bid,
-        )
-        ### for ply
-        # rotate_yaw_list = [0, np.pi/2, np.pi, np.pi/2*3]
+        rotate_yaw_list = [0, np.pi/2, np.pi, np.pi/2*3]
 
-        # for rot_z in rotate_yaw_list:
-        #     eval_metrics = run_eval(
-        #         agent,
-        #         vis=True,
-        #         log_dir=log_dir,
-        #         batch = None, # fist_batch,
-        #         history_bid = cfg.eval.history_bid,
-        #         rotate_yaw_list = rotate_yaw_list,
-        #         rot_z = rot_z,
-        #     )
-        # print metrics
-        print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
-    #     for k, v in eval_metrics.items():
-    #         writer.add_scalar(f"eval/{k}", v, i)
+        for rot_z in rotate_yaw_list:
+            eval_metrics = run_eval(
+                agent,
+                vis=True,
+                log_dir=log_dir,
+                # batch = None, # fist_batch,
+                batch= fist_batch,
+                history_bid = cfg.eval.history_bid,
+                rot_z = rot_z,
+            )
+        # # print metrics
+        # print(f"ckpt: {ckpt_name}, eval_metrics: {eval_metrics}")
 
-    # writer.flush()
-    # writer.close()
 
 
 if __name__ == "__main__":

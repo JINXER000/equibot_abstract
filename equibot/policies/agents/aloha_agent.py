@@ -341,13 +341,16 @@ class ALOHAAgent(object):
         
 
 
-    def act(self, obs, history_bid = -1):
+    def act(self, obs, history_bid = -1, random_rotation = False):
         self.train(False)
 
-        np_obs = to_np(obs)
+        
 
-        # random_yaw = np.random.uniform(-np.pi, np.pi)
-        # np_obs= rotate_observation(obs, random_yaw)
+        if random_rotation:
+            random_yaw = np.random.uniform(-np.pi, np.pi)
+            np_obs= rotate_observation(obs, random_yaw)
+        else:
+            np_obs = to_np(obs)
 
         cpu_obs = to_tensor(np_obs)
         gpu_obs = to_torch(cpu_obs, self.device)
