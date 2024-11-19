@@ -250,25 +250,11 @@ class ALOHAAgent(object):
                    ).mean(),
                    }
         if self.actor.mask_type != 'only_grasp': # pred joint
-            # metrics["mean_gt_jnoise_norm"] = np.linalg.norm(
-            #         scalar_jpose_noise.detach().cpu().numpy(),
-            #         axis=1,
-            #     ).mean(),
-            # metrics["mean_pred_jnoise_norm"] = np.linalg.norm(
-            #         scalar_jpose_noise_pred.detach()
-            #         .cpu()
-            #         .numpy(),
-            #         axis=1,
-            #     ).mean(),
+
             metrics["scalar_loss"] = scalar_loss
 
         if self.actor.mask_type != 'only_jpose':  # pred grasp
-            # metrics["mean_gt_eef_noise_norm"] = np.linalg.norm(
-            #         vec_grasp_noise.detach().cpu().numpy(), axis=1
-            #     ).mean(),
-            # metrics["mean_pred_eef_noise_norm"]= np.linalg.norm(
-            #         vec_grasp_noise_pred.detach().cpu().numpy(), axis=1
-            #     ).mean(),
+
             metrics["vec_loss"] = vec_loss
 
         # # to tensorboard, x axis is training steps
