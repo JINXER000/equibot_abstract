@@ -93,10 +93,13 @@ class ALOHAPoseDataset(Dataset):
         ## get pc in the world frame (the origin in the middle of robots)
         if self.is_mj:
             input_pc = input_pc - self.mj_offset
-        pc_offset = np.min(input_pc, axis=0)
+        
 
         if obj_centric:
+            pc_offset = np.min(input_pc, axis=0)
             input_pc = input_pc - pc_offset
+        else:
+            pc_offset = np.zeros(3)
         return input_pc, pc_offset
     
     def centralize_grasp(self, grasp, pc_offset):
@@ -370,11 +373,11 @@ class ALOHAPoseDataset(Dataset):
                     eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
 
                     joint_data = f['pred_joint_vals'][()]
-                    stage = 'precondition'
+                    stage = 'ungrasped'
                     for i in range(len(joint_data)):
-                        left_jpose = joint_data[i][:6]
-                        right_jpose = joint_data[i][7:13]
-                        joint_pose = np.vstack((left_jpose, right_jpose)).reshape(1, -1, self.dof)
+                        left_jpose = joint_data[i][:7]
+                        right_jpose = joint_data[i][7:]
+                        joint_pose = np.vstack((left_jpose[:self.dof], right_jpose[:self.dof])).reshape(1, -1, self.dof)
 
                         # only include jpose before OR after the action
                         stage = self.which_stage(stage, left_jpose, right_jpose)
@@ -409,7 +412,7 @@ class ALOHAPoseDataset(Dataset):
                             #### substract the offset using center of the object
                             eff_grasp[:3, 3] -= end_offset
                             if not self.is_obj_centric:
-                                eff_grasp[:3, 3] += start_offset
+                                eff_grasp[:3, 3] += np.mean(start_pc, axis=0)
                         eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
 
                         grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
@@ -425,13 +428,21 @@ class ALOHAPoseDataset(Dataset):
 
 
     # tell the stage from eef pose
-    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.18):
+    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.12, lifted_height = 0.1):
+        left_arm_jpose = left_jpose[:self.dof]
+        right_arm_jpose = right_jpose[:self.dof]
+        left_gripper_val = left_jpose[-1]
+        right_gripper_val = right_jpose[-1]
         #compute ee pose and see if they are too close
-        eepose_l = qpos_to_eepose(left_jpose, 0)
-        eepose_r = qpos_to_eepose(right_jpose, 1)
+        eepose_l = qpos_to_eepose(left_arm_jpose, 0)
+        eepose_r = qpos_to_eepose(right_arm_jpose, 1)
         eef_dist = np.linalg.norm(eepose_l[0] - eepose_r[0])
 
-        if stage == 'precondition':
+        if stage == 'ungrasped':
+            if eepose_r[0][2] > lifted_height and right_gripper_val < 0.3:
+                print('TODO: debug here!')
+                stage = 'precondition'
+        elif stage == 'precondition':
             if eef_dist < threthold:
                 stage = 'acting'
         elif stage == 'acting':

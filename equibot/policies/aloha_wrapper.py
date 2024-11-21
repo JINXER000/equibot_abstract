@@ -62,13 +62,13 @@ class pddl_wrapper(object):
         return data_batch
 
     ## do not use it during training
-    def centralize_obs(self, obs):
+    def centralize_obs(self, obs, obj_centric = False):
         centralized_obs = obs.copy()
         offset_dict = {}
         for k, v in obs.items():
             if 'pc' in k:
                 pc = v.numpy().reshape(-1, 3)
-                centered_pc, offset = self.dataset.centralize_cond_pc(pc)
+                centered_pc, offset = self.dataset.centralize_cond_pc(pc, obj_centric = obj_centric)
                 centralized_obs[k] = torch.tensor(centered_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
                 
                 grasp_key = k.replace('pc', 'grasp')
@@ -111,11 +111,11 @@ class pddl_wrapper(object):
                 dict_numpy[k] = v
         return dict_numpy
     
-    def infer_real(self, obs):
+    def infer_real(self, obs, **kwargs):
         obs_tensor = {}
         for k, v in obs.items():
             obs_tensor[k] = torch.tensor(v).float()
-        obs_c, offset_dict = self.centralize_obs(obs_tensor)
+        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric)
         action_dict = self.predict_action(obs_c, offset_dict)
         return action_dict
     
@@ -184,7 +184,7 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, his
         offset_dict = None
     else:
         agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, **kwargs)    
-        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
+        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
 
     action_dict = tamp_wrapper.predict_action(history_bid=history_bid, obs_c=obs_c, offset_dict=offset_dict)
 
@@ -196,7 +196,7 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, his
 
 def main():
     # # mj sim
-    # dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
+    # dataset_path = '/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/mj_peg_hole/'
     # config_name = "mj_peg_hole"
     # overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
     # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
@@ -221,7 +221,7 @@ def eval_with_rotation(ply_name = 'tape_OOD.ply', history_bid = -1):
     dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
     config_name = "transfer_tape"
     overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
-    ply_paths = {'pc': os.path.join(dataset_path, ply_name)}
+    ply_paths = {'pc': os.path.join(dataset_path,'data',  ply_name)}
     
 
     with hydra.initialize(config_path="configs", job_name="test_app"):
@@ -234,7 +234,7 @@ def eval_with_rotation(ply_name = 'tape_OOD.ply', history_bid = -1):
     tamp_wrapper = pddl_wrapper(cfg, dataset_path)
 
     agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths)    
-    obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
+    obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
 
     raw_action_dict = tamp_wrapper.predict_action(obs_c=obs_c, offset_dict=offset_dict, history_bid=history_bid)
     ref_grasp_angle = raw_action_dict['grasp'][:3, :3]
@@ -247,7 +247,7 @@ def eval_with_rotation(ply_name = 'tape_OOD.ply', history_bid = -1):
         rotated_ref_grasp = np.dot(rot_3x3, ref_grasp_angle)
 
         agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, yaw_rotation=rot)    
-        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs)
+        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
         input_obs = rotate_observation(agent_obs, rot)
         action_dict = tamp_wrapper.predict_action(obs_c=input_obs,    
                                                    offset_dict=offset_dict,
@@ -280,4 +280,4 @@ def rotation_diff(rot1, rot2):
 
 if __name__ == "__main__":
     # main()
-    eval_with_rotation(ply_name='mug_ID.ply', history_bid=0)
+    eval_with_rotation(ply_name='transfer_tape/tape.ply', history_bid=0)
