@@ -16,13 +16,13 @@ from equibot.policies.utils.misc import get_env_class, get_dataset, get_agent
 from equibot.policies.vec_eval import run_eval
 from equibot.envs.subproc_vec_env import SubprocVecEnv
 
-from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
+from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 
 from test_abstract import run_eval
 # from torch.utils.tensorboard import SummaryWriter
 
-@hydra.main(config_path="/home/chenyizhou/imitation_learning/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+@hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
     assert cfg.mode == "train"
     np.random.seed(cfg.seed)

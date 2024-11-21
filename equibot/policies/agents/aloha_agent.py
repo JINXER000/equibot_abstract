@@ -121,22 +121,12 @@ class ALOHAAgent(object):
         pc = batch["pc"]
         joint_data  = batch['jpose']
         grasp_pose = batch['grasp']
-
         ## see the 2nd channel, corresponds to different grasp
         obj_num = pc.shape[1]
-        if obj_num ==1:
-            pc = pc.repeat(1, self.obs_horizon, 1, 1)
-            grasp_pose = grasp_pose.repeat(1, self.pred_horizon, 1, 1)
-        elif obj_num == 2:
-            grasp_pose = grasp_pose.repeat(1, self.pred_horizon/2, 1, 1)
-        else:
-            raise NotImplementedError(f'obj_num {obj_num} not supported') 
-
-        
+        pc = pc.repeat(1, self.obs_horizon, 1, 1)
+        grasp_pose = grasp_pose.repeat(1, self.pred_horizon, 1, 1)
         joint_data = joint_data.repeat(1, self.pred_horizon, 1, 1)
         
-
-
         if self.pc_scale is None:
             self._init_normalizers(batch)
 
@@ -148,7 +138,7 @@ class ALOHAAgent(object):
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
         )
         scale = feat_dict["scale"].reshape(batch_size, self.obs_horizon, 1, 1)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
-        
+
         # proc grasp pose. first split flattened pose to xyz and dir, then normalize xyz. 
         grasp_xyz_raw, grasp_dir1, grasp_dir2 = convert_trans_to_vec(grasp_pose, has_eff=self.actor.has_eff)
         
@@ -162,13 +152,8 @@ class ALOHAAgent(object):
         grasp_xyz = self.grasp_xyz_normalizer.normalize(grasp_xyz_raw)
         grasp_xyz = (grasp_xyz - center)/scale
 
-        # # try to normalize rot debug
-        # grasp_dir1 = self.grasp_xyz_normalizer.normalize(grasp_dir1)
-        # grasp_dir2 = self.grasp_xyz_normalizer.normalize(grasp_dir2)
 
         gt_grasp_z = torch.cat([grasp_xyz, grasp_dir1, grasp_dir2], dim=-2)
-
-
 
         # scalar
         joint_data = self.jpose_normalizer.normalize(joint_data)
@@ -214,6 +199,7 @@ class ALOHAAgent(object):
         )
 
 
+
         # only qpose
         if self.actor.mask_type == 'only_jpose':
             loss = scalar_loss= nn.functional.mse_loss(scalar_jpose_noise_pred, scalar_jpose_noise)
@@ -257,11 +243,6 @@ class ALOHAAgent(object):
 
             metrics["vec_loss"] = vec_loss
 
-        # # to tensorboard, x axis is training steps
-        # for k, v in metrics.items():
-        #     self.actor.writer.add_scalar(f"train/{k}", v, 
-        # self.actor.writer.flush()
-        
 
         # # denoise debugging
         # self.train(False)
@@ -357,10 +338,10 @@ class ALOHAAgent(object):
     def act(self, obs, history_bid = -1):
         self.train(False)
 
-        np_obs = to_np(obs)
+        # np_obs = to_np(obs)
 
-        # random_yaw = np.random.uniform(-np.pi, np.pi)
-        # np_obs= rotate_observation(obs, random_yaw)
+        random_yaw = np.random.uniform(-np.pi, np.pi)
+        np_obs= rotate_observation(obs, random_yaw)
 
         cpu_obs = to_tensor(np_obs)
         gpu_obs = to_torch(cpu_obs, self.device)

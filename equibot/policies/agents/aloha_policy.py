@@ -55,7 +55,7 @@ class ALOHAPolicy(nn.Module):
         for i in range(self.num_eef):
             if self.symb_mask[i] == 'None':
                 self.jpose_mask[i] = 0
-        num_scalar_dims = np.sum(self.jpose_mask)
+        num_scalar_dims = np.sum(self.jpose_mask).astype(int)
 
         self.obs_dim = self.encoder_out_dim
         self.noise_pred_net = VecConditionalUnet1D(
@@ -219,6 +219,26 @@ class ALOHAPolicy(nn.Module):
                 scalar_sample=curr_action[1],
                 cond=obs_cond_vec,
             )
+
+            # ####### # equivariance debugging: The Unet is equivariant to rotation
+
+            # rot_raw_90_mat = torch.tensor([[0, 1, 0], [-1, 0, 0], [0, 0, 1]], device=self.device).float()
+            # rotated_obs = torch.matmul(obs_cond_vec, rot_raw_90_mat.T)
+            # rotated_action = torch.matmul(curr_action[0], rot_raw_90_mat.T)
+
+            # rotated_noise_pred_hat = ema_nets["noise_pred_net"](
+            #     sample=rotated_action,
+            #     timestep=k,
+            #     scalar_sample=curr_action[1],
+            #     cond=rotated_obs,
+            # )
+
+            # rotated_noise_pred = torch.matmul(noise_pred[0], rot_raw_90_mat.T)
+            # rot_error = nn.functional.mse_loss(rotated_noise_pred_hat[0], rotated_noise_pred)
+            
+            # #######################################
+
+
             ####### inverse diffusion step
             new_action = [None, None]
             new_action[0] = self.noise_scheduler.step(

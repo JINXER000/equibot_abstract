@@ -9,13 +9,14 @@ from equibot.policies.utils.constants import qpos_to_eepose
 
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import rotate_around_z
+from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_around_z, to_tensor, to_np, convert_trans_to_vec, convert_vec_to_trans
+
 
 import hydra
-# import sys
-# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+import sys
+sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 # from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
 
 
@@ -446,12 +447,44 @@ class ALOHAPoseDataset(Dataset):
 
         return sample
 
-@hydra.main(config_path="/home/chenyizhou/imitation_learning/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+def rotate_vec_grasp(grasp, rot_z):
+    ## vectorize the  grasp
+    pred_grasp_trans = grasp[:, :4, :].reshape(1, 1, 4, 4)
+    # pred_grasp_trans[:, :, :3, :3] = pred_grasp_trans[:, :, :3, :3].transpose(-2, -1)
+    grasp_xyz, grasp_dir1, grasp_dir2 = convert_trans_to_vec(pred_grasp_trans, has_eff = False)
+    gt_grasp_z = torch.cat([grasp_xyz, grasp_dir1, grasp_dir2], dim=-2)
+
+    gt_z_np = gt_grasp_z.detach().cpu().numpy()
+    rotated_gt_z = rotate_around_z(gt_z_np, rot_z)
+    rotated_grasp_vec = torch.tensor(rotated_gt_z).float()
+
+    # rotated_grasp_vec = torch.einsum('bnij, ', gt_grasp_z, torch.tensor(rotation_matrix).float())
+    rotated_rot6d = rotated_grasp_vec[:, :,  1:, :].reshape(-1, 1, 1, 6)
+    rotated_xyz = rotated_grasp_vec[:, :, 0, :].reshape(-1, 1, 1, 3)
+    rotated_grasp_trans = convert_vec_to_trans(rotated_rot6d, rotated_xyz, has_eff = False)
+    # rotated_grasp_trans[:, :, :3, :3] = rotated_grasp_trans[:, :, :3, :3].transpose(-2, -1)
+
+    # # ## To validate if the 
+    # cos_theta = np.cos(rot_z)
+    # sin_theta = np.sin(rot_z)
+    # rotation_matrix = np.array([[cos_theta, -sin_theta, 0],
+    #                             [sin_theta, cos_theta, 0],
+    #                             [0, 0, 1]])
+
+    # rot_trans = np.eye(4)
+    # rot_trans[:3, :3] = rotation_matrix
+    # ref_rot_grasp = np.dot(rot_trans, pred_grasp_trans[0, 0].detach().cpu().numpy())
+
+
+    return rotated_grasp_trans
+    # return torch.tensor(ref_rot_grasp).reshape(1, 1, 4, 4)
+
+@hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
 def main(cfg):
-    cfg.data.dataset.path='/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
-    num_workers = cfg.data.dataset.num_workers
-    batch_size = 32
+    num_workers = 0
+    batch_size = 1
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=batch_size,
@@ -462,18 +495,34 @@ def main(cfg):
     )
     
     for batch_id, batch in enumerate(test_loader):
-        history_list = []
-        tmp_pc = batch['pc'][0].reshape(-1, 3).numpy()
-        for i in range(batch['jpose'].shape[0]):
-            jpose = batch['jpose'][i].reshape(-1).numpy()
-            grasp_pose = batch['grasp'][i].reshape(-1,4).numpy()
-            action_slice = (grasp_pose, jpose)
-            # action_slice = (None, jpose)
-            history_list.append(action_slice)
+
+        rot_list = [0, np.pi/2, np.pi, np.pi/2*3]
+        for rot_z in rot_list:
+            np_obs= rotate_observation(batch, rot_z)
+            cpu_obs = to_tensor(np_obs)
+
+            history_list = []
+            tmp_pc = cpu_obs['pc'][0].reshape(-1, 3).numpy()
+            for i in range(cpu_obs['jpose'].shape[0]):
+                jpose = cpu_obs['jpose'][i].reshape(-1).numpy()
+                grasp_pose = cpu_obs['grasp'][i].reshape(-1,4).numpy()
+                grasp_pose = grasp_pose[:4]
+
+                ## ## To validate that it is equivalent to rotate the grasp vector(rotate_vec_grasp) and rotate the transformation matrix(rotate_observation)
+                origin_pred_grasp = batch['grasp'].detach().cpu()[i][:, :4, :].reshape(1, 1, 4, 4)
+                ref_pred_grasp = cpu_obs['grasp'].detach().cpu()[i][:, :4, :].reshape(1, 1, 4, 4)
+                vecrot_grasp = rotate_vec_grasp(origin_pred_grasp, rot_z)
+                trans_error = torch.norm(vecrot_grasp - ref_pred_grasp)
+                print('the error of two computed grasp is: ',trans_error) 
+
+                # action_slice = (grasp_pose, jpose)
+                action_slice = (vecrot_grasp.reshape(-1, 4), jpose)
+                history_list.append(action_slice)
+
+            render_pose(history_list, use_gui=True, \
+                        directory = None, obj_points = tmp_pc)
 
 
-        render_pose(history_list, use_gui=True, \
-                    directory = None, obj_points = tmp_pc)
 
 if __name__ == '__main__':
     main()

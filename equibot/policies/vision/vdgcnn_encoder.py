@@ -299,6 +299,30 @@ class VecDGCNN_att_frozen(VecDGCNN_att):
         print(f"Preload encoder from {preload_path}")
 
 
+def get_so3_error(so3_feat1, so3_feat2):
+
+    error_so3_feat = torch.einsum("bij,bkj->bik", so3_feat1, so3_feat2)
+    error_so3_feat = (
+        torch.acos(
+            torch.clamp(
+                (
+                    error_so3_feat[:, 0, 0]
+                    + error_so3_feat[:, 1, 1]
+                    + error_so3_feat[:, 2, 2]
+                    - 1.0
+                )
+                / 2.0
+                - 1.0,
+                1.0,
+            )
+        )
+        / np.pi
+        * 180.0
+    )
+    error_so3_feat = error_so3_feat.max()
+
+    return error_so3_feat
+
 def test_uninitialized():
 
     B, N = 16, 512
@@ -332,26 +356,7 @@ def test_uninitialized():
 
             aug_scale = scale * s
             aug_so3_feat = torch.einsum("bij,bnj->bni", R.clone(), so3_feat)
-
-            error_so3_feat = torch.einsum("bij,bkj->bik", aug_so3_feat, aug_so3_feat_hat)
-            error_so3_feat = (
-                torch.acos(
-                    torch.clamp(
-                        (
-                            error_so3_feat[:, 0, 0]
-                            + error_so3_feat[:, 1, 1]
-                            + error_so3_feat[:, 2, 2]
-                            - 1.0
-                        )
-                        / 2.0
-                        - 1.0,
-                        1.0,
-                    )
-                )
-                / np.pi
-                * 180.0
-            )
-            error_so3_feat = error_so3_feat.max()
+            error_so3_feat = get_so3_error(aug_so3_feat, aug_so3_feat_hat)
 
             error_inv_feat = (abs(aug_inv_feat_hat - inv_feat)).max()
 
@@ -364,8 +369,8 @@ def test_uninitialized():
 
 def test_pretrained():
 
-    w_enc_path = "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
-    dataset_dir = '/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/'
+    w_enc_path = "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/pretrained/mugs.pt"
+    dataset_dir = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
     ply_path = os.path.join(dataset_dir, 'debug_mugs.ply')
 
     import open3d as o3d
@@ -377,26 +382,6 @@ def test_pretrained():
     pcl = torch.from_numpy(input_pc).unsqueeze(0).to(device)
     
     net = VecDGCNN_att_frozen(preload_path= w_enc_path).to(device)
-    # net = VecDGCNN_att(
-    #     num_layers=7,
-    #     feat_dim=[32, 32, 64, 64, 128, 256, 512],
-    #     down_sample_layers=[2, 4, 5],
-    #     down_sample_factor=[4, 4, 4],
-    #     atten_start_layer=100,  ## REVISED
-    #     atten_multi_head_c=16,
-    #     use_res_global_conv=True,
-    #     res_global_start_layer=2,
-    #     scale_factor=64000.0,   ## REVISED
-    #     center_pred=True,       ## REVISED
-        
-    # ).to(device)
-
-    # f_param = torch.load(w_enc_path)
-    # f_param = f_param["model_state_dict"]
-    # net.load_state_dict(
-    #     {".".join(k.split(".")[2:]): f_param[k] for k in f_param.keys() if "encoder" in k},
-    #     strict=True,
-    # )
 
     net.eval()
     
@@ -417,25 +402,7 @@ def test_pretrained():
             aug_scale = scale * s
             aug_so3_feat = torch.einsum("bij,bnj->bni", R.clone(), so3_feat)
 
-            error_so3_feat = torch.einsum("bij,bkj->bik", aug_so3_feat, aug_so3_feat_hat)
-            error_so3_feat = (
-                torch.acos(
-                    torch.clamp(
-                        (
-                            error_so3_feat[:, 0, 0]
-                            + error_so3_feat[:, 1, 1]
-                            + error_so3_feat[:, 2, 2]
-                            - 1.0
-                        )
-                        / 2.0
-                        - 1.0,
-                        1.0,
-                    )
-                )
-                / np.pi
-                * 180.0
-            )
-            error_so3_feat = error_so3_feat.max()
+            error_so3_feat = get_so3_error(aug_so3_feat, aug_so3_feat_hat)
 
             error_inv_feat = (abs(aug_inv_feat_hat - inv_feat)).max()
 

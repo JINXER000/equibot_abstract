@@ -1,10 +1,10 @@
 defaults:
   - base
 
-use_wandb: true
+use_wandb: false
 
 training:
-  # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
+  ckpt: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth"
   eval_interval: 1
 
 env:
@@ -27,7 +27,7 @@ model:
 #     backbone_type: vn_pointnet
 #     backbone_args: 
 #       num_layers: 4
-#       preload_path: 'None'
+#       preload_path: 'None' 
 
 
 ### use VDGCNN and transfer from pretrained model
@@ -36,15 +36,15 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
+      preload_path: "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/pretrained/mugs.pt"
 
 data:
   dataset:
     num_points: 512
     # symb_mask: ['qpose_left', 'qpose_right', None, None, None]
-    # symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
+    symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
-    symb_mask: [None, None, None, 'grasp_right', None]
+    # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
     dataset_type: 'hdf5_predeff'
     # dataset_type: 'sam_predeff'

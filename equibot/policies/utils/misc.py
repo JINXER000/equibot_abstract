@@ -139,12 +139,19 @@ def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
     Retrieved from http://arxiv.org/abs/1812.07035
     """
 
+    # a1, a2 = d6[..., :3], d6[..., 3:]
+    # b1 = F.normalize(a1, dim=-1)
+    # b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
+    # b2 = F.normalize(b2, dim=-1)
+    # b3 = torch.cross(b1, b2, dim=-1)
+    # return torch.stack((b1, b2, b3), dim=-2)
+
     a1, a2 = d6[..., :3], d6[..., 3:]
     b1 = F.normalize(a1, dim=-1)
     b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
     b2 = F.normalize(b2, dim=-1)
     b3 = torch.cross(b1, b2, dim=-1)
-    return torch.stack((b1, b2, b3), dim=-2)
+    return torch.stack((b1, b2, b3), dim=-2).transpose(-1, -2)  
 
 def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
     """
@@ -161,9 +168,12 @@ def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
     IEEE Conference on Computer Vision and Pattern Recognition, 2019.
     Retrieved from http://arxiv.org/abs/1812.07035
     """
-    batch_dim = matrix.size()[:-2]
-    return matrix[..., :2, :].clone().reshape(batch_dim + (6,))
+    # batch_dim = matrix.size()[:-2]
+    # return matrix[..., :2, :].clone().reshape(batch_dim + (6,))
 
+    batch_dim = matrix.size()[:-2]
+    transpose_matrix = matrix.transpose(-1, -2)
+    return transpose_matrix[..., :2, :].clone().reshape(batch_dim + (6,))
 
 def convert_trans_to_vec(grasp_trans_arr, has_eff=False):
     batch_size, horizon, _, _ = grasp_trans_arr.shape
