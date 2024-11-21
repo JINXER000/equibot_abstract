@@ -15,6 +15,8 @@ from equibot.policies.vision.vec_layers import VecLinNormAct as VecLNA
 # sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 # from vec_layers import *
 # from vec_layers import VecLinearNormalizeActivate as VecLNA
+import pathlib
+EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 
 
 def meanpool(x, dim=-1, keepdim=False):
@@ -369,8 +371,8 @@ def test_uninitialized():
 
 def test_pretrained():
 
-    w_enc_path = "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/pretrained/mugs.pt"
-    dataset_dir = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    w_enc_path = os.path.join(EQUIBOT_PATH, "pretrained/mugs.pt")
+    dataset_dir = os.path.join(EQUIBOT_PATH, 'data/transfer_tape/')
     ply_path = os.path.join(dataset_dir, 'debug_mugs.ply')
 
     import open3d as o3d

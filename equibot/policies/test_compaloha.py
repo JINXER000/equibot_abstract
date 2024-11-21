@@ -17,6 +17,8 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 # sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
 # from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 
+import pathlib
+EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
 
 
 def get_obs(batch):
@@ -84,7 +86,7 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/transfer_tape/')
     eval_dataset = DualAbsDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(

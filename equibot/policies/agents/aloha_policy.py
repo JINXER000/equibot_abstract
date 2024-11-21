@@ -55,14 +55,14 @@ class ALOHAPolicy(nn.Module):
         for i in range(self.num_eef):
             if self.symb_mask[i] == 'None':
                 self.jpose_mask[i] = 0
-        num_scalar_dims = np.sum(self.jpose_mask).astype(int)
+        self.num_scalar_dims = np.sum(self.jpose_mask).astype(int)
 
         self.obs_dim = self.encoder_out_dim
         self.noise_pred_net = VecConditionalUnet1D(
             input_dim=self.eef_dim,
             cond_dim=self.obs_dim* self.obs_horizon,
             scalar_cond_dim=0,
-            scalar_input_dim= num_scalar_dims,
+            scalar_input_dim= self.num_scalar_dims,
             diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
             cond_predict_scale=True,
         )
@@ -91,12 +91,12 @@ class ALOHAPolicy(nn.Module):
             self.noise_pred_net_handle = self.noise_pred_net
 
     def _convert_jpose_to_vec(self, jpose, batch=None):
-        # input: (B, 1, E , dof); output: (B, 1, ac_dim, 3) 
+        # input: (B, 1, E , dof); output: (B, 1, E * dof) 
         
-        # # use mask to select the joint pose
-        # masked_jpose = jpose[:, :, self.jpose_mask == 1] 
+        # use mask to select the joint pose
+        masked_jpose = jpose[:, :, self.jpose_mask == 1] 
             
-        # jpose = masked_jpose.reshape(masked_jpose.shape[0], -1,  np.sum(self.jpose_mask))
+        jpose = masked_jpose.reshape(masked_jpose.shape[0], -1,  self.num_scalar_dims)
         return jpose
     
     # def _convert_grasp_to_vec(self, grasp, batch = None):

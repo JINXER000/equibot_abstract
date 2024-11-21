@@ -14,10 +14,13 @@ from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_aro
 
 import hydra
 import sys
-sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 # from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
+
+import pathlib
+EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
@@ -479,9 +482,9 @@ def rotate_vec_grasp(grasp, rot_z):
     return rotated_grasp_trans
     # return torch.tensor(ref_rot_grasp).reshape(1, 1, 4, 4)
 
-@hydra.main(config_path="/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs", config_name="transfer_tape")
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):
-    cfg.data.dataset.path='/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/'
+    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/transfer_tape/')
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = 0
     batch_size = 1
