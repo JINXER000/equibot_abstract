@@ -9,3 +9,4 @@ temp
 *.ply
 *.obj
 temp
+*.pt
