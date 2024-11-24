@@ -136,8 +136,9 @@ class ALOHAPoseDataset(Dataset):
         elif cfg.dataset_type == 'txt':
             self.process_txt(cfg)
         elif cfg.dataset_type == 'hdf5_predeff':
-        
             self.process_50demos_predeff(cfg)
+        elif cfg.dataset_type == 'hdf5_mini':
+            self.process_hdf5_mini(cfg)
         else:
             raise NotImplementedError('Dataset type not implemented!')
 
@@ -294,7 +295,7 @@ class ALOHAPoseDataset(Dataset):
                     eff_grasp_poses = f['eff_grasps'][()]
                     eff_grasp_num = eff_grasp_poses.shape[0]
 
-                    joint_data = f['pred_joint_vals'][()]
+                    joint_data = f['demo_joint_vals'][()]
                     stage = 'precondition'
                     selected_joint_data = []
                     for i in range(len(joint_data)):
@@ -372,7 +373,7 @@ class ALOHAPoseDataset(Dataset):
                     pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
                     eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
 
-                    joint_data = f['pred_joint_vals'][()]
+                    joint_data = f['demo_joint_vals'][()]
                     stage = 'ungrasped'
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:7]
@@ -419,6 +420,8 @@ class ALOHAPoseDataset(Dataset):
                         data = {'jpose': joint_pose, 'pc': pc_tensor, \
                                 'grasp':grasp_tensor}
                         data_list.append(data)
+                    if stage != 'effect':
+                        print(f'Warning: some data is not processed for {hdf5_path}')
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
@@ -428,7 +431,7 @@ class ALOHAPoseDataset(Dataset):
 
 
     # tell the stage from eef pose
-    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.12, lifted_height = 0.1):
+    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.12, lifted_height = 0.07):
         left_arm_jpose = left_jpose[:self.dof]
         right_arm_jpose = right_jpose[:self.dof]
         left_gripper_val = left_jpose[-1]
@@ -439,8 +442,7 @@ class ALOHAPoseDataset(Dataset):
         eef_dist = np.linalg.norm(eepose_l[0] - eepose_r[0])
 
         if stage == 'ungrasped':
-            if eepose_r[0][2] > lifted_height and right_gripper_val < 0.3:
-                print('TODO: debug here!')
+            if eepose_r[0][2] > lifted_height and right_gripper_val < 0.35:
                 stage = 'precondition'
         elif stage == 'precondition':
             if eef_dist < threthold:
@@ -461,6 +463,90 @@ class ALOHAPoseDataset(Dataset):
 
         return sample
 
+    ## TODO: support more than 1 object
+    def process_hdf5_mini(self, cfg, has_eff = False, est_effpose = False):
+        if has_eff and est_effpose:
+            self.pretrained_encoder = VecDGCNN_att_frozen(preload_path= cfg.preload_path).cuda()    
+        print('Processing hdf5 dataset...')
+        data_list = []
+        raw_files = self.raw_file_names
+
+        conditional_pc = None
+        for file_id in range(len(raw_files)):
+            file_name = raw_files[file_id]
+
+            if 'hdf5' in  file_name:
+                hdf5_path = os.path.join(self.root, 'raw', file_name)
+                import h5py
+                with h5py.File(hdf5_path, 'r') as f:
+                    # list all keys
+                    obj_names = list(f.keys())
+                    for obj_name in obj_names:
+                        start_pc = f[obj_name]['start_pc'][()]
+                        pred_grasp_poses = f[obj_name]['grasp_poses'][()]
+                        joint_data = f[obj_name]['joint_poses'][()]
+
+                        if has_eff:
+                            end_pc = f[obj_name]['end_pc'][()]
+                            if est_effpose:
+                                # end_pc = rotate_around_z(end_pc, np.pi)
+                                R_cuda, t_cuda = solve_pairwise_registration(self.pretrained_encoder, torch.tensor\
+                                    (start_pc).unsqueeze(0).float().cuda(), torch.tensor(end_pc).unsqueeze(0).float().cuda())
+                                # debug_and_save(start_pc, end_pc, R_cuda, t_cuda)
+                            else:
+                                end_offset = np.min(end_pc, axis=0)
+
+                            eff_grasp_poses = f[obj_name]['grasp_poses'][()]
+
+                        assert len(joint_data) > len(pred_grasp_poses)
+                        
+                    for i in range(len(joint_data)):
+                        left_jpose = joint_data[i][:7]
+                        right_jpose = joint_data[i][7:]
+                        joint_pose = np.vstack((left_jpose[:self.dof], right_jpose[:self.dof])).reshape(1, -1, self.dof)
+
+                        ## if obj_centric, cond_pc = raw_pc - offset; otherwise cond_pc = raw_pc
+                        conditional_pc, start_offset = self.centralize_cond_pc(start_pc, self.is_obj_centric)
+
+                        pc_tensor = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
+                        pred_grasp_id = np.random.randint(0, len(pred_grasp_poses)-1)
+                        pred_grasp = pred_grasp_poses[pred_grasp_id].copy()
+
+                        if self.is_obj_centric:
+                            pred_grasp[:3, 3] -= start_offset
+                        grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
+                        
+                        if has_eff:
+                            eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
+                            eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
+                            
+                            if est_effpose:
+                            ####  use ICP to estimate the rotation of the offset
+
+                                R_cpu = R_cuda.squeeze().cpu().numpy()
+                                t_cpu = t_cuda.squeeze().cpu().numpy()
+                                transform_mat = np.zeros((4, 4))
+                                transform_mat[:3, :3] = R_cpu
+                                transform_mat[:3, 3] = t_cpu
+                                transform_mat[3, 3] = 1
+                                eff_grasp = np.dot(transform_mat, eff_grasp)
+                            else:
+                                #### substract the offset using center of the object
+                                eff_grasp[:3, 3] -= end_offset
+                                if not self.is_obj_centric:
+                                    eff_grasp[:3, 3] += np.mean(start_pc, axis=0)
+                            eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
+
+                            grasp_tensor = torch.cat((grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
+                        data = {'jpose': joint_pose, 'pc': pc_tensor, \
+                                'grasp':grasp_tensor}
+                        data_list.append(data)
+
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print('processed all hdf5 file!')
+
+
 def rotate_vec_grasp(grasp, rot_z):
     ## vectorize the  grasp
     pred_grasp_trans = grasp[:, :4, :].reshape(1, 1, 4, 4)
@@ -478,20 +564,7 @@ def rotate_vec_grasp(grasp, rot_z):
     rotated_grasp_trans = convert_vec_to_trans(rotated_rot6d, rotated_xyz, has_eff = False)
     # rotated_grasp_trans[:, :, :3, :3] = rotated_grasp_trans[:, :, :3, :3].transpose(-2, -1)
 
-    # # ## To validate if the 
-    # cos_theta = np.cos(rot_z)
-    # sin_theta = np.sin(rot_z)
-    # rotation_matrix = np.array([[cos_theta, -sin_theta, 0],
-    #                             [sin_theta, cos_theta, 0],
-    #                             [0, 0, 1]])
-
-    # rot_trans = np.eye(4)
-    # rot_trans[:3, :3] = rotation_matrix
-    # ref_rot_grasp = np.dot(rot_trans, pred_grasp_trans[0, 0].detach().cpu().numpy())
-
-
     return rotated_grasp_trans
-    # return torch.tensor(ref_rot_grasp).reshape(1, 1, 4, 4)
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):
