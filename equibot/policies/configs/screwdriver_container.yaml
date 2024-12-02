@@ -4,7 +4,7 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_best.pth.tapeequi"
+  ckpt: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/logs/train/screwdriver_container/ckpt_best.pth"
   eval_interval: 1
 
 env:
@@ -36,7 +36,7 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/kit4cates.pt"
+      preload_path: "/home/xuhang/Desktop/yzchen_ws/equibot_abstract/pretrained/kit4cates.pt"
 
 data:
   dataset:

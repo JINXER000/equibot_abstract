@@ -192,43 +192,46 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, his
 
     return action_dict
 
+def get_cfgs(task_name):
+    if task_name == 'mj_peg_hole':
+        # mj sim
+        dataset_path = '/home/xuhang/Desktop/yzchen_ws/equibot_abstract/data/mj_peg_hole/'
+        config_name = "mj_peg_hole"
+        overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
+        ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+        # ply_paths = None
+    elif task_name == 'aloha_transfer_tape':
+        ## aloha transfer tape
+        import pathlib
+        dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
+        config_name = "transfer_tape"
+        overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
+        ply_paths = {'pc': os.path.join(dataset_path, 'tape_OOD.ply')}
+    elif 'screwdriver' in task_name:
+        ## screwdriver and its variants
+        import pathlib
+        dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
+        config_name = task_name
+        overrides = ["prefix="+task_name, "mode=inference", "use_wandb=false"]
+        ply_paths = {'pc': os.path.join(dataset_path, 'debug_screwdriver.ply')}    
+    else:
+        raise NotImplementedError('task not implemented')
+    return dataset_path, config_name, overrides, ply_paths
 
-
-def main():
-    # # mj sim
-    # dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
-    # config_name = "mj_peg_hole"
-    # overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
-    # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
-    # # ply_paths = None
-
-    ## aloha transfer tape
-    import pathlib
-    dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
-    config_name = "transfer_tape"
-    overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
-    ply_paths = {'pc': os.path.join(dataset_path, 'tape_OOD.ply')}
+def main(task_name = 'screwdriver'):
+    dataset_path, config_name, overrides, ply_paths = get_cfgs(task_name)
 
     action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths, history_bid=0)
     print(action_dict)
 
 
-def eval_with_rotation(ply_name = 'tape_OOD.ply', history_bid = -1):
-
-
-    ## aloha transfer tape
-    import pathlib
-    dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
-    config_name = "transfer_tape"
-    overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
-    ply_paths = {'pc': os.path.join(dataset_path,'data',  ply_name)}
+def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
+    dataset_path, config_name, overrides, ply_paths = get_cfgs(task_name)
     
-
     with hydra.initialize(config_path="configs", job_name="test_app"):
         cfg = hydra.compose(config_name=config_name, overrides=overrides)
     
     assert cfg.mode != "train"
-
     np.random.seed(cfg.seed)
 
     tamp_wrapper = pddl_wrapper(cfg, dataset_path)
@@ -240,7 +243,7 @@ def eval_with_rotation(ply_name = 'tape_OOD.ply', history_bid = -1):
     ref_grasp_angle = raw_action_dict['grasp'][:3, :3]
 
 
-    rot_to_apply_ls = [np.pi/2, np.pi, 3*np.pi/2]
+    rot_to_apply_ls = np.arange(np.pi/3, 2*np.pi, np.pi/3)
     for rot in rot_to_apply_ls:
         from equibot.envs.sim_mobile.utils.transformations import euler2mat
         rot_3x3 = euler2mat([0, 0, rot])
@@ -258,26 +261,14 @@ def eval_with_rotation(ply_name = 'tape_OOD.ply', history_bid = -1):
         
         pred_grasp_angle = action_dict['grasp'][:3, :3]
         
-
-
-
         print('rotation diff: ', rotation_diff(pred_grasp_angle, rotated_ref_grasp))
         
-
-
 def rotation_diff(rot1, rot2):
     theta = np.arccos(np.clip((np.trace(np.dot(rot1, rot2.T)) - 1) / 2, -1.0, 1.0))
     deg = np.rad2deg(theta)
     return deg
 
 
-
-
-
-
-
-
-
 if __name__ == "__main__":
     # main()
-    eval_with_rotation(ply_name='transfer_tape/tape.ply', history_bid=0)
+    eval_with_rotation(task_name='screwdriver_fresh', history_bid=0)

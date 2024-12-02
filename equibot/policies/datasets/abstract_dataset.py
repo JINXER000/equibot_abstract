@@ -30,7 +30,11 @@ def downsample_pc(pc, num_points):
         sampled_indices = np.random.choice(pc.shape[0], num_points, replace=False)
         pc = pc[sampled_indices]
     elif pc.shape[0] < num_points:
-        raise ValueError('Input pc shape is not enough points!')
+        if pc.shape[0] < num_points *0.5:
+            raise ValueError('Input pc shape is not enough points!')
+        else:
+            random_repeated_indices = np.random.choice(pc.shape[0], num_points - pc.shape[0], replace=True)
+            pc = np.concatenate([pc, pc[random_repeated_indices]], axis=0)
     return pc
 
 def save_dbg_pc(pc):
