@@ -20,7 +20,7 @@ from test_compaloha import run_eval
 import pathlib
 EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
 
-@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot_abstract/equibot/policies/configs"), config_name="dual_transfer_tape")
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dual_transfer_tape")
 def main(cfg):
     assert cfg.mode == "train"
     np.random.seed(cfg.seed)

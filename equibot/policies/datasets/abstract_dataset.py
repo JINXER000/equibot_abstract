@@ -295,7 +295,7 @@ class ALOHAPoseDataset(Dataset):
                     eff_grasp_poses = f['eff_grasps'][()]
                     eff_grasp_num = eff_grasp_poses.shape[0]
 
-                    joint_data = f['demo_joint_vals'][()]
+                    joint_data = f['pred_joint_vals'][()]
                     stage = 'precondition'
                     selected_joint_data = []
                     for i in range(len(joint_data)):
@@ -341,8 +341,8 @@ class ALOHAPoseDataset(Dataset):
         print('processed all hdf5 file!')
 
     # add eff grasp
-    def process_50demos_predeff(self, cfg, est_effpose = False):
-        if est_effpose:
+    def process_50demos_predeff(self, cfg, has_eff = False, est_effpose = False):
+        if has_eff and est_effpose:
             self.pretrained_encoder = VecDGCNN_att_frozen(preload_path= cfg.preload_path).cuda()    
         print('Processing hdf5 dataset...')
         data_list = []
@@ -358,22 +358,23 @@ class ALOHAPoseDataset(Dataset):
                 with h5py.File(hdf5_path, 'r') as f:
 
                     start_pc = f['start_grasps']['obj_points'][()]
- 
-                    end_pc = f['end_grasps']['obj_points'][()]
-
-                    if est_effpose:
-                        # end_pc = rotate_around_z(end_pc, np.pi)
-                        R_cuda, t_cuda = solve_pairwise_registration(self.pretrained_encoder, torch.tensor\
-                            (start_pc).unsqueeze(0).float().cuda(), torch.tensor(end_pc).unsqueeze(0).float().cuda())
-                        
-                        # debug_and_save(start_pc, end_pc, R_cuda, t_cuda)
-                    else:
-                        end_offset = np.min(end_pc, axis=0)
-
                     pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
-                    eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
 
-                    joint_data = f['demo_joint_vals'][()]
+                    if has_eff:
+                        end_pc = f['end_grasps']['obj_points'][()]
+
+                        if est_effpose:
+                            # end_pc = rotate_around_z(end_pc, np.pi)
+                            R_cuda, t_cuda = solve_pairwise_registration(self.pretrained_encoder, torch.tensor\
+                                (start_pc).unsqueeze(0).float().cuda(), torch.tensor(end_pc).unsqueeze(0).float().cuda())
+                            
+                            # debug_and_save(start_pc, end_pc, R_cuda, t_cuda)
+                        else:
+                            end_offset = np.min(end_pc, axis=0)
+
+                        eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
+
+                    joint_data = f['pred_joint_vals'][()]
                     stage = 'ungrasped'
                     for i in range(len(joint_data)):
                         left_jpose = joint_data[i][:7]
@@ -394,29 +395,30 @@ class ALOHAPoseDataset(Dataset):
 
                         if self.is_obj_centric:
                             pred_grasp[:3, 3] -= start_offset
-                        pred_grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
+                        grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
                         
-                        eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
-                        eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
-                        
-                        if est_effpose:
-                        ####  use ICP to estimate the rotation of the offset
+                        if has_eff:
+                            eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
+                            eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
+                            
+                            if est_effpose:
+                            ####  use ICP to estimate the rotation of the offset
 
-                            R_cpu = R_cuda.squeeze().cpu().numpy()
-                            t_cpu = t_cuda.squeeze().cpu().numpy()
-                            transform_mat = np.zeros((4, 4))
-                            transform_mat[:3, :3] = R_cpu
-                            transform_mat[:3, 3] = t_cpu
-                            transform_mat[3, 3] = 1
-                            eff_grasp = np.dot(transform_mat, eff_grasp)
-                        else:
-                            #### substract the offset using center of the object
-                            eff_grasp[:3, 3] -= end_offset
-                            if not self.is_obj_centric:
-                                eff_grasp[:3, 3] += np.mean(start_pc, axis=0)
-                        eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
-
-                        grasp_tensor = torch.cat((pred_grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
+                                R_cpu = R_cuda.squeeze().cpu().numpy()
+                                t_cpu = t_cuda.squeeze().cpu().numpy()
+                                transform_mat = np.zeros((4, 4))
+                                transform_mat[:3, :3] = R_cpu
+                                transform_mat[:3, 3] = t_cpu
+                                transform_mat[3, 3] = 1
+                                eff_grasp = np.dot(transform_mat, eff_grasp)
+                            else:
+                                #### substract the offset using center of the object
+                                eff_grasp[:3, 3] -= end_offset
+                                if not self.is_obj_centric:
+                                    eff_grasp[:3, 3] += np.mean(start_pc, axis=0)
+                            eff_grasp_tensor = torch.tensor(eff_grasp).to(torch.float32).reshape(1, 4, 4)
+                            grasp_tensor = torch.cat((grasp_tensor, eff_grasp_tensor), dim=1) # 1, 8, 4
+                            
                         data = {'jpose': joint_pose, 'pc': pc_tensor, \
                                 'grasp':grasp_tensor}
                         data_list.append(data)

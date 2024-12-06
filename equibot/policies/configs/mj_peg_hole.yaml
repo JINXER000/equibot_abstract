@@ -1,7 +1,7 @@
 defaults:
   - base
 
-use_wandb: false
+use_wandb: true
 
 training:
   # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/mj_peg_hole/ckpt00800.pth"
@@ -21,10 +21,25 @@ agent:
 model:
   # noise_scheduler:
   #   num_train_timesteps: 1000
+
+## use vec_pointnet and train from scratch
+  hidden_dim: 32
   encoder:
     backbone_type: vn_pointnet
     backbone_args: 
       num_layers: 4
+      preload_path: 'None' 
+
+
+# ### use VDGCNN and transfer from pretrained model
+#   hidden_dim: 256
+#   encoder:
+#     backbone_type: VDGCNN
+#     backbone_args: 
+#       num_layers: 7
+#       preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
+
+
 data:
   dataset:
     num_points: 256
@@ -35,6 +50,8 @@ data:
     tamp_type: 'precondition'
     # dataset_type: 'mj_socket_test'
     dataset_type: 'mj_insertion_pred'
+    has_eff: false
+    is_obj_centric: True
 
 
 eval:
