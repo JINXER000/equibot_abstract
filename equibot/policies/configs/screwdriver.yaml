@@ -45,7 +45,7 @@ data:
 
     tamp_type: 'precondition'
     dataset_type: 'hdf5_mini'
-
+    has_eff: false
 
     is_obj_centric: true
 

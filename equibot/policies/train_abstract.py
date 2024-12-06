@@ -74,7 +74,6 @@ def main(cfg):
         start_epoch_ix = 0
 
 
-
     # train loop
     min_eval_rot_error = 1e9
     global_step = 0

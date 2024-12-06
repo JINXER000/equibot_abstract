@@ -49,6 +49,8 @@ data:
     dataset_type: 'hdf5_predeff'
     # dataset_type: 'sam_predeff'
 
+    has_eff: true
+
     is_obj_centric: true
 
     preload_path: ${model.encoder.backbone_args.preload_path}

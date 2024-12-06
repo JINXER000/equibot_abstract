@@ -57,7 +57,7 @@ class CompALOHAPolicy(nn.Module):
         self.obs_horizon = cfg.model.obs_horizon
         self.action_horizon = cfg.model.ac_horizon
         self.symb_mask = cfg.data.dataset.symb_mask
-        self.has_eff = ('predeff' in cfg.data.dataset.dataset_type)
+        self.has_eff = cfg.data.dataset.has_eff
 
         if hasattr(cfg.model, "num_diffusion_iters"):
             self.num_diffusion_iters = cfg.model.num_diffusion_iters
@@ -199,7 +199,7 @@ class CompALOHAPolicy(nn.Module):
             encoder_handle = self.left_encoder if side == 'left' else self.right_encoder
             feat_dict = encoder_handle(pc, target_norm=self.all_normalizers[key+'_scale'])
         else: # in inference
-            feat_dict = ema_nets[side+"_encoder"](pc, ret_perpoint_feat=True, target_norm=self.all_normalizers[key+'_scale'])
+            feat_dict = ema_nets[side+"_encoder"](pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[key+'_scale'])
         
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)

@@ -8,6 +8,7 @@ from equibot.policies.utils.misc import to_torch, \
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 
 from equibot.policies.agents.compaloha_policy import CompALOHAPolicy
+from equibot.policies.utils.misc import to_torch,  rotate_observation, to_tensor
 
 class CompALOHAAgent(object):
     def __init__(self, cfg) -> None:
@@ -288,26 +289,16 @@ class CompALOHAAgent(object):
         
 
     ## call this function during evaluation (only during training)
-    def act(self, batch, history_bid = -1):
+    def act(self, obs, history_bid = -1):
         self.train(False)
+        # random_yaw = np.random.uniform(-np.pi, np.pi)
+        # np_obs= rotate_observation(obs, random_yaw)
 
+        # cpu_obs = to_tensor(np_obs)
+        # gpu_obs = to_torch(cpu_obs, self.device)
 
-        # batch_size = obs["left_pc"].shape[0]
-        # # batch_size = 1  # only support batch size 1 for now
-        # assert history_bid < batch_size # batch to select as denoising history
-
-        # assert obs['left_pc'].shape[2] == self.num_points
-        # assert obs['right_pc'].shape[2] == self.num_points
-
-        # torch_obs = dict(
-        #     left_pc=torch.tensor(obs['left_pc']).to(self.device).float(), 
-        #     right_pc=torch.tensor(obs['right_pc']).to(self.device).float(),
-        #     left_grasp = torch.tensor(obs['left_grasp']).to(self.device).float(),
-        #     right_grasp = torch.tensor(obs['right_grasp']).to(self.device).float(),
-        #     left_jpose = torch.tensor(obs['left_jpose']).to(self.device).float(),
-        #     right_jpose = torch.tensor(obs['right_jpose']).to(self.device).float(),
-        #     )
-        action_dict, eval_metrics, denoise_history = self.actor(batch, history_bid=history_bid)
+        gpu_obs = obs
+        action_dict, eval_metrics, denoise_history = self.actor(gpu_obs, history_bid=history_bid)
 
 
         return denoise_history, eval_metrics
