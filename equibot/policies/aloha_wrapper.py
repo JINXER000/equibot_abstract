@@ -207,6 +207,13 @@ def get_cfgs(task_name):
         config_name = "transfer_tape"
         overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
         ply_paths = {'pc': os.path.join(dataset_path, 'tape_OOD.ply')}
+    elif task_name == 'aloha_transfer_cup':
+        ## aloha transfer tape
+        import pathlib
+        dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
+        config_name = "transfer_tape"
+        overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
+        ply_paths = {'pc': os.path.join(dataset_path, 'new_mug.ply')}
     elif 'screwdriver' in task_name:
         ## screwdriver and its variants
         import pathlib
@@ -271,4 +278,4 @@ def rotation_diff(rot1, rot2):
 
 if __name__ == "__main__":
     # main()
-    eval_with_rotation(task_name='screwdriver_fresh', history_bid=0)
+    eval_with_rotation(task_name='aloha_transfer_cup', history_bid=0)
