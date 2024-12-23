@@ -62,8 +62,8 @@ class ALOHAPoseDataset(Dataset):
 
         self.is_obj_centric = cfg.is_obj_centric
 
-        self.num_eef = 2
-        self.dof = 6
+        self.num_eef = cfg.num_eef
+        self.dof = cfg.dof
 
 
         if mode == 'train':
@@ -381,8 +381,8 @@ class ALOHAPoseDataset(Dataset):
                     joint_data = f['pred_joint_vals'][()]
                     stage = 'ungrasped'
                     for i in range(len(joint_data)):
-                        left_jpose = joint_data[i][:7]
-                        right_jpose = joint_data[i][7:]
+                        left_jpose = joint_data[i][:self.dof+1]
+                        right_jpose = joint_data[i][self.dof+1:]
                         joint_pose = np.vstack((left_jpose[:self.dof], right_jpose[:self.dof])).reshape(1, -1, self.dof)
 
                         # only include jpose before OR after the action
@@ -437,7 +437,7 @@ class ALOHAPoseDataset(Dataset):
 
 
     # tell the stage from eef pose
-    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.12, lifted_height = 0.07):
+    def which_stage(self, stage, left_jpose, right_jpose, threthold = 0.18, lifted_height = 0.07):
         left_arm_jpose = left_jpose[:self.dof]
         right_arm_jpose = right_jpose[:self.dof]
         left_gripper_val = left_jpose[-1]
@@ -507,8 +507,8 @@ class ALOHAPoseDataset(Dataset):
                         assert len(joint_data) > len(pred_grasp_poses)
                         
                     for i in range(len(joint_data)):
-                        left_jpose = joint_data[i][:7]
-                        right_jpose = joint_data[i][7:]
+                        left_jpose = joint_data[i][:self.dof+1]
+                        right_jpose = joint_data[i][self.dof+1:]
                         joint_pose = np.vstack((left_jpose[:self.dof], right_jpose[:self.dof])).reshape(1, -1, self.dof)
 
                         ## if obj_centric, cond_pc = raw_pc - offset; otherwise cond_pc = raw_pc

@@ -291,14 +291,13 @@ class CompALOHAAgent(object):
     ## call this function during evaluation (only during training)
     def act(self, obs, history_bid = -1):
         self.train(False)
-        # random_yaw = np.random.uniform(-np.pi, np.pi)
-        # np_obs= rotate_observation(obs, random_yaw)
+        random_yaw = np.random.uniform(-np.pi, np.pi)
+        np_obs= rotate_observation(obs, random_yaw)
 
-        # cpu_obs = to_tensor(np_obs)
-        # gpu_obs = to_torch(cpu_obs, self.device)
+        cpu_obs = to_tensor(np_obs)
+        gpu_obs = to_torch(cpu_obs, self.device)
+        # gpu_obs = obs
 
-        gpu_obs = obs
         action_dict, eval_metrics, denoise_history = self.actor(gpu_obs, history_bid=history_bid)
-
 
         return denoise_history, eval_metrics
