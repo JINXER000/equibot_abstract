@@ -11,7 +11,7 @@ from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 # from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
-TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
+TAMP_PATH = '/home/robotics/CoMa_code_clean/CoMa_ws/src/CoMa/'
 
 
 

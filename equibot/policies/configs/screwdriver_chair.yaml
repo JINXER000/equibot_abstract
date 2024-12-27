@@ -4,13 +4,14 @@ defaults:
 use_wandb: true
 
 training:
-  ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/screwdriver/ckpt_best.pth"
+  # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/screwdriver_fresh/ckpt_best.pth"
   eval_interval: 1
 
 env:
   env_class: 'screwdriver'
   num_eef: 2
-  dof: 6
+  # dof: 6 # aloha
+  dof: 7
   max_episode_length: 50
 
 
@@ -36,11 +37,11 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
+      preload_path: "/home/robotics/CoMa_code_clean/equibot_abstract/pretrained/chairs.pt"
 
 data:
   dataset:
-    num_points: 256
+    num_points: 128
     symb_mask: ['qpose_left', 'qpose_right', 'grasp_left', None, None]
 
     tamp_type: 'precondition'

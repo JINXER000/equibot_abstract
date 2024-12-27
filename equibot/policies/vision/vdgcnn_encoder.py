@@ -295,8 +295,8 @@ class VecDGCNN_att_frozen(VecDGCNN_att):
         strict=True,
         )
 
-        for param in self.parameters():
-            param.requires_grad = False
+        # for param in self.parameters():
+        #     param.requires_grad = False
 
         print(f"Preload encoder from {preload_path}")
 
