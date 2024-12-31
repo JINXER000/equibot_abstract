@@ -179,7 +179,7 @@ def get_obsc_offset_dict(tamp_wrapper, ply_paths = None, obj_centric = False, **
 def get_cfgs(task_name):
     if task_name == 'mj_peg_hole':
         # mj sim
-        dataset_path = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
+        dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
         config_name = "mj_peg_hole"
         overrides = ["prefix=mj_peg_hole", "mode=inference", "use_wandb=false"]
         # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}

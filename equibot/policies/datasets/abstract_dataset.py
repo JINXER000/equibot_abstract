@@ -49,7 +49,7 @@ class ALOHAPoseDataset(Dataset):
         self.mode = mode
         self.dir_name = cfg.path
         self.root = self.dir_name
-        self.symb_mask = cfg.symb_mask
+        # self.symb_mask = cfg.symb_mask
         self.transform = transform
         self.pre_transform = pre_transform
         self.pre_filter = pre_filter
