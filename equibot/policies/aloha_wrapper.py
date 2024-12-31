@@ -11,7 +11,7 @@ from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 # from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
-TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
+TAMP_PATH = '/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha/'
 
 
 
@@ -150,14 +150,10 @@ class pddl_wrapper(object):
             from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose, render_history
 
 
-            vis_sides = None
-            if self.cfg.data.dataset.dataset_type =='mj_insertion_pred' :
-                vis_sides = ['left', 'right']
-
             render_history(history_w, use_gui=True, \
                         directory = history_pic_dir, save_pic_every = -1,
                         agent_obs = self.decentralize_obs(obs_gpu, offset_dict),
-                        has_eff = self.dataset.has_eff, vis_sides = vis_sides)
+                        has_eff = self.dataset.has_eff, **kwargs)
             
         if offset_dict is not None:
             action_w = self.decentralize_action(action_c, offset_dict)
@@ -167,16 +163,9 @@ class pddl_wrapper(object):
 
 
 
-def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, history_bid = -1, **kwargs):
-    with hydra.initialize(config_path="configs", job_name="test_app"):
-        cfg = hydra.compose(config_name=config_name, overrides=overrides)
-    
-    assert cfg.mode != "train"
 
-    np.random.seed(cfg.seed)
 
-    tamp_wrapper = pddl_wrapper(cfg, dataset_path)
-
+def get_obsc_offset_dict(tamp_wrapper, ply_paths = None, obj_centric = False, **kwargs):
     ## if pc is in the world frame. No need to normalize it and get the offset, as center will be calculated in actor
     if ply_paths is  None:
         agent_obs = tamp_wrapper.get_obs_from_datset(**kwargs)
@@ -184,22 +173,17 @@ def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, his
         offset_dict = None
     else:
         agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, **kwargs)    
-        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
-
-    action_dict = tamp_wrapper.predict_action(history_bid=history_bid, obs_c=obs_c, offset_dict=offset_dict)
-
-
-
-    return action_dict
+        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = obj_centric)
+    return obs_c, offset_dict
 
 def get_cfgs(task_name):
     if task_name == 'mj_peg_hole':
         # mj sim
-        dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
+        dataset_path = '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/mj_peg_hole/'
         config_name = "mj_peg_hole"
-        overrides = ["prefix=mj_peg_hole", "mode=eval", "use_wandb=false"]
-        ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
-        # ply_paths = None
+        overrides = ["prefix=mj_peg_hole", "mode=inference", "use_wandb=false"]
+        # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
+        ply_paths = None
     elif task_name == 'aloha_transfer_tape':
         ## aloha transfer tape
         import pathlib
@@ -232,50 +216,95 @@ def main(task_name = 'screwdriver'):
     print(action_dict)
 
 
+def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, history_bid = -1, **kwargs):
+    with hydra.initialize(config_path="configs", job_name="test_app"):
+        cfg = hydra.compose(config_name=config_name, overrides=overrides)
+    
+    assert cfg.mode != "train"
+
+    np.random.seed(cfg.seed)
+
+    tamp_wrapper = pddl_wrapper(cfg, dataset_path)
+
+    obs_c, offset_dict = get_obsc_offset_dict(tamp_wrapper, ply_paths, obj_centric = cfg.data.dataset.is_obj_centric, **kwargs)
+
+    action_dict = tamp_wrapper.predict_action(history_bid=history_bid, obs_c=obs_c, offset_dict=offset_dict)
+    return action_dict
+
+def rot_mat_from_action_dict(action_dict):
+    rot_dict = {}
+    for key in action_dict.keys():
+        if 'grasp' in key:
+            rot_dict[key] = action_dict[key][:3, :3]
+    return rot_dict
+
 def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
     dataset_path, config_name, overrides, ply_paths = get_cfgs(task_name)
     
     with hydra.initialize(config_path="configs", job_name="test_app"):
         cfg = hydra.compose(config_name=config_name, overrides=overrides)
     
-    assert cfg.mode != "train"
+    # assert cfg.mode != "train"
+    cfg.mode = 'eval'
     np.random.seed(cfg.seed)
 
     tamp_wrapper = pddl_wrapper(cfg, dataset_path)
 
-    agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths)    
-    obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
+    ## if pc is in the world frame. No need to normalize it and get the offset, as center will be calculated in actor
+    if ply_paths is  None:
+        agent_obs = tamp_wrapper.get_obs_from_datset()
+        obs_c = to_torch(agent_obs, tamp_wrapper.cfg.device)
+        offset_dict = None
+    else:
+        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths)    
+        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
 
-    raw_action_dict = tamp_wrapper.predict_action(obs_c=obs_c, offset_dict=offset_dict, history_bid=history_bid)
-    ref_grasp_angle = raw_action_dict['grasp'][:3, :3]
+    # obs_c, offset_dict = get_obsc_offset_dict(tamp_wrapper, ply_paths, obj_centric = cfg.data.dataset.is_obj_centric)
+
+    raw_action_dict = tamp_wrapper.predict_action(obs_c=obs_c, offset_dict=offset_dict, history_bid=history_bid, sleep_time=0.05)
+    ref_grasp_dict = rot_mat_from_action_dict(raw_action_dict)
 
 
     rot_to_apply_ls = np.arange(np.pi/3, 2*np.pi, np.pi/3)
     for rot in rot_to_apply_ls:
-        from equibot.envs.sim_mobile.utils.transformations import euler2mat
-        rot_3x3 = euler2mat([0, 0, rot])
-        rotated_ref_grasp = np.dot(rot_3x3, ref_grasp_angle)
 
-        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, yaw_rotation=rot)    
-        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
-        input_obs = rotate_observation(agent_obs, rot)
-        action_dict = tamp_wrapper.predict_action(obs_c=input_obs,    
+        # agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, yaw_rotation=rot)    
+        # obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
+        # obs_c, offset_dict = get_obsc_offset_dict(tamp_wrapper, ply_paths, obj_centric = cfg.data.dataset.is_obj_centric, sleep_time=0.05)
+        input_obs_cuda = rotate_observation(agent_obs, rot)
+        action_dict = tamp_wrapper.predict_action(obs_c=input_obs_cuda,    
                                                    offset_dict=offset_dict,
                                                    history_bid=history_bid,
-                                                #    ref_grasp=rotated_ref_grasp,
                                                    )
         
         
-        pred_grasp_angle = action_dict['grasp'][:3, :3]
+        pred_grasp_angle = rot_mat_from_action_dict(action_dict)  
+
+        rot_diff = rot_diff_from_dicts(ref_grasp_dict, pred_grasp_angle, gt_rot_euler=rot)
         
-        print('rotation diff: ', rotation_diff(pred_grasp_angle, rotated_ref_grasp))
-        
+def rot_diff_from_dicts(ori_dict, pred_dict, gt_rot_euler):
+    from equibot.envs.sim_mobile.utils.transformations import euler2mat
+    rot_3x3 = euler2mat([0, 0, gt_rot_euler])
+    rot_diff = {}
+    for key in ori_dict.keys():
+        rotated_ref_grasp = np.dot(rot_3x3, ori_dict[key]) 
+        rot_diff[key] = rotation_diff(rotated_ref_grasp, pred_dict[key])
+        print('rotation diff for {} is {}'.format(key, rot_diff[key]))
+    return rot_diff
+
 def rotation_diff(rot1, rot2):
-    theta = np.arccos(np.clip((np.trace(np.dot(rot1, rot2.T)) - 1) / 2, -1.0, 1.0))
-    deg = np.rad2deg(theta)
-    return deg
+    # theta = np.arccos(np.clip((np.trace(np.dot(rot1, rot2.T)) - 1) / 2, -1.0, 1.0))
+    # deg = np.rad2deg(theta)
+    from scipy.spatial.transform import Rotation as R
+    q1 = R.from_matrix(rot1).as_quat()
+    q2 = R.from_matrix(rot2).as_quat()
+    q_relative = R.from_quat(q2) * R.from_quat(q1).inv()
+    euler_angles = q_relative.as_euler('xyz', degrees=True)
+
+    return euler_angles
 
 
 if __name__ == "__main__":
     # main()
-    eval_with_rotation(task_name='aloha_transfer_cup', history_bid=0)
+    # eval_with_rotation(task_name='aloha_transfer_cup', history_bid=0)
+    eval_with_rotation(task_name='mj_peg_hole', history_bid=0)

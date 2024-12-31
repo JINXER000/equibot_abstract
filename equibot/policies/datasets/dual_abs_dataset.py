@@ -10,7 +10,7 @@ class DualAbsDataset(ALOHAPoseDataset):
 
     def process_select(self, cfg):
         print('saving time when debug!')
-        return
+        # return
         self.process_mj_insertion_pred(cfg)
 
         # if cfg.dataset_type == 'mj_insertion_pred':
@@ -51,7 +51,7 @@ class DualAbsDataset(ALOHAPoseDataset):
                         right_jpose = joint_data[i][7:13]
 
                         # only include jpose before OR after the action
-                        stage = self.which_stage(stage, left_jpose, right_jpose)
+                        stage = self.which_stage(stage, left_jpose, right_jpose, lifted_height = 0.1)
                         if stage != cfg.tamp_type:
                             continue
 
@@ -69,6 +69,7 @@ class DualAbsDataset(ALOHAPoseDataset):
                         left_jpose_tensor = torch.tensor(left_jpose).to(torch.float32).reshape(1, 1, -1)
                         right_jpose = np.concatenate((right_jpose, np.array([joint_data[i][-1]])))
                         right_jpose_tensor = torch.tensor(right_jpose).to(torch.float32).reshape(1, 1, -1)
+                        dual_jpose_tensor = torch.cat((left_jpose_tensor, right_jpose_tensor), dim=1) # 1, 2, 7
                         
                         socket_grasp_id = np.random.randint(0, len(socket_grasp_poses)-1)
                         socket_grasp = socket_grasp_poses[socket_grasp_id].copy()
@@ -91,7 +92,8 @@ class DualAbsDataset(ALOHAPoseDataset):
                         else:
                             data = {'left_jpose': left_jpose_tensor, 'right_jpose': right_jpose_tensor,\
                                     'left_pc': socket_pc_tensor, 'right_pc': peg_pc_tensor,\
-                                    'left_grasp': socket_grasp_tensor, 'right_grasp': peg_grasp_tensor}
+                                    'left_grasp': socket_grasp_tensor, 'right_grasp': peg_grasp_tensor,
+                                    'dual_jpose': dual_jpose_tensor}
                         data_list.append(data)
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)

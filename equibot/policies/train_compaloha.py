@@ -15,7 +15,7 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 from equibot.policies.agents.aloha_agent import ALOHAAgent
 
-from test_compaloha import run_eval
+from .test_compaloha import run_eval
 # from torch.utils.tensorboard import SummaryWriter
 import pathlib
 EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
@@ -120,7 +120,7 @@ def main(cfg):
             or epoch_ix == cfg.training.num_epochs - 1
         ):
             save_path = os.path.join(log_dir, f"ckpt{epoch_ix:05d}.pth")
-            num_ckpt_to_keep = 3
+            num_ckpt_to_keep = 2
             if len(list(glob(os.path.join(log_dir, "ckpt*.pth")))) > num_ckpt_to_keep:
                 # remove old checkpoints
                 for fn in list(sorted(glob(os.path.join(log_dir, "ckpt*.pth"))))[

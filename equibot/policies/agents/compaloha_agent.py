@@ -72,7 +72,6 @@ class CompALOHAAgent(object):
     def _init_multi_normalizers(self, batch_dict):
         all_normalizers = {}
         for side in ['left', 'right']:
-            jpose_normalizer = self.get_jpose_normalizer(batch_dict[side+'_jpose'])
             pc_normalizer = self.get_xyz_normalizer(batch_dict[side+'_pc'])
             grasp_normalizer = Normalizer(
                 {
@@ -80,11 +79,14 @@ class CompALOHAAgent(object):
                     "max": pc_normalizer.stats["max"],
                 }
             )
-            all_normalizers[side+'_jpose'] = jpose_normalizer
             all_normalizers[side+'_pc'] = pc_normalizer
             all_normalizers[side +'_grasp'] = grasp_normalizer
             
             all_normalizers[side+'_pc_scale'] = self.get_pc_scale(batch_dict[side+'_pc'], pc_normalizer.stats["max"].max())
+
+        jpose_normalizer = self.get_jpose_normalizer(batch_dict['dual_jpose'])
+        all_normalizers['dual_jpose'] = jpose_normalizer
+
         return all_normalizers
     
     
@@ -101,20 +103,21 @@ class CompALOHAAgent(object):
         batch = to_torch(batch, self.device)
         left_pc = batch['left_pc'].repeat(1, self.obs_horizon, 1, 1)
         right_pc = batch['right_pc'].repeat(1, self.obs_horizon, 1, 1)
-        left_jpose = batch['left_jpose'].repeat(1, self.pred_horizon, 1, 1)
-        right_jpose = batch['right_jpose'].repeat(1, self.pred_horizon, 1, 1)
+        # left_jpose = batch['left_jpose'].repeat(1, self.pred_horizon, 1, 1)
+        # right_jpose = batch['right_jpose'].repeat(1, self.pred_horizon, 1, 1)
         left_grasp = batch['left_grasp'].repeat(1, self.pred_horizon, 1, 1)
         right_grasp = batch['right_grasp'].repeat(1, self.pred_horizon, 1, 1)
 
-
+        dual_jpose = batch['dual_jpose'].repeat(1, self.pred_horizon, 1, 1)
         ### init normalizers
         n_data_dict = {
             'left_pc': left_pc,
             'right_pc': right_pc,
             'left_grasp': left_grasp,
             'right_grasp': right_grasp,
-            'left_jpose': left_jpose,
-            'right_jpose': right_jpose,
+            # 'left_jpose': left_jpose,
+            # 'right_jpose': right_jpose,
+            'dual_jpose': dual_jpose,
         }
         if self.all_normalizers is None:
             self.all_normalizers = self._init_multi_normalizers(n_data_dict)
@@ -130,8 +133,9 @@ class CompALOHAAgent(object):
         gt_right_grasp_z = self.actor.proc_grasp(right_grasp, 'right_grasp', right_center, right_scale)
 
         # scalar
-        scalar_left_jpose = self.actor.proc_jpose(left_jpose, 'left_jpose')
-        scalar_right_jpose = self.actor.proc_jpose(right_jpose, 'right_jpose')
+        # scalar_left_jpose = self.actor.proc_jpose(left_jpose, 'left_jpose')
+        # scalar_right_jpose = self.actor.proc_jpose(right_jpose, 'right_jpose')
+        scalar_dual_jpose = self.actor.proc_jpose(dual_jpose, 'dual_jpose')
         
         batch_size = left_pc.shape[0]
         timesteps = torch.randint(
@@ -153,19 +157,25 @@ class CompALOHAAgent(object):
                    }
         
         ## z_t
-        left_jpose_noise = torch.randn_like(scalar_left_jpose, device=self.device)
         ## x_t = add_noise(x_0, z_t)
         if self.actor.mask_type == 'only_grasp':
-            noisy_left_jpose = None
-            noisy_right_jpose = None
+            # noisy_left_jpose = None
+            # noisy_right_jpose = None
+            noisy_jpose = None
         else:
-            noisy_left_jpose = self.actor.noise_scheduler.add_noise(
-                scalar_left_jpose, left_jpose_noise, timesteps
+            # left_jpose_noise = torch.randn_like(scalar_left_jpose, device=self.device)
+            jpose_noise = torch.randn_like(scalar_dual_jpose, device=self.device)
+            noisy_jpose = self.actor.noise_scheduler.add_noise(
+                scalar_dual_jpose, jpose_noise, timesteps
             )
-            right_jpose_noise = torch.randn_like(scalar_right_jpose, device=self.device)
-            noisy_right_jpose = self.actor.noise_scheduler.add_noise(
-                right_jpose_noise, scalar_right_jpose, timesteps
-            )
+
+            # noisy_left_jpose = self.actor.noise_scheduler.add_noise(
+            #     scalar_left_jpose, left_jpose_noise, timesteps
+            # )
+            # right_jpose_noise = torch.randn_like(scalar_right_jpose, device=self.device)
+            # noisy_right_jpose = self.actor.noise_scheduler.add_noise(
+            #     right_jpose_noise, scalar_right_jpose, timesteps
+            # )
 
         left_grasp_noise = torch.randn_like(gt_left_grasp_z, device=self.device)
         noisy_left_grasp = self.actor.noise_scheduler.add_noise(
@@ -179,19 +189,19 @@ class CompALOHAAgent(object):
 
 
         ## /tilde{z}_t = prednet(x_t, Cond, t)
-        left_vec_noise_pred, left_scalar_noise_pred = self.actor.left_noise_pred_net_handle(
+        left_vec_noise_pred, scalar_noise_pred = self.actor.left_noise_pred_net_handle(
             noisy_left_grasp,
             timesteps,
-            scalar_sample = noisy_left_jpose, 
+            scalar_sample = noisy_jpose, 
             cond=left_obs_vec,
             scalar_cond=None,
         )
 
 
-        right_vec_noise_pred, right_scalar_noise_pred = self.actor.right_noise_pred_net_handle(
+        right_vec_noise_pred, _ = self.actor.right_noise_pred_net_handle(
             noisy_right_grasp,
             timesteps,
-            scalar_sample = noisy_right_jpose, 
+            scalar_sample = None, 
             cond=right_obs_vec,
             scalar_cond=None,
         )
@@ -203,15 +213,17 @@ class CompALOHAAgent(object):
 
 
         if self.actor.mask_type != 'only_grasp':
-            left_scalar_loss = nn.functional.mse_loss(left_scalar_noise_pred, left_jpose_noise)
-            metrics["left_scalar_loss"] = left_scalar_loss        
-            right_scalar_loss = nn.functional.mse_loss(right_scalar_noise_pred, right_jpose_noise)
-            metrics["right_scalar_loss"] = right_scalar_loss
+            scalar_loss = nn.functional.mse_loss(scalar_noise_pred, jpose_noise)
+            metrics["scalar_loss"] = scalar_loss       
+            # left_scalar_loss = nn.functional.mse_loss(left_scalar_noise_pred, left_jpose_noise)
+            # metrics["left_scalar_loss"] = left_scalar_loss        
+            # right_scalar_loss = nn.functional.mse_loss(right_scalar_noise_pred, right_jpose_noise)
+            # metrics["right_scalar_loss"] = right_scalar_loss
 
             # total_loss = anneal_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, \
                                             #  epoch_ix, self.cfg.training.num_epochs)
             # total_loss = origin_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss)
-            total_loss = manual_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, alpha=0.8)
+            total_loss = manual_loss_scaling(left_vec_loss + right_vec_loss, scalar_loss, alpha=0.8)
             metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
 
         else:
@@ -259,7 +271,7 @@ class CompALOHAAgent(object):
             state_dict[f"{side}_pc_scale"] = self.all_normalizers[f"{side}_pc_scale"]
             state_dict[f"{side}_pc_normalizer"] = self.all_normalizers[f"{side}_pc"].state_dict()
             state_dict[f"{side}_grasp_normalizer"] = self.all_normalizers[f"{side}_grasp"].state_dict()
-            state_dict[f"{side}_jpose_normalizer"] = self.all_normalizers[f"{side}_jpose"].state_dict()
+        state_dict[f"{side}_jpose_normalizer"] = self.all_normalizers[f"dual_jpose"].state_dict()
 
         torch.save(state_dict, save_path)
 
