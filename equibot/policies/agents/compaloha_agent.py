@@ -271,7 +271,7 @@ class CompALOHAAgent(object):
             state_dict[f"{side}_pc_scale"] = self.all_normalizers[f"{side}_pc_scale"]
             state_dict[f"{side}_pc_normalizer"] = self.all_normalizers[f"{side}_pc"].state_dict()
             state_dict[f"{side}_grasp_normalizer"] = self.all_normalizers[f"{side}_grasp"].state_dict()
-        state_dict[f"{side}_jpose_normalizer"] = self.all_normalizers[f"dual_jpose"].state_dict()
+        state_dict["dual_jpose_normalizer"] = self.all_normalizers[f"dual_jpose"].state_dict()
 
         torch.save(state_dict, save_path)
 
@@ -282,7 +282,7 @@ class CompALOHAAgent(object):
             self.all_normalizers[f"{side}_pc_scale"] = state_dict[f"{side}_pc_scale"]
             self.all_normalizers[f"{side}_pc"] = Normalizer(state_dict[f"{side}_pc_normalizer"])
             self.all_normalizers[f"{side}_grasp"] = Normalizer(state_dict[f"{side}_grasp_normalizer"])
-            self.all_normalizers[f"{side}_jpose"] = Normalizer(state_dict[f"{side}_jpose_normalizer"])
+        self.all_normalizers["dual_jpose"] = Normalizer(state_dict["right_jpose_normalizer"])
         
         self.actor.all_normalizers = self.all_normalizers
 
