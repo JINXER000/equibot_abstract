@@ -15,12 +15,12 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 from equibot.policies.agents.aloha_agent import ALOHAAgent
 
-from test_compaloha import run_eval
+from .test_compaloha import run_eval
 # from torch.utils.tensorboard import SummaryWriter
 import pathlib
 EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
 
-@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dual_transfer_tape")
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="mj_peg_hole")
 def main(cfg):
     assert cfg.mode == "train"
     np.random.seed(cfg.seed)
@@ -28,6 +28,11 @@ def main(cfg):
     # initialize parameters
     batch_size = cfg.training.batch_size
 
+    log_dir = os.getcwd()
+    cur_date = os.popen("date +'%Y-%m-%d_%H-%M-%S'").read().strip()
+    log_dir = os.path.join(log_dir, f"{cur_date}", 'checkpoints')
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     # wandb
     if cfg.use_wandb:
         wandb_config = omegaconf.OmegaConf.to_container(
@@ -41,7 +46,11 @@ def main(cfg):
             settings=wandb.Settings(code_dir="."),
             config=wandb_config,
         )
-    log_dir = os.getcwd()
+        wandb.config.update(
+        {
+            "output_dir": log_dir,
+        }
+        )
     train_dataset = DualAbsDataset(cfg.data.dataset, "train")
     num_workers = cfg.data.dataset.num_workers
     train_loader = torch.utils.data.DataLoader(
@@ -111,7 +120,7 @@ def main(cfg):
             or epoch_ix == cfg.training.num_epochs - 1
         ):
             save_path = os.path.join(log_dir, f"ckpt{epoch_ix:05d}.pth")
-            num_ckpt_to_keep = 10
+            num_ckpt_to_keep = 2
             if len(list(glob(os.path.join(log_dir, "ckpt*.pth")))) > num_ckpt_to_keep:
                 # remove old checkpoints
                 for fn in list(sorted(glob(os.path.join(log_dir, "ckpt*.pth"))))[

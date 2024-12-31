@@ -142,12 +142,17 @@ python train_abstract.py --config-name transfer_tape \
     prefix=aloha_transfer_tape \
     data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/transfer_tape/
 ```
-
+```
 cd equibot/policies/
 CUDA_VISIBLE_DEVICE=3 python train_abstract.py --config-name screwdriver_container \
     prefix=screwdriver_container \
     data.dataset.path=/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/screwdriver_container/
 
+
+CUDA_VISIBLE_DEVICE=3 python -m equibot.policies.train_compaloha --config-name mj_peg_hole \
+    prefix=mj_peg_hole \
+    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/
+```
 ### Evaluation
 
 The commands below evaluate the trained EquiBot policy on the four different setups mentioned in the paper: `Original`, `R+Su`, `R+Sn`, and `R+Sn+P`. To run these evaluations for the DP baseline, replace all occurrences of `equibot` to`dp`. For the log directory, fill `[log_dir]` with the absolute path to the log directory. By default, this directory is `./log`.

@@ -91,7 +91,7 @@ class CompALOHAPolicy(nn.Module):
             input_dim=self.eef_dim,
             cond_dim=self.obs_dim* self.obs_horizon,
             scalar_cond_dim=0,
-            scalar_input_dim= num_scalar_dims,
+            scalar_input_dim= 0,
             diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
             cond_predict_scale=True,
         )
@@ -286,11 +286,16 @@ class CompALOHAPolicy(nn.Module):
                 torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
                 * initial_noise_scale,
                 )
+            # noisy_right_xt = (
+            #     torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
+            # * initial_noise_scale,
+            #     torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
+            #     * initial_noise_scale,
+            # )
             noisy_right_xt = (
                 torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
             * initial_noise_scale,
-                torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
-                * initial_noise_scale,
+                None,
             )
 
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
@@ -342,9 +347,12 @@ class CompALOHAPolicy(nn.Module):
 
                     ## recover jpose
                     if scalar_noise_pred is not None:
-                        unnormed_joint = self.recover_jpose(new_action[side][1], key=side+'_jpose')
+                        # unnormed_joint = self.recover_jpose(new_action[side][1], key=side+'_jpose')
+                        # jpose_flat = unnormed_joint[history_bid].reshape(-1)       
+                        # action_slice.update(side+'_jpose', jpose_flat)        
+                        unnormed_joint = self.recover_jpose(new_action[side][1], key='dual_jpose')
                         jpose_flat = unnormed_joint[history_bid].reshape(-1)       
-                        action_slice.update(side+'_jpose', jpose_flat)           
+                        action_slice.update('dual_jpose', jpose_flat)   
 
                 denoise_history.append(action_slice)
 
@@ -362,7 +370,7 @@ class CompALOHAPolicy(nn.Module):
             trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(\
                 final_action[side][0], scale[side], center[side], key=side+'_grasp')
             if final_action[side][1] is not None:
-                unnormed_joint = self.recover_jpose(final_action[side][1], key=side+'_jpose')
+                unnormed_joint = self.recover_jpose(final_action[side][1], key='dual_jpose')
                 unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
 
             ## update action dict if only test
@@ -370,7 +378,7 @@ class CompALOHAPolicy(nn.Module):
             if batch_size == 1:
                 action_dict[side+'_grasp'] = trans_batch.reshape(-1, 4)
                 if final_action[side][1] is not None:
-                    action_dict[side+'_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
+                    action_dict['dual_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
 
             ## calc metrics if in training
             else:
@@ -378,7 +386,7 @@ class CompALOHAPolicy(nn.Module):
                 # gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1, keepdim=True)
                 gt_grasp_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
                 # gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1, keepdim=True)
-                gt_joint = batch[side+"_jpose"]
+                gt_joint = batch["dual_jpose"]
 
                 xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
                 rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
@@ -387,7 +395,7 @@ class CompALOHAPolicy(nn.Module):
 
                 if final_action[side][1] is not None:
                     joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
-                    eval_metrics[side+"_joint_mse"] = joint_mse
+                    eval_metrics["dual_joint_mse"] = joint_mse
 
         return action_dict, eval_metrics
 
