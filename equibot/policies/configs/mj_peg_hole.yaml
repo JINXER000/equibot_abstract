@@ -1,7 +1,7 @@
 defaults:
   - base
 
-use_wandb: true
+use_wandb: true 
 
 training:
   # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/mj_peg_hole/ckpt_newpc_grasp_joint.pth" 
@@ -41,8 +41,8 @@ model:
 data:
   dataset:
     num_points: 128
-    # symb_mask: ['qpose_left', 'qpose_right', 'grasp_left', 'grasp_right', None]
-    symb_mask: ['None', 'None', 'grasp_left', 'grasp_right', None]
+    symb_mask: ['qpose_left', 'qpose_right', 'grasp_left', 'grasp_right', None]
+    # symb_mask: ['None', 'None', 'grasp_left', 'grasp_right', None]
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
 from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
+from equibot.policies.utils.equivariant_diffusion.unconditional_mlp import UnconditionalMLP
 import numpy as np
 
 from equibot.policies.utils.misc import to_torch, \
@@ -75,7 +76,6 @@ class CompALOHAPolicy(nn.Module):
         self.dof = cfg.env.dof # 6
         self.eef_dim = 3 # xyz, dir1, dir2
         self.num_eef = cfg.env.num_eef
-        num_scalar_dims = 0 if self.mask_type == "only_grasp" else self.dof * self.num_eef  
 
         self.obs_dim = self.encoder_out_dim
 
@@ -83,7 +83,7 @@ class CompALOHAPolicy(nn.Module):
             input_dim=self.eef_dim,  ## vec dim, rot is 2, xyz is 1
             cond_dim=self.obs_dim* self.obs_horizon,
             scalar_cond_dim=0,
-            scalar_input_dim= num_scalar_dims,
+            scalar_input_dim= 0,
             diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
             cond_predict_scale=True,  ## in Fila, do AX+B instead of x+B
         )
@@ -95,12 +95,19 @@ class CompALOHAPolicy(nn.Module):
             diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
             cond_predict_scale=True,
         )
+        num_scalar_dims = 0 if self.mask_type == "only_grasp" else self.dof * self.num_eef  
+
+        self.jpose_noise_pred_net = UnconditionalMLP(
+            input_dim= num_scalar_dims,
+            diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
+        )
 
         self.nets = nn.ModuleDict(
             {"left_encoder": self.left_encoder, \
                 "right_encoder": self.right_encoder, \
              "left_noise_pred_net": self.left_noise_pred_net,\
-             "right_noise_pred_net": self.right_noise_pred_net}
+             "right_noise_pred_net": self.right_noise_pred_net,\
+                "jpose_noise_pred_net": self.jpose_noise_pred_net}
         )
         self.ema = EMAModel(model=copy.deepcopy(self.nets), power=0.75)
 
@@ -176,9 +183,11 @@ class CompALOHAPolicy(nn.Module):
         return trans_batch, unnormed_grasp_xyz, rot6d_batch
 
     def recover_jpose(self, jpose_batch, key):
-        # reduce the horizon
-        jpose_action = torch.mean(jpose_batch, dim=1)
-        jpose_action = jpose_action.reshape(-1, self.num_eef, self.dof)
+        # squeeze the pred horizon to 1
+        if len(jpose_batch.shape) >2: 
+            jpose_action = torch.mean(jpose_batch, dim=1).reshape(-1, self.num_eef, self.dof)
+        else:
+            jpose_action = jpose_batch.reshape(-1, self.num_eef, self.dof)
     
 
         unnormed_joint = (
@@ -266,63 +275,48 @@ class CompALOHAPolicy(nn.Module):
         ##### start denoising #####
 
         initial_noise_scale = 1
-        if self.mask_type == "only_grasp": 
-            noisy_left_xt = (
-                torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
-            * initial_noise_scale,
-                None
-                )
-            noisy_right_xt = (
-                torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
-            * initial_noise_scale,
-                None,
-            )
+        noisy_left_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)\
+        * initial_noise_scale
+        noisy_right_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)\
+        * initial_noise_scale
 
+        if self.mask_type != "only_grasp": 
+            noisy_jpose = torch.randn((batch_size,  self.num_eef*self.dof)).to(self.device) * initial_noise_scale,
+            if type(noisy_jpose) == tuple:
+                noisy_jpose = noisy_jpose[0]
         else:
-
-            noisy_left_xt = (
-                torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
-            * initial_noise_scale,
-                torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
-                * initial_noise_scale,
-                )
-            # noisy_right_xt = (
-            #     torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
-            # * initial_noise_scale,
-            #     torch.randn((batch_size, self.pred_horizon, self.num_eef*self.dof)).to(self.device)
-            #     * initial_noise_scale,
-            # )
-            noisy_right_xt = (
-                torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)
-            * initial_noise_scale,
-                None,
-            )
+            noisy_jpose = None
 
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
 
-        curr_action = {"left": noisy_left_xt, "right": noisy_right_xt}
+        curr_action = {"left": noisy_left_xt, "right": noisy_right_xt, "jpose": noisy_jpose}
 
         denoise_history = []
         for k in self.noise_scheduler.timesteps:
 
             ####### inverse diffusion step
-            new_action = {"left": [None, None], "right": [None, None]}
+            new_action = {"left": None, "right": None}
 
             for side in ["left", "right"]:
-                vec_noise_pred, scalar_noise_pred = ema_nets[side+"_noise_pred_net"](\
-                    sample=curr_action[side][0],
+                vec_noise_pred, _= ema_nets[side+"_noise_pred_net"](\
+                    sample=curr_action[side],
                     timestep = k,
-                    scalar_sample = curr_action[side][1],
+                    scalar_sample = None, 
                     cond= obs_vec[side],
                     scalar_cond=None,
                 )
-                new_action[side][0] = self.noise_scheduler.step(
-                    model_output=vec_noise_pred, timestep=k, sample=curr_action[side][0]
+                new_action[side] = self.noise_scheduler.step(
+                    model_output=vec_noise_pred, timestep=k, sample=curr_action[side]
                 ).prev_sample
-                if scalar_noise_pred is not None:
-                    new_action[side][1] = self.noise_scheduler.step(
-                        model_output=scalar_noise_pred, timestep=k, sample=curr_action[side][1]
-                    ).prev_sample
+
+            if self.mask_type != "only_grasp":
+                scalar_noise_pred = ema_nets["jpose_noise_pred_net"](\
+                    sample=curr_action["jpose"],
+                    timesteps = k,
+                )
+                new_action['jpose'] = self.noise_scheduler.step(
+                    model_output=scalar_noise_pred, timestep=k, sample=curr_action["jpose"]
+                ).prev_sample
 
             
 
@@ -340,19 +334,17 @@ class CompALOHAPolicy(nn.Module):
 
                     ## recover grasp
                     trans_batch, _, _ = self.recover_grasp(\
-                        new_action[side][0], scale[side], center[side], key=side+'_grasp')
+                        new_action[side], scale[side], center[side], key=side+'_grasp')
                     assert trans_batch.shape[3] == 4
                     trans_mat = trans_batch[history_bid, 0]#.detach().cpu().numpy() 
                     action_slice.update(side+'_grasp', trans_mat)
 
-                    ## recover jpose
-                    if scalar_noise_pred is not None:
-                        # unnormed_joint = self.recover_jpose(new_action[side][1], key=side+'_jpose')
-                        # jpose_flat = unnormed_joint[history_bid].reshape(-1)       
-                        # action_slice.update(side+'_jpose', jpose_flat)        
-                        unnormed_joint = self.recover_jpose(new_action[side][1], key='dual_jpose')
-                        jpose_flat = unnormed_joint[history_bid].reshape(-1)       
-                        action_slice.update('dual_jpose', jpose_flat)   
+                ## recover jpose
+                if self.mask_type != "only_grasp":
+          
+                    unnormed_joint = self.recover_jpose(new_action['jpose'], key='dual_jpose')
+                    jpose_flat = unnormed_joint[history_bid].reshape(-1)       
+                    action_slice.update('dual_jpose', jpose_flat)   
 
                 denoise_history.append(action_slice)
 
@@ -365,38 +357,38 @@ class CompALOHAPolicy(nn.Module):
     def get_action_dict_and_metrics(self, batch, final_action, center, scale):
         eval_metrics = {}
         action_dict = {}
+
+
         for side in ["left", "right"]:
             ## predicted values
             trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(\
-                final_action[side][0], scale[side], center[side], key=side+'_grasp')
-            if final_action[side][1] is not None:
-                unnormed_joint = self.recover_jpose(final_action[side][1], key='dual_jpose')
-                unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
+                final_action[side], scale[side], center[side], key=side+'_grasp')
 
             ## update action dict if only test
-            batch_size = trans_batch.shape[0] 
+            batch_size = trans_batch.shape[0]
             if batch_size == 1:
                 action_dict[side+'_grasp'] = trans_batch.reshape(-1, 4)
-                if final_action[side][1] is not None:
-                    action_dict['dual_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
 
             ## calc metrics if in training
             else:
                 gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(batch[side+"_grasp"], has_eff=self.has_eff)
-                # gt_grasp_xyz = torch.mean(gt_grasp_xyz, dim=1, keepdim=True)
                 gt_grasp_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
-                # gt_grasp_rot6d = torch.mean(gt_grasp_rot6d, dim=1, keepdim=True)
-                gt_joint = batch["dual_jpose"]
 
                 xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
                 rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
                 eval_metrics[side+"_xyz_mse"] = xyz_mse
                 eval_metrics[side+"_rot_mse"] = rot_mse
 
-                if final_action[side][1] is not None:
-                    joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
-                    eval_metrics["dual_joint_mse"] = joint_mse
 
+        if self.mask_type != "only_grasp":
+            unnormed_joint = self.recover_jpose(final_action['jpose'], key='dual_jpose')
+            unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
+            if batch_size == 1:
+                action_dict['dual_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
+            else:
+                gt_joint = batch["dual_jpose"]
+                joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
+                eval_metrics["dual_joint_mse"] = joint_mse
         return action_dict, eval_metrics
 
     def conclude_masks(self):
