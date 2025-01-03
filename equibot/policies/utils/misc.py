@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+import pathlib
+EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 
 def to_torch(batch, device):    return {k: v.to(device) for k, v in batch.items()}
 
@@ -238,16 +240,21 @@ class ActionSlice(object):
             self.data = {'left_jpose': None, 'right_jpose': None, \
                          'left_grasp': None, 'right_grasp': None}
             self.ee_dof = 7
-        else:
+        elif mode == "combined":
             self.data = {'jpose': None, 'grasp': None}
-            self.ee_dof = 12
+            self.ee_dof = 14
 
     def update(self, key, value):
-        self.data[key] = value
+        if key == 'dual_jpose':
+            self.data['left_jpose'] = value[:self.ee_dof]
+            self.data['right_jpose'] = value[self.ee_dof:]
+        else:
+            self.data[key] = value
 
     def get(self, key):
         if not key in self.data:
             return None
+        
         return self.data[key]
     
 

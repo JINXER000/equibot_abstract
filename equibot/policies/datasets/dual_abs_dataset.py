@@ -9,8 +9,8 @@ class DualAbsDataset(ALOHAPoseDataset):
         super(DualAbsDataset, self).__init__(cfg, mode, transform)
 
     def process_select(self, cfg):
-        print('saving time when debug!')
-        return
+        # print('saving time when debug!')
+        # return
         self.process_mj_insertion_pred(cfg)
 
         # if cfg.dataset_type == 'mj_insertion_pred':

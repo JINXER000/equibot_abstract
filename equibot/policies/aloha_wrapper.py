@@ -41,8 +41,6 @@ class pddl_wrapper(object):
             )
 
 
-
-
     def get_obs_from_datset(self,**kwargs):
         assert self.cfg.mode != 'inference'
         data_iter = iter(self.test_loader)
@@ -179,7 +177,7 @@ def get_obsc_offset_dict(tamp_wrapper, ply_paths = None, obj_centric = False, **
 def get_cfgs(task_name):
     if task_name == 'mj_peg_hole':
         # mj sim
-        dataset_path = '/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/'
+        dataset_path = 'data/mj_peg_hole/'
         config_name = "mj_peg_hole"
         overrides = ["prefix=mj_peg_hole", "mode=inference", "use_wandb=false"]
         # ply_paths = {'left_pc': os.path.join(dataset_path, 'left_pc.ply'), 'right_pc': os.path.join(dataset_path, 'right_pc.ply')}
@@ -209,27 +207,6 @@ def get_cfgs(task_name):
         raise NotImplementedError('task not implemented')
     return dataset_path, config_name, overrides, ply_paths
 
-def main(task_name = 'screwdriver'):
-    dataset_path, config_name, overrides, ply_paths = get_cfgs(task_name)
-
-    action_dict = infer_and_render(dataset_path, config_name, overrides, ply_paths=ply_paths, history_bid=0)
-    print(action_dict)
-
-
-def infer_and_render(dataset_path, config_name, overrides, ply_paths = None, history_bid = -1, **kwargs):
-    with hydra.initialize(config_path="configs", job_name="test_app"):
-        cfg = hydra.compose(config_name=config_name, overrides=overrides)
-    
-    assert cfg.mode != "train"
-
-    np.random.seed(cfg.seed)
-
-    tamp_wrapper = pddl_wrapper(cfg, dataset_path)
-
-    obs_c, offset_dict = get_obsc_offset_dict(tamp_wrapper, ply_paths, obj_centric = cfg.data.dataset.is_obj_centric, **kwargs)
-
-    action_dict = tamp_wrapper.predict_action(history_bid=history_bid, obs_c=obs_c, offset_dict=offset_dict)
-    return action_dict
 
 def rot_mat_from_action_dict(action_dict):
     rot_dict = {}
@@ -268,9 +245,6 @@ def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
     rot_to_apply_ls = np.arange(np.pi/3, 2*np.pi, np.pi/3)
     for rot in rot_to_apply_ls:
 
-        # agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths, yaw_rotation=rot)    
-        # obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
-        # obs_c, offset_dict = get_obsc_offset_dict(tamp_wrapper, ply_paths, obj_centric = cfg.data.dataset.is_obj_centric, sleep_time=0.05)
         input_obs_cuda = rotate_observation(agent_obs, rot)
         action_dict = tamp_wrapper.predict_action(obs_c=input_obs_cuda,    
                                                    offset_dict=offset_dict,

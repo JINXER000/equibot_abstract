@@ -17,22 +17,23 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 # sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
 # from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 
-import pathlib
-EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
+# import pathlib
+# EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
+from equibot.policies.utils.misc import  EQUIBOT_PATH
 
 
-def get_obs(batch):
+# def get_obs(batch):
 
-    right_pc = batch["right_pc"].cpu().numpy()
-    right_grasp = batch["right_grasp"].cpu().numpy()
-    left_jpose = batch["left_jpose"].cpu().numpy()
-    right_jpose = batch["right_jpose"].cpu().numpy()
+#     right_pc = batch["right_pc"].cpu().numpy()
+#     right_grasp = batch["right_grasp"].cpu().numpy()
+#     left_jpose = batch["left_jpose"].cpu().numpy()
+#     right_jpose = batch["right_jpose"].cpu().numpy()
 
-    # # perform transformation
-    # pc = rotate_points(pc)
+#     # # perform transformation
+#     # pc = rotate_points(pc)
     
-    agent_obs = {"right_pc": right_pc, "right_grasp": right_grasp, 'left_jpose': left_jpose, 'right_jpose': right_jpose}
-    return agent_obs
+#     agent_obs = {"right_pc": right_pc, "right_grasp": right_grasp, 'left_jpose': left_jpose, 'right_jpose': right_jpose}
+#     return agent_obs
 
 
 def run_eval(
@@ -41,7 +42,7 @@ def run_eval(
     log_dir=None,
     use_wandb=False,
     batch = None,
-    history_bid = 0,
+    history_bid = -1,
 ):
 
     # ## input obs from dataset
@@ -66,9 +67,9 @@ def run_eval(
     return unnormed_history, metrics
 
 
-@hydra.main(config_path="configs", config_name="dual_transfer_tape")
+@hydra.main(config_path="configs", config_name="mj_peg_hole")
 def main(cfg):
-    assert cfg.mode == "eval"
+    cfg.mode == "eval"
     device = torch.device(cfg.device)
     if cfg.use_wandb:
         wandb_config = omegaconf.OmegaConf.to_container(
@@ -86,7 +87,7 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/transfer_tape/')
+    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/mj_peg_hole/')
     eval_dataset = DualAbsDataset(cfg.data.dataset, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(
@@ -103,8 +104,6 @@ def main(cfg):
 
     agent = CompALOHAAgent(cfg)
     agent.train(False)
-
-
 
 
     if os.path.isdir(cfg.training.ckpt):
@@ -127,8 +126,10 @@ def main(cfg):
             vis=True,
             log_dir=log_dir,
             batch = fist_batch,
-            history_bid = cfg.eval.history_bid,
+            # history_bid = cfg.eval.history_bid,
         )
+
+        print("evaluation result: ", eval_metrics)
 
 
 

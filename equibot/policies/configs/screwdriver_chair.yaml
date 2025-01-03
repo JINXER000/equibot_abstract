@@ -4,7 +4,7 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/screwdriver_fresh/ckpt_best.pth"
+  # ckpt: "logs/train/screwdriver_fresh/ckpt_best.pth"
   eval_interval: 1
 
 env:

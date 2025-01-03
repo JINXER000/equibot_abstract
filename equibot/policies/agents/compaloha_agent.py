@@ -8,7 +8,9 @@ from equibot.policies.utils.misc import to_torch, \
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 
 from equibot.policies.agents.compaloha_policy import CompALOHAPolicy
-from equibot.policies.utils.misc import to_torch,  rotate_observation, to_tensor
+from equibot.policies.utils.misc import to_torch,  rotate_observation, to_tensor, EQUIBOT_PATH
+
+
 
 class CompALOHAAgent(object):
     def __init__(self, cfg) -> None:
@@ -209,11 +211,6 @@ class CompALOHAAgent(object):
         if self.actor.mask_type != 'only_grasp':
             scalar_loss = nn.functional.mse_loss(scalar_noise_pred, jpose_noise)
             metrics["scalar_loss"] = scalar_loss       
-            # left_scalar_loss = nn.functional.mse_loss(left_scalar_noise_pred, left_jpose_noise)
-            # metrics["left_scalar_loss"] = left_scalar_loss        
-            # right_scalar_loss = nn.functional.mse_loss(right_scalar_noise_pred, right_jpose_noise)
-            # metrics["right_scalar_loss"] = right_scalar_loss
-
             # total_loss = anneal_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss, \
                                             #  epoch_ix, self.cfg.training.num_epochs)
             # total_loss = origin_loss_scaling(left_vec_loss + right_vec_loss, left_scalar_loss + right_scalar_loss)
@@ -270,7 +267,9 @@ class CompALOHAAgent(object):
         torch.save(state_dict, save_path)
 
     def load_snapshot(self, load_path):
-        state_dict = torch.load(load_path)
+        import os
+        load_path_full = os.path.join(EQUIBOT_PATH, load_path)
+        state_dict = torch.load(load_path_full)
         self.all_normalizers = {}
         for side in ["left", "right"]:
             self.all_normalizers[f"{side}_pc_scale"] = state_dict[f"{side}_pc_scale"]

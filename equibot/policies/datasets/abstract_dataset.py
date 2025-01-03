@@ -9,7 +9,7 @@ from equibot.policies.utils.constants import qpos_to_eepose
 
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_around_z, to_tensor, to_np, convert_trans_to_vec, convert_vec_to_trans
+from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_around_z, to_tensor, to_np, convert_trans_to_vec, convert_vec_to_trans, EQUIBOT_PATH
 
 
 import hydra
@@ -19,8 +19,8 @@ import sys
 # from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 # from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
 
-import pathlib
-EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
+# import pathlib
+# EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
@@ -55,17 +55,17 @@ class ALOHAPoseDataset(Dataset):
         self.pre_filter = pre_filter
         self.composed_inference = False
 
-        self.mj_offset = np.array([0.0, 0.5, 0.0])
+        # self.mj_offset = np.array([0.0, 0.5, 0.0])
         self.pc_shape = (cfg.num_points, 3)
         self.has_eff = cfg.has_eff
-        self.is_mj = ('mj' in cfg.dataset_type)
+        # self.is_mj = ('mj' in cfg.dataset_type)
 
         self.is_obj_centric = cfg.is_obj_centric
 
         self.num_eef = cfg.num_eef
         self.dof = cfg.dof
 
-
+        # self.process_select(cfg)
         if mode == 'train':
             # Process the data
             print('Processing dataset...')
@@ -77,7 +77,7 @@ class ALOHAPoseDataset(Dataset):
         #     print('NOTE: dataset already processed!')
         #     self.process_select(cfg)
         
-        if mode != 'inference': 
+        if mode != 'inference':
             # Load processed data
             self.data, self.slices = torch.load(self.processed_file_path)
 
@@ -95,10 +95,9 @@ class ALOHAPoseDataset(Dataset):
         input_pc= downsample_pc(input_pc, self.pc_shape[0])
         
         ## get pc in the world frame (the origin in the middle of robots)
-        if self.is_mj:
-            input_pc = input_pc - self.mj_offset
+        # if self.is_mj:
+        #     input_pc = input_pc - self.mj_offset
         
-
         if obj_centric:
             pc_offset = np.min(input_pc, axis=0)
             input_pc = input_pc - pc_offset

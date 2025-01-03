@@ -15,8 +15,9 @@ from equibot.policies.vision.vec_layers import VecLinNormAct as VecLNA
 # sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 # from vec_layers import *
 # from vec_layers import VecLinearNormalizeActivate as VecLNA
-import pathlib
-EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
+# import pathlib
+# EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
+from equibot.policies.utils.misc import  EQUIBOT_PATH
 
 
 def meanpool(x, dim=-1, keepdim=False):
@@ -289,7 +290,8 @@ class VecDGCNN_att_frozen(VecDGCNN_att):
         center_pred=True,  
              )     ## REVISED
 
-        enc_params = torch.load(preload_path)["model_state_dict"]
+        preload_path_full = os.path.join(EQUIBOT_PATH, preload_path)
+        enc_params = torch.load(preload_path_full)["model_state_dict"]
         self.load_state_dict(
                 {".".join(k.split(".")[2:]): enc_params[k] for k in enc_params.keys() if "encoder" in k},
         strict=True,

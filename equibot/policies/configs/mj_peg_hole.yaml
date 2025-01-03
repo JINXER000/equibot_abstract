@@ -4,7 +4,7 @@ defaults:
 use_wandb: true 
 
 training:
-  # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/mj_peg_hole/ckpt_newpc_grasp_joint.pth" 
+  ckpt: "logs/train/mj_peg_hole/ckpt01600.pth" 
   eval_interval: 1
   num_epochs: 2000
 
@@ -28,7 +28,7 @@ model:
 #     backbone_type: vn_pointnet
 #     backbone_args: 
 #       num_layers: 7
-#       preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
+#       preload_path: "pretrained/mugs.pt"
 
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
@@ -36,7 +36,7 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/chairs.pt"
+      preload_path: "pretrained/chairs.pt"
 
 data:
   dataset:

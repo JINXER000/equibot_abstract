@@ -12,7 +12,7 @@ from glob import glob
 from omegaconf import OmegaConf
 
 from equibot.policies.utils.media import save_video
-from equibot.policies.utils.misc import get_env_class, get_dataset, get_agent
+from equibot.policies.utils.misc import EQUIBOT_PATH
 from equibot.policies.vec_eval import run_eval
 from equibot.envs.subproc_vec_env import SubprocVecEnv
 
@@ -21,8 +21,8 @@ from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 
 from .test_abstract import run_eval
 # from torch.utils.tensorboard import SummaryWriter
-import pathlib
-EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
+# import pathlib
+# EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):

@@ -19,8 +19,9 @@ from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 # from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 # import open3d as o3d
 
-import pathlib
-EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
+# import pathlib
+# EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
+from equibot.policies.utils.misc import  EQUIBOT_PATH
 
 def rotate_points(conditional_pc, visualize=False):
     points = np.asarray(conditional_pc)

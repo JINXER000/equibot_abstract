@@ -17,8 +17,9 @@ from equibot.policies.agents.aloha_agent import ALOHAAgent
 
 from .test_compaloha import run_eval
 # from torch.utils.tensorboard import SummaryWriter
-import pathlib
-EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
+# import pathlib
+# EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
+from equibot.policies.utils.misc import  EQUIBOT_PATH
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="mj_peg_hole")
 def main(cfg):
