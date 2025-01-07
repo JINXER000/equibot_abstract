@@ -37,7 +37,7 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "/home/robotics/CoMa_code_clean/equibot_abstract/pretrained/chairs.pt"
+      preload_path: "pretrained/chairs.pt"
 
 data:
   dataset:

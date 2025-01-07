@@ -10,8 +10,8 @@ training:
 env:
   env_class: 'screwdriver'
   num_eef: 2
-  # dof: 6 # aloha
-  dof: 7
+  dof: 6 # aloha
+  # dof: 7
   max_episode_length: 50
 
 
@@ -37,7 +37,7 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "/home/robotics/CoMa_code_clean/equibot_abstract/pretrained/kit4cates.pt"
+      preload_path: "pretrained/kit4cates.pt"
 
 data:
   dataset:

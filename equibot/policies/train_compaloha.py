@@ -29,13 +29,14 @@ def main(cfg):
     # initialize parameters
     batch_size = cfg.training.batch_size
 
-    log_dir = os.getcwd()
-    cur_date = os.popen("date +'%Y-%m-%d_%H-%M-%S'").read().strip()
-    log_dir = os.path.join(log_dir, f"{cur_date}", 'checkpoints')
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
     # wandb
     if cfg.use_wandb:
+        log_dir = os.getcwd()
+        cur_date = os.popen("date +'%Y-%m-%d_%H-%M-%S'").read().strip()
+        log_dir = os.path.join(log_dir, f"{cur_date}", 'checkpoints')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+    #
         wandb_config = omegaconf.OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=False
         )
@@ -116,7 +117,7 @@ def main(cfg):
 
 
         # save ckpt
-        if (
+        if  log_dir is not None and (
             epoch_ix % cfg.training.save_interval == 0
             or epoch_ix == cfg.training.num_epochs - 1
         ):

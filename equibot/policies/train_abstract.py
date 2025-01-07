@@ -38,6 +38,11 @@ def main(cfg):
 
     # wandb
     if cfg.use_wandb:
+        log_dir = os.getcwd()
+        cur_date = os.popen("date +'%Y-%m-%d_%H-%M-%S'").read().strip()
+        log_dir = os.path.join(log_dir, f"{cur_date}", 'checkpoints')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
         wandb_config = omegaconf.OmegaConf.to_container(
             cfg, resolve=True, throw_on_missing=False
         )
@@ -134,7 +139,7 @@ def main(cfg):
             or epoch_ix == cfg.training.num_epochs - 1
         ):
             save_path = os.path.join(log_dir, f"ckpt{epoch_ix:05d}.pth")
-            num_ckpt_to_keep = 3
+            num_ckpt_to_keep = 1
             if len(list(glob(os.path.join(log_dir, "ckpt*.pth")))) > num_ckpt_to_keep:
                 # remove old checkpoints
                 for fn in list(sorted(glob(os.path.join(log_dir, "ckpt*.pth"))))[
