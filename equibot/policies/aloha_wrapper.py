@@ -4,7 +4,7 @@ import torch
 import hydra
 import numpy as np
 
-from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch, rotate_observation, to_tensor
+from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
 
@@ -19,11 +19,11 @@ class pddl_wrapper(object):
     def __init__(self, cfg, dataset_path):
          # load the network
         cfg.data.dataset.path = dataset_path
-
+        ckpt_path_full = os.path.join(EQUIBOT_PATH, cfg.training.ckpt)
         self.cfg = cfg
         self.agent = get_agent(cfg.agent.agent_name)(cfg)
         self.agent.train(False)
-        self.agent.load_snapshot(cfg.training.ckpt)
+        self.agent.load_snapshot(ckpt_path_full)
 
         self.dataset = get_dataset(cfg, cfg.mode)
         # self.dataset = DualAbsDataset(cfg.data.dataset , cfg.mode)
@@ -222,7 +222,8 @@ def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
         cfg = hydra.compose(config_name=config_name, overrides=overrides)
     
     # assert cfg.mode != "train"
-    cfg.mode = 'eval'
+    # cfg.mode = 'eval'
+    cfg.mode = 'inference'
     np.random.seed(cfg.seed)
 
     tamp_wrapper = pddl_wrapper(cfg, dataset_path)
@@ -280,5 +281,5 @@ def rotation_diff(rot1, rot2):
 
 if __name__ == "__main__":
     # main()
-    # eval_with_rotation(task_name='aloha_transfer_cup', history_bid=0)
-    eval_with_rotation(task_name='mj_peg_hole', history_bid=0)
+    eval_with_rotation(task_name='screwdriver_container', history_bid=0)
+    # eval_with_rotation(task_name='mj_peg_hole', history_bid=0)

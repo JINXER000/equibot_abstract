@@ -4,7 +4,7 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "logs/train/screwdriver_fresh/ckpt_best.pth"
+  ckpt: "logs/train/screwdriver_container/ckpt_best_1view.pth"
   eval_interval: 1
 
 env:
