@@ -57,7 +57,7 @@ class ALOHAPoseDataset(Dataset):
 
         # self.mj_offset = np.array([0.0, 0.5, 0.0])
         self.pc_shape = (cfg.num_points, 3)
-        self.has_eff = cfg.has_eff
+        self.has_eff_list = cfg.has_eff_list
         # self.is_mj = ('mj' in cfg.dataset_type)
 
         self.is_obj_centric = cfg.is_obj_centric

@@ -53,6 +53,9 @@ def main(cfg):
             "output_dir": log_dir,
         }
         )
+    else:
+        log_dir = None
+
     train_dataset = DualAbsDataset(cfg.data.dataset, "train")
     num_workers = cfg.data.dataset.num_workers
     train_loader = torch.utils.data.DataLoader(
