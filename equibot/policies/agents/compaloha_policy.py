@@ -58,7 +58,11 @@ class CompALOHAPolicy(nn.Module):
         self.obs_horizon = cfg.model.obs_horizon
         self.action_horizon = cfg.model.ac_horizon
         self.symb_mask = cfg.data.dataset.symb_mask
-        self.has_eff = cfg.data.dataset.has_eff
+        has_eff_list = cfg.data.dataset.has_eff_list
+        self.has_eff_dict = {'left': False, 'right': False}
+        hand_sides = ['left', 'right']
+        for i in range(len(hand_sides)):
+            self.has_eff_dict[hand_sides[i]] = has_eff_list[i]
 
         if hasattr(cfg.model, "num_diffusion_iters"):
             self.num_diffusion_iters = cfg.model.num_diffusion_iters
@@ -74,13 +78,16 @@ class CompALOHAPolicy(nn.Module):
 
         # self.num_eef = cfg.env.num_eef
         self.dof = cfg.env.dof # 6
-        self.eef_dim = 3 # xyz, dir1, dir2
+        self.eef_dims  = {'left': 3, 'right':3} # xyz, dir1, dir2
+        for side in hand_sides:
+            if self.has_eff_dict[side]:
+                self.eef_dims[side] = 6
         self.num_eef = cfg.env.num_eef
 
         self.obs_dim = self.encoder_out_dim
 
         self.left_noise_pred_net = VecConditionalUnet1D(
-            input_dim=self.eef_dim,  ## vec dim, rot is 2, xyz is 1
+            input_dim=self.eef_dims['left'],  ## vec dim, rot is 2, xyz is 1
             cond_dim=self.obs_dim* self.obs_horizon,
             scalar_cond_dim=0,
             scalar_input_dim= 0,
@@ -88,7 +95,7 @@ class CompALOHAPolicy(nn.Module):
             cond_predict_scale=True,  ## in Fila, do AX+B instead of x+B
         )
         self.right_noise_pred_net = VecConditionalUnet1D(
-            input_dim=self.eef_dim,
+            input_dim=self.eef_dims['right'],
             cond_dim=self.obs_dim* self.obs_horizon,
             scalar_cond_dim=0,
             scalar_input_dim= 0,
@@ -147,13 +154,16 @@ class CompALOHAPolicy(nn.Module):
         return self.all_normalizers[key].unnormalize(data)
 
     def recover_grasp(self, grasp_batch, scale, center, key):
+        side = key.split('_')[0]
+        has_eff = self.has_eff_dict[side]
+
         # reshape dim to B,  (3 or 6) , 3
         grasp_batch = torch.mean(grasp_batch, dim=1, keepdim=True)
         scale = torch.mean(scale, dim=1, keepdim=True)
         center = torch.mean(center, dim=1, keepdim=True)
 
         ##### grasp processing
-        if self.has_eff == False:
+        if has_eff == False:
             grasp_xyz = grasp_batch[:, :,0, :].reshape(-1, 1, 1, 3)
         else:
             grasp_xyz = grasp_batch[:, :, :2, :].reshape(-1, 1, 2, 3)
@@ -167,7 +177,7 @@ class CompALOHAPolicy(nn.Module):
                 )
         
         ##### rotation processing 
-        if self.has_eff == False:
+        if has_eff == False:
             rot6d_batch = grasp_batch[:, :, 1: , :].reshape(-1, 1, 1, 6)
         else:
             # rot6d_batch = grasp_batch[:, :, 2:, :].reshape(-1, 1, 2, 6)
@@ -176,7 +186,7 @@ class CompALOHAPolicy(nn.Module):
             rot6d_batch = torch.cat((grasp_dir1, grasp_dir2), dim=-1)
             assert rot6d_batch.shape[-1] == 6
 
-        trans_batch = convert_vec_to_trans(rot6d_batch, unnormed_grasp_xyz, has_eff=self.has_eff)
+        trans_batch = convert_vec_to_trans(rot6d_batch, unnormed_grasp_xyz, has_eff=has_eff)
 
         trans_batch = trans_batch.detach().cpu().numpy()
 
@@ -219,7 +229,9 @@ class CompALOHAPolicy(nn.Module):
         return obs_cond_vec, center, scale
 
     def proc_grasp(self, grasp_pose, key, center, scale):
-        grasp_xyz_raw, grasp_dir1, grasp_dir2 = convert_trans_to_vec(grasp_pose, has_eff=self.has_eff)
+        side = key.split('_')[0]
+        has_eff = self.has_eff_dict[side]
+        grasp_xyz_raw, grasp_dir1, grasp_dir2 = convert_trans_to_vec(grasp_pose, has_eff=has_eff)
         grasp_xyz = self.normalize_from_key(key, grasp_xyz_raw)
         grasp_xyz = (grasp_xyz - center)/scale
         gt_grasp_z = torch.cat([grasp_xyz, grasp_dir1, grasp_dir2], dim=-2)
@@ -275,9 +287,9 @@ class CompALOHAPolicy(nn.Module):
         ##### start denoising #####
 
         initial_noise_scale = 1
-        noisy_left_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)\
+        noisy_left_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims['left'], 3)).to(self.device)\
         * initial_noise_scale
-        noisy_right_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dim, 3)).to(self.device)\
+        noisy_right_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims['right'], 3)).to(self.device)\
         * initial_noise_scale
 
         if self.mask_type != "only_grasp": 
@@ -360,6 +372,7 @@ class CompALOHAPolicy(nn.Module):
 
 
         for side in ["left", "right"]:
+            has_eff = self.has_eff_dict[side]
             ## predicted values
             trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(\
                 final_action[side], scale[side], center[side], key=side+'_grasp')
@@ -371,7 +384,7 @@ class CompALOHAPolicy(nn.Module):
 
             ## calc metrics if in training
             else:
-                gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(batch[side+"_grasp"], has_eff=self.has_eff)
+                gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(batch[side+"_grasp"], has_eff=has_eff)
                 gt_grasp_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
 
                 xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
