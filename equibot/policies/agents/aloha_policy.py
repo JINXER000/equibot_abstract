@@ -29,7 +29,7 @@ class ALOHAPolicy(nn.Module):
         self.obs_horizon = cfg.model.obs_horizon
         self.action_horizon = cfg.model.ac_horizon
         self.symb_mask = cfg.data.dataset.symb_mask
-        self.has_eff = cfg.data.dataset.has_eff
+        self.has_eff = cfg.data.dataset.has_eff_list[0]
 
         if hasattr(cfg.model, "num_diffusion_iters"):
             self.num_diffusion_iters = cfg.model.num_diffusion_iters
@@ -252,7 +252,7 @@ class ALOHAPolicy(nn.Module):
                    
             # record history
             if history_bid >=0:
-                action_slice = ActionSlice(mode="single")
+                action_slice = ActionSlice(mode="combined")
                 trans_batch, _, _ = self.recover_grasp(new_action[0], scale, center)
                 assert trans_batch.shape[3] == 4
                 trans_mat = trans_batch[history_bid]

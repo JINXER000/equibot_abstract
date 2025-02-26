@@ -121,7 +121,7 @@ class ALOHAPoseDataset(Dataset):
         ##below for debug, visualize right grasp rot
         if ref_grasp is not None:
             grasp[:3, :3] = ref_grasp
-        if self.has_eff:
+        if grasp.shape[0] ==8:
             grasp[4:7, 3] += pc_offset
         return grasp
     

@@ -11,7 +11,7 @@ from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 # from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
-TAMP_PATH = '/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha/'
+TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
 
 
 
@@ -151,7 +151,7 @@ class pddl_wrapper(object):
             render_history(history_w, use_gui=True, \
                         directory = history_pic_dir, save_pic_every = -1,
                         agent_obs = self.decentralize_obs(obs_gpu, offset_dict),
-                        has_eff = self.dataset.has_eff, **kwargs)
+                        has_eff = self.dataset.has_eff_list[0], **kwargs)
             
         if offset_dict is not None:
             action_w = self.decentralize_action(action_c, offset_dict)
@@ -188,7 +188,7 @@ def get_cfgs(task_name):
         dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
         config_name = "transfer_tape"
         overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
-        ply_paths = {'pc': os.path.join(dataset_path, 'tape_OOD.ply')}
+        ply_paths = {'pc': os.path.join(dataset_path, 'tape.ply')}
     elif task_name == 'aloha_transfer_cup':
         ## aloha transfer tape
         import pathlib
@@ -281,5 +281,5 @@ def rotation_diff(rot1, rot2):
 
 if __name__ == "__main__":
     # main()
-    eval_with_rotation(task_name='screwdriver_container', history_bid=0)
-    # eval_with_rotation(task_name='mj_peg_hole', history_bid=0)
+    # eval_with_rotation(task_name='screwdriver_container', history_bid=0)
+    eval_with_rotation(task_name='aloha_transfer_tape', history_bid=0)

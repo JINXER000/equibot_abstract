@@ -90,6 +90,7 @@ class VecConditionalUnet1D(nn.Module):
         scalar_cond_dim=0,
         diffusion_step_embed_dim=128,
         down_dims=[128, 256, 512],
+        # down_dims=[ 256, 512, 1024],
         kernel_size=3,
         cond_predict_scale=False,
     ):
