@@ -52,7 +52,7 @@ class DualAbsDataset(ALOHAPoseDataset):
                         right_jpose = joint_data[i][7:13]
 
                         # only include jpose before OR after the action
-                        stage = self.which_stage(stage, left_jpose, right_jpose, lifted_height = 0.1)
+                        stage = self.which_stage(stage, left_jpose, right_jpose, lifted_height = 0.1, threthold = 0.25)
                         if stage != cfg.tamp_type:
                             continue
 
@@ -74,12 +74,14 @@ class DualAbsDataset(ALOHAPoseDataset):
                         
                         socket_grasp_id = np.random.randint(0, len(socket_grasp_poses)-1)
                         socket_grasp = socket_grasp_poses[socket_grasp_id].copy()
-                        socket_grasp = self.centralize_grasp(socket_grasp, socket_offset)
+                        # socket_grasp = self.centralize_grasp(socket_grasp, socket_offset)
+                        socket_grasp[:3, 3] -= socket_offset
                         socket_grasp_tensor = torch.tensor(socket_grasp).to(torch.float32).reshape(1, 4, 4)
                         
                         peg_grasp_id = np.random.randint(0, len(peg_grasp_poses)-1)
                         peg_grasp = peg_grasp_poses[peg_grasp_id].copy()
-                        peg_grasp = self.centralize_grasp(peg_grasp, peg_offset)
+                        # peg_grasp = self.centralize_grasp(peg_grasp, peg_offset)
+                        peg_grasp[:3, 3] -= peg_offset
                         peg_grasp_tensor = torch.tensor(peg_grasp).to(torch.float32).reshape(1, 4, 4)
 
                         if "socket" in cfg.dataset_type:
