@@ -54,7 +54,9 @@ def main(cfg):
             settings=wandb.Settings(code_dir="."),
             config=wandb_config,
         )
-    log_dir = os.getcwd()
+    else:
+        log_dir = None
+
     train_dataset = ALOHAPoseDataset(cfg.data.dataset, "train")
     num_workers = cfg.data.dataset.num_workers
     train_loader = torch.utils.data.DataLoader(
@@ -108,7 +110,7 @@ def main(cfg):
 
 
         # run eval 
-        if (
+        if ( log_dir is not None and
             (
                 epoch_ix % cfg.training.eval_interval == 0
                 or epoch_ix == cfg.training.num_epochs - 1
@@ -134,7 +136,7 @@ def main(cfg):
             # agent.actor.writer.flush()
 
         # save ckpt
-        if (
+        if log_dir is not None and (
             epoch_ix % cfg.training.save_interval == 0
             or epoch_ix == cfg.training.num_epochs - 1
         ):

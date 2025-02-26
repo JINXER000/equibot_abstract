@@ -58,6 +58,7 @@ class ALOHAPoseDataset(Dataset):
         # self.mj_offset = np.array([0.0, 0.5, 0.0])
         self.pc_shape = (cfg.num_points, 3)
         self.has_eff_list = cfg.has_eff_list
+        self.has_eff = cfg.has_eff_list[0]
         # self.is_mj = ('mj' in cfg.dataset_type)
 
         self.is_obj_centric = cfg.is_obj_centric
@@ -121,7 +122,7 @@ class ALOHAPoseDataset(Dataset):
         ##below for debug, visualize right grasp rot
         if ref_grasp is not None:
             grasp[:3, :3] = ref_grasp
-        if self.has_eff:
+        if grasp.shape[0] ==8:
             grasp[4:7, 3] += pc_offset
         return grasp
     
@@ -298,7 +299,7 @@ class ALOHAPoseDataset(Dataset):
                     eff_grasp_poses = f['eff_grasps'][()]
                     eff_grasp_num = eff_grasp_poses.shape[0]
 
-                    joint_data = f['pred_joint_vals'][()]
+                    joint_data = f['demo_joint_vals'][()]
                     stage = 'precondition'
                     selected_joint_data = []
                     for i in range(len(joint_data)):
@@ -344,8 +345,8 @@ class ALOHAPoseDataset(Dataset):
         print('processed all hdf5 file!')
 
     # add eff grasp
-    def process_50demos_predeff(self, cfg, has_eff = False, est_effpose = False):
-        if has_eff and est_effpose:
+    def process_50demos_predeff(self, cfg,  est_effpose = False):
+        if self.has_eff and est_effpose:
             self.pretrained_encoder = VecDGCNN_att_frozen(preload_path= cfg.preload_path).cuda()    
         print('Processing hdf5 dataset...')
         data_list = []
@@ -363,7 +364,7 @@ class ALOHAPoseDataset(Dataset):
                     start_pc = f['start_grasps']['obj_points'][()]
                     pred_grasp_poses = f['start_grasps']['grasp_poses'][()]
 
-                    if has_eff:
+                    if self.has_eff:
                         end_pc = f['end_grasps']['obj_points'][()]
 
                         if est_effpose:
@@ -377,15 +378,15 @@ class ALOHAPoseDataset(Dataset):
 
                         eff_grasp_poses = f['end_grasps']['grasp_poses'][()]
 
-                    joint_data = f['pred_joint_vals'][()]
+                    joint_data = f['demo_joint_vals'][()]
                     stage = 'ungrasped'
                     for i in range(len(joint_data)):
-                        left_jpose = joint_data[i][:self.dof+1]
-                        right_jpose = joint_data[i][self.dof+1:]
+                        left_jpose = joint_data[i][:self.dof]
+                        right_jpose = joint_data[i][self.dof:]
                         joint_pose = np.vstack((left_jpose[:self.dof], right_jpose[:self.dof])).reshape(1, -1, self.dof)
 
                         # only include jpose before OR after the action
-                        stage = self.which_stage(stage, left_jpose, right_jpose)
+                        stage = self.which_stage(stage, left_jpose, right_jpose, threthold = 0.14, lifted_height = 0.12)
                         if stage != cfg.tamp_type:
                             continue
 
@@ -400,7 +401,7 @@ class ALOHAPoseDataset(Dataset):
                             pred_grasp[:3, 3] -= start_offset
                         grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
                         
-                        if has_eff:
+                        if self.has_eff:
                             eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
                             eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
                             
@@ -469,8 +470,8 @@ class ALOHAPoseDataset(Dataset):
         return sample
 
     ## TODO: support more than 1 object
-    def process_hdf5_mini(self, cfg, has_eff = False, est_effpose = False):
-        if has_eff and est_effpose:
+    def process_hdf5_mini(self, cfg, est_effpose = False):
+        if self.has_eff and est_effpose:
             self.pretrained_encoder = VecDGCNN_att_frozen(preload_path= cfg.preload_path).cuda()    
         print('Processing hdf5 dataset...')
         data_list = []
@@ -491,7 +492,7 @@ class ALOHAPoseDataset(Dataset):
                         pred_grasp_poses = f[obj_name]['grasp_poses'][()]
                         joint_data = f[obj_name]['joint_poses'][()]
 
-                        if has_eff:
+                        if self.has_eff:
                             end_pc = f[obj_name]['end_pc'][()]
                             if est_effpose:
                                 # end_pc = rotate_around_z(end_pc, np.pi)
@@ -506,9 +507,10 @@ class ALOHAPoseDataset(Dataset):
                         assert len(joint_data) > len(pred_grasp_poses)
                         
                     for i in range(len(joint_data)):
-                        left_jpose = joint_data[i][:self.dof+1]
-                        right_jpose = joint_data[i][self.dof+1:]
-                        joint_pose = np.vstack((left_jpose[:self.dof], right_jpose[:self.dof])).reshape(1, -1, self.dof)
+                        assert len(joint_data[i]) == 2*self.dof
+                        left_jpose = joint_data[i][:self.dof]
+                        right_jpose = joint_data[i][self.dof:]
+                        joint_pose = np.vstack((left_jpose, right_jpose)).reshape(1, -1, self.dof)
 
                         ## if obj_centric, cond_pc = raw_pc - offset; otherwise cond_pc = raw_pc
                         conditional_pc, start_offset = self.centralize_cond_pc(start_pc, self.is_obj_centric)
@@ -521,7 +523,7 @@ class ALOHAPoseDataset(Dataset):
                             pred_grasp[:3, 3] -= start_offset
                         grasp_tensor = torch.tensor(pred_grasp).to(torch.float32).reshape(1, 4, 4)
                         
-                        if has_eff:
+                        if self.has_eff:
                             eff_grasp_id = np.random.randint(0, len(eff_grasp_poses)-1)
                             eff_grasp = eff_grasp_poses[eff_grasp_id].copy()
                             

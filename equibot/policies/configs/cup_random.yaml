@@ -48,7 +48,7 @@ data:
     tamp_type: 'precondition'
     dataset_type: 'dual_hdf5_mini'
     # dataset_type: 'mj_insertion_pred'
-    has_eff: false
+    has_eff_list: [false, false]
     is_obj_centric: True
 
 

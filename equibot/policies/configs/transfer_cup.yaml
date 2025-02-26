@@ -4,19 +4,18 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "logs/train/mj_peg_hole/ckpt01600.pth" 
+  # ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/aloha_transfer_tape/ckpt_mug10_fresh.pth"
   eval_interval: 1
-  num_epochs: 2000
 
 env:
-  env_class: 'mj_peg_hole'
+  env_class: 'cup'
   num_eef: 2
   dof: 7
   max_episode_length: 50
 
+
 agent:
-  # agent_name: aloha
-  agent_name: compaloha
+  agent_name: aloha
 
 model:
   # noise_scheduler:
@@ -27,8 +26,9 @@ model:
 #   encoder:
 #     backbone_type: vn_pointnet
 #     backbone_args: 
-#       num_layers: 7
-#       preload_path: "pretrained/mugs.pt"
+#       num_layers: 2
+#       preload_path: 'None' 
+
 
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
@@ -36,20 +36,24 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "pretrained/chairs.pt"
+      preload_path: "/home/chenyizhou/imitation_learning/equibot_abstract/pretrained/mugs.pt"
 
 data:
   dataset:
-    num_points: 128
-    symb_mask: ['qpose_left', 'qpose_right', 'grasp_left', 'grasp_right', None]
-    # symb_mask: ['None', 'None', 'grasp_left', 'grasp_right', None]
+    num_points: 256
+    # symb_mask: ['qpose_left', 'qpose_right', None, None, None]
+    symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
-    # dataset_type: 'mj_socket_test'
-    dataset_type: 'mj_insertion_pred'
+    # dataset_type: 'hdf5_predeff'
+    dataset_type: 'hdf5_mini'
+
     has_eff_list: [false, false]
-    is_obj_centric: True
+
+    is_obj_centric: true
+
+    preload_path: ${model.encoder.backbone_args.preload_path}
 
 
 eval:
