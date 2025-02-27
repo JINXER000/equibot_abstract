@@ -110,19 +110,13 @@ class pddl_wrapper(object):
         return dict_numpy
     
     def infer_real(self, obs, **kwargs):
-        obs_tensor = {}
-        for k, v in obs.items():
-            obs_tensor[k] = torch.tensor(v).float()
+        obs_tensor = to_tensor(obs)
         obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric)
-        action_dict = self.predict_action(obs_c, offset_dict)
+        action_dict = self.predict_action(obs_c, offset_dict, **kwargs)
         return action_dict
     
     
     def predict_action(self, obs_c,   offset_dict = None, history_bid = -1, **kwargs):
-        # for k, v in obs_c.items():
-        #     if v is None:
-        #         continue
-        #     obs_c[k] = torch.tensor(v).float()
 
         obs_c = to_tensor(obs_c)
 
@@ -193,9 +187,9 @@ def get_cfgs(task_name):
         ## aloha transfer tape
         import pathlib
         dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
-        config_name = "transfer_tape"
-        overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
-        ply_paths = {'pc': os.path.join(dataset_path, 'new_mug.ply')}
+        config_name = "transfer_cup"
+        overrides = ["prefix=aloha_transfer_cup", "mode=inference", "use_wandb=false"]
+        ply_paths = {'pc': os.path.join(dataset_path, 'singleview_cup.ply')}
     elif 'screwdriver' in task_name:
         ## screwdriver and its variants
         import pathlib
@@ -234,8 +228,8 @@ def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
         obs_c = to_torch(agent_obs, tamp_wrapper.cfg.device)
         offset_dict = None
     else:
-        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths)    
-        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)
+        agent_obs = tamp_wrapper.get_obs_from_ply(ply_paths)    ## tensor cpu
+        obs_c, offset_dict = tamp_wrapper.centralize_obs(agent_obs, obj_centric = cfg.data.dataset.is_obj_centric)  ## tensor gpu
 
     # obs_c, offset_dict = get_obsc_offset_dict(tamp_wrapper, ply_paths, obj_centric = cfg.data.dataset.is_obj_centric)
 
@@ -244,15 +238,12 @@ def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
 
 
     rot_to_apply_ls = np.arange(np.pi/3, 2*np.pi, np.pi/3)
+    # rot_to_apply_ls = [2*np.pi]
     for rot in rot_to_apply_ls:
 
-        input_obs_cuda = rotate_observation(agent_obs, rot)
-        action_dict = tamp_wrapper.predict_action(obs_c=input_obs_cuda,    
-                                                   offset_dict=offset_dict,
-                                                   history_bid=history_bid,
-                                                   )
-        
-        
+        rotated_obs_np = rotate_observation(agent_obs, rot)
+        action_dict = tamp_wrapper.infer_real(rotated_obs_np, history_bid=history_bid)
+       
         pred_grasp_angle = rot_mat_from_action_dict(action_dict)  
 
         rot_diff = rot_diff_from_dicts(ref_grasp_dict, pred_grasp_angle, gt_rot_euler=rot)
@@ -282,4 +273,4 @@ def rotation_diff(rot1, rot2):
 if __name__ == "__main__":
     # main()
     # eval_with_rotation(task_name='screwdriver_container', history_bid=0)
-    eval_with_rotation(task_name='aloha_transfer_tape', history_bid=0)
+    eval_with_rotation(task_name='aloha_transfer_cup', history_bid=0)

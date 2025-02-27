@@ -16,11 +16,12 @@ import hydra
 import sys
 # sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
 # sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-# from examples.pybullet.aloha_real.scripts.constants import qpos_to_eepose
+sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
+from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
 
-# import pathlib
-# EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
+import pathlib
+EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 
 
 feature_tuple = namedtuple('feature_tuple', ['dim', 'start', 'end'])
@@ -575,7 +576,7 @@ def rotate_vec_grasp(grasp, rot_z):
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):
-    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/transfer_tape/')
+    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/transfer_cup/')
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
     num_workers = 0
     batch_size = 1
@@ -590,7 +591,8 @@ def main(cfg):
     
     for batch_id, batch in enumerate(test_loader):
 
-        rot_list = [0, np.pi/2, np.pi, np.pi/2*3]
+        # rot_list = [0, np.pi/2, np.pi, np.pi/2*3]
+        rot_list = [0]
         for rot_z in rot_list:
             np_obs= rotate_observation(batch, rot_z)
             cpu_obs = to_tensor(np_obs)
@@ -609,7 +611,7 @@ def main(cfg):
                 trans_error = torch.norm(vecrot_grasp - ref_pred_grasp)
                 print('the error of two computed grasp is: ',trans_error) 
 
-                # action_slice = (grasp_pose, jpose)
+                # action_slice = (grasp, jpose)
                 action_slice = (vecrot_grasp.reshape(-1, 4), jpose)
                 history_list.append(action_slice)
 
