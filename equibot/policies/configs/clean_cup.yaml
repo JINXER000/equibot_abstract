@@ -4,18 +4,19 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "logs/train/aloha_transfer_cup/ckpt01600single.pth"
+  # ckpt: "logs/train/mj_peg_hole/ckpt01600.pth" 
   eval_interval: 1
+  num_epochs: 2000
 
 env:
-  env_class: 'cup'
+  env_class: 'clean_cup'
   num_eef: 2
   dof: 7
   max_episode_length: 50
 
-
 agent:
-  agent_name: aloha
+  # agent_name: aloha
+  agent_name: compaloha
 
 model:
   # noise_scheduler:
@@ -26,9 +27,8 @@ model:
 #   encoder:
 #     backbone_type: vn_pointnet
 #     backbone_args: 
-#       num_layers: 2
-#       preload_path: 'None' 
-
+#       num_layers: 7
+#       preload_path: "pretrained/mugs.pt"
 
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
@@ -40,20 +40,16 @@ model:
 
 data:
   dataset:
-    num_points: 256
-    # symb_mask: ['qpose_left', 'qpose_right', None, None, None]
-    symb_mask: ['qpose_left', 'qpose_right', None, 'grasp_right', None]
+    num_points: 128
+    symb_mask: ['qpose_left', 'qpose_right', 'grasp_left', 'grasp_right', None]
+    # symb_mask: ['None', 'None', 'grasp_left', 'grasp_right', None]
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
-    # dataset_type: 'hdf5_predeff'
-    dataset_type: 'hdf5_mini'
-
-    has_eff_list: [true, false]
-
-    is_obj_centric: true
-
-    preload_path: ${model.encoder.backbone_args.preload_path}
+    dataset_type: 'dual_hdf5_mini'
+    # dataset_type: 'mj_insertion_pred'
+    has_eff_list: [false, false]
+    is_obj_centric: True
 
 
 eval:

@@ -16,9 +16,9 @@ import hydra
 import sys
 # sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
 # sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
-from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
+# sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
+# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+# from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
 
 import pathlib
 EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
@@ -145,7 +145,7 @@ class ALOHAPoseDataset(Dataset):
         elif cfg.dataset_type == 'hdf5_mini':
             self.process_hdf5_mini(cfg)
         else:
-            raise NotImplementedError('Dataset type not implemented!')
+            raise NotImplementedError(f'Dataset type {cfg.dataset_type} not implemented!')
 
         
 
@@ -499,11 +499,11 @@ class ALOHAPoseDataset(Dataset):
                                 # end_pc = rotate_around_z(end_pc, np.pi)
                                 R_cuda, t_cuda = solve_pairwise_registration(self.pretrained_encoder, torch.tensor\
                                     (start_pc).unsqueeze(0).float().cuda(), torch.tensor(end_pc).unsqueeze(0).float().cuda())
-                                # debug_and_save(start_pc, end_pc, R_cuda, t_cuda)
+                                debug_and_save(start_pc, end_pc, R_cuda, t_cuda)
                             else:
                                 end_offset = np.min(end_pc, axis=0)
 
-                            eff_grasp_poses = f[obj_name]['grasp_poses'][()]
+                            eff_grasp_poses = f[obj_name]['release_poses'][()]
 
                         assert len(joint_data) > len(pred_grasp_poses)
                         
