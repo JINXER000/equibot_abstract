@@ -15,7 +15,7 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 from equibot.policies.agents.traj_agent import TrajAgent
 from equibot.policies.agents.aloha_agent import ALOHAAgent
 
-from test_traj import run_eval
+from .test_traj import run_eval
 # from torch.utils.tensorboard import SummaryWriter
 # import pathlib
 # EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()

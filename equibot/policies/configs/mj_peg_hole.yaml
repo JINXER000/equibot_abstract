@@ -1,7 +1,7 @@
 defaults:
   - base
 
-use_wandb: false
+use_wandb: true
 
 training:
   ckpt: "logs/train/mj_peg_hole/ckpt_mj_traj.pth" 
