@@ -145,7 +145,8 @@ class pddl_wrapper(object):
             render_history(history_w, use_gui=True, \
                         directory = history_pic_dir, save_pic_every = -1,
                         agent_obs = self.decentralize_obs(obs_gpu, offset_dict),
-                        has_eff = self.dataset.has_eff_list[0], **kwargs)
+                        vis_eff = False, #self.dataset.has_eff, 
+                        **kwargs)
             
         if offset_dict is not None:
             action_w = self.decentralize_action(action_c, offset_dict)

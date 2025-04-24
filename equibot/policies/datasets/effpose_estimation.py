@@ -174,6 +174,15 @@ def solve_pairwise_registration(encoder, pc1_full, pc2_full, n_repeat = 1, n_inp
 
 def debug_and_save(start_pc, end_pc, R, t):
 
+    ## save as ply
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(start_pc)
+
+    dataset_path = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
+    o3d.io.write_point_cloud(os.path.join(dataset_path, 'start_pc.ply'), pcd)
+
+    pcd.points = o3d.utility.Vector3dVector(end_pc)
+    o3d.io.write_point_cloud(os.path.join(dataset_path, 'end_pc.ply'), pcd)
 
     from scipy.spatial.transform import Rotation
     rot_mat = Rotation.from_matrix(R.squeeze().cpu().numpy())
@@ -186,17 +195,6 @@ def debug_and_save(start_pc, end_pc, R, t):
 
     print('The estimated rotation matrix is: ', R)
     print('The estimated translation vector is: ', t)
-
-    ## save as ply
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(start_pc)
-
-    dataset_path = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
-    o3d.io.write_point_cloud(os.path.join(dataset_path, 'start_pc.ply'), pcd)
-
-    pcd.points = o3d.utility.Vector3dVector(end_pc)
-    o3d.io.write_point_cloud(os.path.join(dataset_path, 'end_pc.ply'), pcd)
-
 
 ## TODO: integrate the pose estimation into the data postprocessing
 if __name__ == '__main__':

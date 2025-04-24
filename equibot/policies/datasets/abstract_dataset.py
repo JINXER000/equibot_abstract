@@ -14,7 +14,7 @@ from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_aro
 
 import hydra
 import sys
-# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
 # sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
 # sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
 # from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
@@ -45,7 +45,7 @@ def save_dbg_pc(pc):
     o3d.io.write_point_cloud('debug_pc.ply', pcd)
 
 class ALOHAPoseDataset(Dataset):
-    def __init__(self, cfg, mode, transform=None, pre_transform=None, pre_filter=None):
+    def __init__(self, cfg, mode, transform=None, pre_transform=None, pre_filter=None, force_process = False, **kwargs):
         super().__init__()
         self.mode = mode
         self.dir_name = cfg.path
@@ -59,7 +59,7 @@ class ALOHAPoseDataset(Dataset):
         # self.mj_offset = np.array([0.0, 0.5, 0.0])
         self.pc_shape = (cfg.num_points, 3)
         self.has_eff_list = cfg.has_eff_list
-        self.has_eff = cfg.has_eff_list[0]
+        self.has_eff = True in self.has_eff_list
         # self.is_mj = ('mj' in cfg.dataset_type)
 
         self.is_obj_centric = cfg.is_obj_centric
@@ -67,17 +67,14 @@ class ALOHAPoseDataset(Dataset):
         self.num_eef = cfg.num_eef
         self.dof = cfg.dof
 
-        # self.process_select(cfg)
-        if mode == 'train':
+        # self.process_select(cfg,**kwargs)
+        if mode == 'train' or force_process == True:
             # Process the data
             print('Processing dataset...')
-            self.process_select(cfg)
+            self.process_select(cfg,**kwargs)
         else:
             print('Loading dataset...')
 
-        # if not os.path.exists(self.processed_file_path):
-        #     print('NOTE: dataset already processed!')
-        #     self.process_select(cfg)
         
         if mode != 'inference':
             # Load processed data
@@ -127,7 +124,7 @@ class ALOHAPoseDataset(Dataset):
             grasp[4:7, 3] += pc_offset
         return grasp
     
-    def process_select(self, cfg):
+    def process_select(self, cfg, **kwargs):
 
         # self.norm_stat_dict = nn.ParameterDict({
         #     'jpose': None,
@@ -143,7 +140,7 @@ class ALOHAPoseDataset(Dataset):
         elif cfg.dataset_type == 'hdf5_predeff':
             self.process_50demos_predeff(cfg)
         elif cfg.dataset_type == 'hdf5_mini':
-            self.process_hdf5_mini(cfg)
+            self.process_hdf5_mini(cfg,**kwargs)
         else:
             raise NotImplementedError(f'Dataset type {cfg.dataset_type} not implemented!')
 
@@ -577,7 +574,7 @@ def rotate_vec_grasp(grasp, rot_z):
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):
     cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/transfer_cup/')
-    test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test")
+    test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test", est_effpose = False, force_process=True)
     num_workers = 0
     batch_size = 1
     test_loader = torch.utils.data.DataLoader(
