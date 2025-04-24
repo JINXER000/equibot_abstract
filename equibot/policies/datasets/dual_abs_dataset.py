@@ -1,17 +1,22 @@
-from .abstract_dataset import ALOHAPoseDataset, solve_pairwise_registration, VecDGCNN_att_frozen
+from .abstract_dataset import ALOHAPoseDataset, \
+    solve_pairwise_registration, VecDGCNN_att_frozen,\
+    rotate_around_z, rotate_vec_grasp, rotate_observation,\
+    to_tensor, render_pose
 import os
 import numpy as np
 import torch
-
+import hydra
+import pathlib
+EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 
 class DualAbsDataset(ALOHAPoseDataset):
-    def __init__(self, cfg, mode, transform=None):
+    def __init__(self, cfg, mode, transform=None, **kwargs):
         self.has_eff_dict = {'left': False, 'right': False}
         hand_sides = ['left', 'right']
         for i in range(len(hand_sides)):
             self.has_eff_dict[hand_sides[i]] = cfg.has_eff_list[i]
             
-        super(DualAbsDataset, self).__init__(cfg, mode, transform)
+        super(DualAbsDataset, self).__init__(cfg, mode, transform, **kwargs)
 
     def process_select(self, cfg):
         # print('saving time when debug!')
@@ -27,7 +32,8 @@ class DualAbsDataset(ALOHAPoseDataset):
         print('Processing mj hdf5 dataset...')
         data_list = []
         raw_files = self.raw_file_names
-
+        traj_len = cfg.pred_horizon
+        traj_nums = 64
         
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -39,65 +45,115 @@ class DualAbsDataset(ALOHAPoseDataset):
 
                     socket_pc = f['socket_grasps']['obj_points'][()]
                     peg_pc = f['peg_grasps']['obj_points'][()]
+                    all_socket_grasps = f['socket_grasps']['grasp_poses'][()]
+                    all_peg_grasps = f['peg_grasps']['grasp_poses'][()]
+                    all_socket_gripper = f['socket_grasps']['grasp_actions'][()]
+                    all_peg_gripper = f['peg_grasps']['grasp_actions'][()]
+                    all_joint_data = f['pred_joint_vals'][()]
 
-                    ### process grasp and joint pose
+                    assert len(all_socket_grasps) == len(all_socket_gripper)
+                    assert len(all_peg_grasps) == len(all_peg_gripper)
+                    ## downsample and centralize pc
+                    socket_pc_n, socket_offset = self.centralize_cond_pc(socket_pc)
+                    socket_pc_tensor = torch.tensor(socket_pc_n).unsqueeze(0).\
+                        to(torch.float32).reshape(1, cfg.num_points, 3)
 
-                    socket_grasp_poses = f['socket_grasps']['grasp_poses'][()]
-                    peg_grasp_poses = f['peg_grasps']['grasp_poses'][()]
+                    peg_pc_n, peg_offset = self.centralize_cond_pc( peg_pc)
+                    peg_pc_tensor = torch.tensor(peg_pc_n).unsqueeze(0).\
+                        to(torch.float32).reshape(1, cfg.num_points, 3)
 
-                    joint_data = f['pred_joint_vals'][()]
-                    stage = 'precondition'
-                    for i in range(len(joint_data)):
-                        left_jpose = joint_data[i][:6]
-                        right_jpose = joint_data[i][7:13]
+                    ### random select n groups of grasp and joint pose
+                    for i in range(traj_nums):
+                        assert len(all_joint_data) > 1
+                        # if len(all_joint_data) < traj_len:
+                        #     qtraj_indices = np.linspace(0, len(all_joint_data)-1, traj_len).astype(int)
+                        # else:
+                        #     qtraj_indices = np.random.choice(len(all_joint_data), traj_len, replace=False)
+                        #     qtraj_indices = np.sort(qtraj_indices)
+                        # joint_data = all_joint_data[qtraj_indices]
+                        qtraj_indice = np.random.randint(0, len(all_joint_data)-1)
+                        joint_data = all_joint_data[qtraj_indice].reshape(1, -1)
 
-                        # only include jpose before OR after the action
-                        stage = self.which_stage(stage, left_jpose, right_jpose, lifted_height = 0.1, threthold = 0.25)
-                        if stage != cfg.tamp_type:
-                            continue
+                        gr_traj_indices = np.random.choice(np.arange(1, len(all_socket_grasps)-1), traj_len-2, replace=False)
+                        gr_traj_indices = [0] + list(np.sort(gr_traj_indices)) + [len(all_socket_grasps)-1]
+                        socket_grasp_poses = all_socket_grasps[gr_traj_indices]
+                        socket_grasp_poses[:, :3, 3] -= np.expand_dims(socket_offset, axis=0)
+                        socket_grasp_tensor = torch.tensor(socket_grasp_poses).to(torch.float32)
 
-                        ## downsample and centralize pc
-                        socket_pc_n, socket_offset = self.centralize_cond_pc( socket_pc)
-                        socket_pc_tensor = torch.tensor(socket_pc_n).unsqueeze(0).\
-                            to(torch.float32).reshape(1, cfg.num_points, 3)
 
-                        peg_pc_n, peg_offset = self.centralize_cond_pc( peg_pc)
-                        peg_pc_tensor = torch.tensor(peg_pc_n).unsqueeze(0).\
-                            to(torch.float32).reshape(1, cfg.num_points, 3)
+                        gl_traj_indices = np.random.choice(np.arange(1, len(all_peg_grasps)-1), traj_len-2, replace=False)
+                        gl_traj_indices = [0] + list(np.sort(gl_traj_indices)) + [len(all_peg_grasps)-1]
+                        peg_grasp_poses = all_peg_grasps[gl_traj_indices]
+                        peg_grasp_poses[:, :3, 3] -= np.expand_dims(peg_offset, axis=0)
+                        peg_grasp_tensor = torch.tensor(peg_grasp_poses).to(torch.float32)
 
-                        ## add gripper action (claw)
-                        left_jpose = np.concatenate((left_jpose, np.array([joint_data[i][7]])))
+                        socket_gripper = all_socket_gripper[gr_traj_indices].reshape(traj_len, -1)
+                        socket_gripper_tensor = torch.tensor(socket_gripper).to(torch.float32)
+                        peg_gripper = all_peg_gripper[gl_traj_indices].reshape( traj_len, -1)
+                        peg_gripper_tensor = torch.tensor(peg_gripper).to(torch.float32)
+
+                        left_jpose = joint_data[:, :7]                        
+                        right_jpose = joint_data[:, 7:]
+                        # left_jpose_tensor = torch.tensor(left_jpose).to(torch.float32).reshape(traj_len, 1, -1)
+                        # right_jpose_tensor = torch.tensor(right_jpose).to(torch.float32).reshape(traj_len, 1, -1)
+                        # dual_jpose_tensor = torch.cat((left_jpose_tensor, right_jpose_tensor), dim=1) # traj_len, 2, 7 
                         left_jpose_tensor = torch.tensor(left_jpose).to(torch.float32).reshape(1, 1, -1)
-                        right_jpose = np.concatenate((right_jpose, np.array([joint_data[i][-1]])))
                         right_jpose_tensor = torch.tensor(right_jpose).to(torch.float32).reshape(1, 1, -1)
-                        dual_jpose_tensor = torch.cat((left_jpose_tensor, right_jpose_tensor), dim=1) # 1, 2, 7
-                        
-                        socket_grasp_id = np.random.randint(0, len(socket_grasp_poses)-1)
-                        socket_grasp = socket_grasp_poses[socket_grasp_id].copy()
-                        # socket_grasp = self.centralize_grasp(socket_grasp, socket_offset)
-                        socket_grasp[:3, 3] -= socket_offset
-                        socket_grasp_tensor = torch.tensor(socket_grasp).to(torch.float32).reshape(1, 4, 4)
-                        
-                        peg_grasp_id = np.random.randint(0, len(peg_grasp_poses)-1)
-                        peg_grasp = peg_grasp_poses[peg_grasp_id].copy()
-                        # peg_grasp = self.centralize_grasp(peg_grasp, peg_offset)
-                        peg_grasp[:3, 3] -= peg_offset
-                        peg_grasp_tensor = torch.tensor(peg_grasp).to(torch.float32).reshape(1, 4, 4)
+                        dual_jpose_tensor = torch.cat((left_jpose_tensor, right_jpose_tensor), dim=1) # traj_len, 2, 7 
 
-                        if "socket" in cfg.dataset_type:
-                            data = {'jpose': left_jpose_tensor, 
-                                    'pc': socket_pc_tensor, 
-                                    'grasp': socket_grasp_tensor}
-                        elif "peg" in cfg.dataset_type:
-                            data = {'jpose': right_jpose_tensor, 
-                                    'pc': peg_pc_tensor, 
-                                    'grasp': peg_grasp_tensor}
-                        else:
-                            data = {'left_jpose': left_jpose_tensor, 'right_jpose': right_jpose_tensor,\
+                        data = {'left_jpose': left_jpose_tensor, 'right_jpose': right_jpose_tensor,\
                                     'left_pc': socket_pc_tensor, 'right_pc': peg_pc_tensor,\
                                     'left_grasp': socket_grasp_tensor, 'right_grasp': peg_grasp_tensor,
+                                    'left_gripper': socket_gripper_tensor, 'right_gripper': peg_gripper_tensor,
                                     'dual_jpose': dual_jpose_tensor}
                         data_list.append(data)
+
+                    # for i in range(len(joint_data)):
+                    #     left_jpose = joint_data[i][:6]
+                    #     right_jpose = joint_data[i][7:13]
+
+                    #     ## downsample and centralize pc
+                    #     socket_pc_n, socket_offset = self.centralize_cond_pc(socket_pc)
+                    #     socket_pc_tensor = torch.tensor(socket_pc_n).unsqueeze(0).\
+                    #         to(torch.float32).reshape(1, cfg.num_points, 3)
+
+                    #     peg_pc_n, peg_offset = self.centralize_cond_pc( peg_pc)
+                    #     peg_pc_tensor = torch.tensor(peg_pc_n).unsqueeze(0).\
+                    #         to(torch.float32).reshape(1, cfg.num_points, 3)
+
+                    #     ## add gripper action (claw)
+                    #     left_jpose = np.concatenate((left_jpose, np.array([joint_data[i][7]])))
+                    #     left_jpose_tensor = torch.tensor(left_jpose).to(torch.float32).reshape(1, 1, -1)
+                    #     right_jpose = np.concatenate((right_jpose, np.array([joint_data[i][-1]])))
+                    #     right_jpose_tensor = torch.tensor(right_jpose).to(torch.float32).reshape(1, 1, -1)
+                    #     dual_jpose_tensor = torch.cat((left_jpose_tensor, right_jpose_tensor), dim=1) # 1, 2, 7
+                        
+                    #     socket_grasp_id = np.random.randint(0, len(socket_grasp_poses)-1)
+                    #     socket_grasp = socket_grasp_poses[socket_grasp_id].copy()
+                    #     # socket_grasp = self.centralize_grasp(socket_grasp, socket_offset)
+                    #     socket_grasp[:3, 3] -= socket_offset
+                    #     socket_grasp_tensor = torch.tensor(socket_grasp).to(torch.float32).reshape(1, 4, 4)
+                        
+                    #     peg_grasp_id = np.random.randint(0, len(peg_grasp_poses)-1)
+                    #     peg_grasp = peg_grasp_poses[peg_grasp_id].copy()
+                    #     # peg_grasp = self.centralize_grasp(peg_grasp, peg_offset)
+                    #     peg_grasp[:3, 3] -= peg_offset
+                    #     peg_grasp_tensor = torch.tensor(peg_grasp).to(torch.float32).reshape(1, 4, 4)
+
+                    #     if "socket" in cfg.dataset_type:
+                    #         data = {'jpose': left_jpose_tensor, 
+                    #                 'pc': socket_pc_tensor, 
+                    #                 'grasp': socket_grasp_tensor}
+                    #     elif "peg" in cfg.dataset_type:
+                    #         data = {'jpose': right_jpose_tensor, 
+                    #                 'pc': peg_pc_tensor, 
+                    #                 'grasp': peg_grasp_tensor}
+                    #     else:
+                    #         data = {'left_jpose': left_jpose_tensor, 'right_jpose': right_jpose_tensor,\
+                    #                 'left_pc': socket_pc_tensor, 'right_pc': peg_pc_tensor,\
+                    #                 'left_grasp': socket_grasp_tensor, 'right_grasp': peg_grasp_tensor,
+                    #                 'dual_jpose': dual_jpose_tensor}
+                    #     data_list.append(data)
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
@@ -210,3 +266,52 @@ class DualAbsDataset(ALOHAPoseDataset):
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 file!')
+
+
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
+def main(cfg):
+    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/mj_peg_hole/')
+    test_dataset = DualAbsDataset(cfg.data.dataset, "test", force_process = True)
+    num_workers = 0
+    batch_size = 1
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=False,
+        drop_last=True,
+        pin_memory=True,
+    )
+    
+    for batch_id, batch in enumerate(test_loader):
+        # rot_list = [0, np.pi/2, np.pi, np.pi/2*3]
+        rot_list = [0]
+        for rot_z in rot_list:
+            np_obs= rotate_observation(batch, rot_z)
+            cpu_obs = to_tensor(np_obs)
+
+            for side in ['left', 'right']:
+                pc_vis_data = cpu_obs[side+'_pc'][0]
+                grasp_vis_data = cpu_obs[side+'_grasp'][0]
+                jpose_visdata = cpu_obs['dual_jpose'][0]
+
+                history_list = []
+                tmp_pc = pc_vis_data[0].reshape(-1, 3).numpy()
+                traj_len = grasp_vis_data.shape[0]
+                for i in range(traj_len):
+                    jpose = jpose_visdata[0].reshape(-1).numpy()
+                    grasp_pose = grasp_vis_data[i,:4].reshape(1,-1,4).numpy()
+                    grasp_pose_tensor = torch.tensor(grasp_pose)
+
+                    vecrot_grasp = rotate_vec_grasp(grasp_pose_tensor, rot_z)
+                    # action_slice = (grasp, jpose)
+                    action_slice = (vecrot_grasp.reshape(-1, 4), jpose)
+                    history_list.append(action_slice)
+
+                render_pose(history_list, use_gui=True, \
+                            directory = None, obj_points = tmp_pc)
+
+
+
+if __name__ == '__main__':
+    main()

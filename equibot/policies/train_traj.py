@@ -12,10 +12,10 @@ from glob import glob
 from omegaconf import OmegaConf
 
 from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
-from equibot.policies.agents.compaloha_agent import CompALOHAAgent
+from equibot.policies.agents.traj_agent import TrajAgent
 from equibot.policies.agents.aloha_agent import ALOHAAgent
 
-from test_compaloha import run_eval
+from test_traj import run_eval
 # from torch.utils.tensorboard import SummaryWriter
 # import pathlib
 # EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
@@ -72,10 +72,8 @@ def main(cfg):
     )
 
         # init agent
-    if cfg.data.dataset.dataset_type == "mj_socket_test":
-        agent = ALOHAAgent(cfg)
-    else:
-        agent = CompALOHAAgent(cfg)
+
+    agent = TrajAgent(cfg)
     if cfg.training.ckpt is not None:
         agent.load_snapshot(cfg.training.ckpt)
         start_epoch_ix = int(cfg.training.ckpt.split("/")[-1].split(".")[0][4:])
