@@ -313,7 +313,7 @@ class TrajPolicy(nn.Module):
 
                     ## recover grasp
                     trans_batch, _, _ = self.recover_grasp(\
-                        new_action[side+'grasp' ], scale[side], center[side], key=side+'_grasp')
+                        new_action[side+'_grasp' ], scale[side], center[side], key=side+'_grasp')
                     assert trans_batch.shape[3] == 4
                     trans_traj = trans_batch[history_bid]#.detach().cpu().numpy() 
                     action_slice.update(side+'_grasp', trans_traj)

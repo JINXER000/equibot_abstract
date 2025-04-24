@@ -217,8 +217,8 @@ def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
         cfg = hydra.compose(config_name=config_name, overrides=overrides)
     
     # assert cfg.mode != "train"
-    # cfg.mode = 'eval'
-    cfg.mode = 'inference'
+    cfg.mode = 'eval'
+    # cfg.mode = 'inference'
     np.random.seed(cfg.seed)
 
     tamp_wrapper = pddl_wrapper(cfg, dataset_path)
@@ -235,7 +235,7 @@ def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
     # obs_c, offset_dict = get_obsc_offset_dict(tamp_wrapper, ply_paths, obj_centric = cfg.data.dataset.is_obj_centric)
 
     raw_action_dict = tamp_wrapper.predict_action(obs_c=obs_c, offset_dict=offset_dict, history_bid=history_bid, sleep_time=0.05)
-    ref_grasp_dict = rot_mat_from_action_dict(raw_action_dict)
+    # ref_grasp_dict = rot_mat_from_action_dict(raw_action_dict)
 
 
     rot_to_apply_ls = np.arange(np.pi/3, 2*np.pi, np.pi/3)
@@ -245,9 +245,9 @@ def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
         rotated_obs_np = rotate_observation(agent_obs, rot)
         action_dict = tamp_wrapper.infer_real(rotated_obs_np, history_bid=history_bid)
        
-        pred_grasp_angle = rot_mat_from_action_dict(action_dict)  
+        # pred_grasp_angle = rot_mat_from_action_dict(action_dict)  
 
-        rot_diff = rot_diff_from_dicts(ref_grasp_dict, pred_grasp_angle, gt_rot_euler=rot)
+        # rot_diff = rot_diff_from_dicts(ref_grasp_dict, pred_grasp_angle, gt_rot_euler=rot)
         
 def rot_diff_from_dicts(ori_dict, pred_dict, gt_rot_euler):
     from equibot.envs.sim_mobile.utils.transformations import euler2mat
@@ -274,4 +274,4 @@ def rotation_diff(rot1, rot2):
 if __name__ == "__main__":
     # main()
     # eval_with_rotation(task_name='screwdriver_container', history_bid=0)
-    eval_with_rotation(task_name='aloha_transfer_cup', history_bid=0)
+    eval_with_rotation(task_name='mj_peg_hole', history_bid=0)

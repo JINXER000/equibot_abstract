@@ -270,6 +270,7 @@ class TrajAgent(object):
             state_dict[f"{side}_pc_scale"] = self.all_normalizers[f"{side}_pc_scale"]
             state_dict[f"{side}_pc_normalizer"] = self.all_normalizers[f"{side}_pc"].state_dict()
             state_dict[f"{side}_grasp_normalizer"] = self.all_normalizers[f"{side}_grasp"].state_dict()
+            state_dict[f"{side}_gripper_normalizer"] = self.all_normalizers[f"{side}_gripper"].state_dict()
         state_dict["dual_jpose_normalizer"] = self.all_normalizers["dual_jpose"].state_dict()
 
         torch.save(state_dict, save_path)
@@ -283,6 +284,7 @@ class TrajAgent(object):
             self.all_normalizers[f"{side}_pc_scale"] = state_dict[f"{side}_pc_scale"]
             self.all_normalizers[f"{side}_pc"] = Normalizer(state_dict[f"{side}_pc_normalizer"])
             self.all_normalizers[f"{side}_grasp"] = Normalizer(state_dict[f"{side}_grasp_normalizer"])
+            self.all_normalizers[f"{side}_gripper"] = Normalizer(state_dict[f"{side}_gripper_normalizer"])
         self.all_normalizers["dual_jpose"] = Normalizer(state_dict["dual_jpose_normalizer"])
         
         self.actor.all_normalizers = self.all_normalizers

@@ -100,7 +100,7 @@ def get_dataset(cfg, mode="train"):
     if agent_name == "aloha":
         from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
         return ALOHAPoseDataset(cfg.data.dataset, mode)
-    elif agent_name == "compaloha":
+    elif agent_name == "compaloha" or agent_name == 'traj':
         from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
         return DualAbsDataset(cfg.data.dataset, mode)
     else:
@@ -121,6 +121,9 @@ def get_agent(agent_name):
     elif agent_name == "compaloha":
         from equibot.policies.agents.compaloha_agent import CompALOHAAgent
         return CompALOHAAgent
+    elif agent_name == "traj":
+        from equibot.policies.agents.traj_agent import TrajAgent
+        return TrajAgent
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
 
