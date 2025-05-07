@@ -116,12 +116,23 @@ class ALOHAPoseDataset(Dataset):
     
       
     def decentralize_grasp(self,  grasp, pc_offset, ref_grasp = None, **kwargs):
-        grasp[:3, 3] += pc_offset
+        ## if the data is grasp pose, expand the dimension 
+        if len(grasp.shape) == 2:
+            is_grasp_pose = True
+            grasp = np.expand_dims(grasp, axis=0)
+        else:
+            is_grasp_pose = False
+
+        grasp[:, :3, 3] += pc_offset
         ##below for debug, visualize right grasp rot
         if ref_grasp is not None:
-            grasp[:3, :3] = ref_grasp
-        if grasp.shape[0] ==8:
-            grasp[4:7, 3] += pc_offset
+            grasp[:, :3, :3] = ref_grasp
+        if grasp.shape[1] ==8:
+            grasp[:, 4:7, 3] += pc_offset
+
+        ## shrink the dim 
+        if is_grasp_pose:
+            grasp = np.squeeze(grasp, axis=0)
         return grasp
     
     def process_select(self, cfg, **kwargs):

@@ -46,7 +46,7 @@ class TrajPolicy(nn.Module):
 
         self.encoder_out_dim = cfg.model.encoder.c_dim
 
-        self.mask_type = self.conclude_masks()
+        # self.mask_type = self.conclude_masks()
 
         # self.num_eef = cfg.env.num_eef
         self.dof = cfg.env.dof # 6
@@ -232,69 +232,20 @@ class TrajPolicy(nn.Module):
         jpose_vec = jpose_n.reshape(jpose_n.shape[0], -1,  self.dof * self.num_eef)
         return jpose_vec
     
-    ## TODO: revise it for 2 pc
-    def forward(self, batch, history_bid=-1):
-        ###### preprocess data #######
-        batch = to_torch(batch, self.device)
-        left_pc = batch['left_pc'].repeat(1, self.obs_horizon, 1, 1)
-        right_pc = batch['right_pc'].repeat(1, self.obs_horizon, 1, 1)
-        
-        batch_size =  left_pc.shape[0]
+    def pred_bimanual_jposes(self, batch_size, gt_batch = None):
 
         ema_nets = self.ema.averaged_model
 
-        left_obs_vec, left_center, left_scale = self.proc_pc(left_pc, 'left_pc', ema_nets = ema_nets)
-        right_obs_vec, right_center, right_scale = self.proc_pc(right_pc, 'right_pc', ema_nets = ema_nets)
-
-        obs_vec = {"left": left_obs_vec, "right": right_obs_vec}
-        center = {"left": left_center, "right": right_center}
-        scale = {"left": left_scale, "right": right_scale}
-
-        ##### start denoising #####
-
         initial_noise_scale = 1
-        noisy_left_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims['left'], 3)).to(self.device)\
-        * initial_noise_scale
-        noisy_right_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims['right'], 3)).to(self.device)\
-        * initial_noise_scale
-
-        noisy_left_gripper = torch.randn((batch_size, self.pred_horizon, 1)).to(self.device) * initial_noise_scale
-        noisy_right_gripper = torch.randn((batch_size, self.pred_horizon, 1)).to(self.device) * initial_noise_scale
-
-        noisy_jpose = torch.randn((batch_size,  self.num_eef*self.dof)).to(self.device) * initial_noise_scale,
-        if type(noisy_jpose) == tuple:
-            noisy_jpose = noisy_jpose[0]
-
+        noisy_jpose = torch.randn((batch_size,   self.num_eef*self.dof)).to(self.device) * initial_noise_scale
 
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
 
-        curr_action = {"left_grasp": noisy_left_xt, "right_grasp": noisy_right_xt, \
-            "left_gripper": noisy_left_gripper, "right_gripper": noisy_right_gripper, \
-            "dual_jpose": noisy_jpose}
+        curr_action = {"dual_jpose": noisy_jpose}
 
-        denoise_history = []
+        ####### inverse diffusion step
         for k in self.noise_scheduler.timesteps:
-
-            ####### inverse diffusion step
-            new_action = {"left_grasp": None, "right_grasp": None, \
-                "left_gripper": None, "right_gripper": None, \
-                "dual_jpose": None}
-
-            for side in ["left", "right"]:
-                vec_noise_pred, gripper_noise_pred = ema_nets[side+"_noise_pred_net"](\
-                    sample=curr_action[side+ "_grasp"],
-                    timestep = k,
-                    scalar_sample = curr_action[side + "_gripper"], 
-                    cond= obs_vec[side],
-                    scalar_cond=None,
-                )
-                new_action[side+ "_grasp"] = self.noise_scheduler.step(
-                    model_output=vec_noise_pred, timestep=k, sample=curr_action[side+ "_grasp"]
-                ).prev_sample
-
-                new_action[side + "_gripper"] = self.noise_scheduler.step(
-                    model_output=gripper_noise_pred, timestep=k, sample=curr_action[side + "_gripper"]
-                ).prev_sample
+            new_action = {"dual_jpose": None}
 
             scalar_noise_pred = ema_nets["jpose_noise_pred_net"](\
                 sample=curr_action["dual_jpose"],
@@ -304,88 +255,268 @@ class TrajPolicy(nn.Module):
                 model_output=scalar_noise_pred, timestep=k, sample=curr_action["dual_jpose"]
             ).prev_sample
 
-        
-            # record history in inference (not train)
-            if history_bid >=0:
-                action_slice = ActionSlice(mode="separated")
-
-                for side in ["left", "right"]:
-
-                    ## recover grasp
-                    trans_batch, _, _ = self.recover_grasp(\
-                        new_action[side+'_grasp' ], scale[side], center[side], key=side+'_grasp')
-                    assert trans_batch.shape[3] == 4
-                    trans_traj = trans_batch[history_bid]#.detach().cpu().numpy() 
-                    action_slice.update(side+'_grasp', trans_traj)
-
-                    ## recover gripper
-                    gripper_batch = self.recover_gripper(new_action[side+'_gripper'], key=side+'_gripper')
-                    gripper_traj = gripper_batch[history_bid]
-                    action_slice.update(side+'_gripper', gripper_traj)
-
-                ## recover jpose         
-                unnormed_joint = self.recover_jpose(new_action['dual_jpose'], key='dual_jpose')
-                jpose_flat = unnormed_joint[history_bid].reshape(-1)       
-                action_slice.update('dual_jpose', jpose_flat)   
-
-                denoise_history.append(action_slice)
-
-            # record the denoised action
             curr_action = new_action
 
-        action_dict, eval_metrics = self.get_action_dict_and_metrics(batch, curr_action, center, scale)
-        return action_dict, eval_metrics, denoise_history
-
-    def get_action_dict_and_metrics(self, batch, final_action, center, scale):
-        eval_metrics = {}
-        action_dict = {}
-
-        for side in ["left", "right"]:
-            has_eff = self.has_eff_dict[side]
-            ## predicted values
-            trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(\
-                final_action[side+'_grasp'], scale[side], center[side], key=side+'_grasp')
-            assert trans_batch.shape[3] == 4
-
-            ## recover gripper
-            gripper_batch = self.recover_gripper(final_action[side+'_gripper'], key=side+'_gripper')
-
-            ## update action dict if only test
-            batch_size = trans_batch.shape[0]
-            if batch_size == 1:
-                action_dict[side+'_grasp'] = trans_batch[0]
-                action_dict[side+'_gripper'] = gripper_batch[0]
-            ## calc metrics if in training
-            else:
-                gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(batch[side+"_grasp"], has_eff=has_eff)
-                gt_grasp_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
-
-                xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
-                rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
-                eval_metrics[side+"_xyz_mse"] = xyz_mse
-                eval_metrics[side+"_rot_mse"] = rot_mse
-
-
-        unnormed_joint = self.recover_jpose(final_action['dual_jpose'], key='dual_jpose')
+        unnormed_joint = self.recover_jpose(curr_action['dual_jpose'], key='dual_jpose')
         unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
-        if batch_size == 1:
+
+        action_dict = {}
+        eval_metrics = {}
+        if batch_size ==1:
             action_dict['dual_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
         else:
-            gt_joint = batch["dual_jpose"]
+            gt_joint = gt_batch["dual_jpose"]
             joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
             eval_metrics["dual_joint_mse"] = joint_mse
+
+        return action_dict, eval_metrics
+    
+    def pred_unimaual_traj(self, side, agent_obs, gt_batch = None):
+        pc_data = agent_obs[side + '_pc']
+        batch_size =  pc_data.shape[0]
+        pc_data = pc_data.repeat(1, self.obs_horizon, 1, 1)
+
+        ema_nets = self.ema.averaged_model
+
+        obs_vec, center, scale = self.proc_pc(pc_data, side + '_pc', ema_nets = ema_nets)
+
+        ##### start denoising #####
+
+        initial_noise_scale = 1
+        noisy_eef_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims[side], 3)).to(self.device)\
+        * initial_noise_scale
+
+        noisy_gripper = torch.randn((batch_size, self.pred_horizon, 1)).to(self.device) * initial_noise_scale
+
+        self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
+
+        curr_action = {side + "_grasp": noisy_eef_xt, 
+            side + "_gripper": noisy_gripper}
+        
+         ####### inverse diffusion step
+        for k in self.noise_scheduler.timesteps:
+
+            new_action = {side + "_grasp": None, side+ '_gripper': None }
+
+            vec_noise_pred, gripper_noise_pred = ema_nets[side+"_noise_pred_net"](\
+                sample=curr_action[side+ "_grasp"],
+                timestep = k,
+                scalar_sample = curr_action[side + "_gripper"], 
+                cond= obs_vec,
+                scalar_cond=None,
+            )
+            new_action[side+ "_grasp"] = self.noise_scheduler.step(
+                model_output=vec_noise_pred, timestep=k, sample=curr_action[side+ "_grasp"]
+            ).prev_sample
+
+            new_action[side + "_gripper"] = self.noise_scheduler.step(
+                model_output=gripper_noise_pred, timestep=k, sample=curr_action[side + "_gripper"]
+            ).prev_sample
+
+            curr_action = new_action
+
+        ### recover the grasp eef pose
+        has_eff = self.has_eff_dict[side]
+        ## predicted values
+        trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(\
+            curr_action[side+'_grasp'], scale, center, key=side+'_grasp')
+        assert trans_batch.shape[3] == 4
+
+        ## recover gripper
+        gripper_batch = self.recover_gripper(curr_action[side+'_gripper'], key=side+'_gripper')
+
+        ## update action dict 
+        action_dict = {}
+        eval_metrics = {}
+        if batch_size ==1:
+            action_dict[side+'_grasp'] = trans_batch[0]
+            action_dict[side+'_gripper'] = gripper_batch[0]
+        ## calc metrics if in training
+        else:
+            gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(gt_batch[side+"_grasp"], has_eff=has_eff)
+            gt_grasp_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
+
+            xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
+            rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
+            eval_metrics[side+"_xyz_mse"] = xyz_mse
+            eval_metrics[side+"_rot_mse"] = rot_mse
+
         return action_dict, eval_metrics
 
-    def conclude_masks(self):
-        has_grasp = False
-        has_jpose = False
-        if self.symb_mask[0] != 'None' or self.symb_mask[1] != 'None':
-            has_jpose = True
-        if self.symb_mask[2] != 'None' or self.symb_mask[3] != 'None':
-            has_grasp = True
-        if has_grasp and has_jpose:
-            return "both"
-        elif has_grasp:
-            return "only_grasp"
-        elif has_jpose:
-            return "only_jpose"
+    def forward(self, batch, history_bid=-1):
+        ###### preprocess data #######
+        batch = to_torch(batch, self.device)
+        batch_size = batch['dual_jpose'].shape[0]
+
+        action_dict_all = {}
+        eval_metrics_all = {}
+        for side in ["left", "right"]:
+            pc_data = batch[side + '_pc'].repeat(1, self.obs_horizon, 1, 1)
+            action_dict, eval_metrics = self.pred_unimaual_traj(side, pc_data, gt_batch=batch)
+            action_dict_all.update(action_dict)
+            eval_metrics_all.update(eval_metrics)
+
+        action_dict, eval_metrics = self.pred_bimanual_jposes(batch_size=batch_size, gt_batch=batch)
+        action_dict_all.update(action_dict)
+        eval_metrics_all.update(eval_metrics)
+
+        denoise_history = []
+        if history_bid >= 0 and len(action_dict_all) > 0:
+            ## in traj mode, we do not visulize the history. Instead, we visualize the final action
+            traj_len = self.pred_horizon
+            for i in range(traj_len):
+                action_slice = ActionSlice(mode="separated")
+                for side in ["left", "right"]:
+                    action_slice.update(side+'_grasp', action_dict_all[side+'_grasp'][i])
+
+                    action_slice.update(side+'_gripper', action_dict_all[side+'_gripper'][i])
+
+                action_slice.update('dual_jpose', action_dict_all['dual_jpose'].reshape(-1))
+
+                denoise_history.append(action_slice)
+        return action_dict_all, eval_metrics_all, denoise_history
+
+    # def forward(self, batch, history_bid=-1):
+    #     ###### preprocess data #######
+    #     batch = to_torch(batch, self.device)
+    #     left_pc = batch['left_pc'].repeat(1, self.obs_horizon, 1, 1)
+    #     right_pc = batch['right_pc'].repeat(1, self.obs_horizon, 1, 1)
+        
+    #     batch_size =  left_pc.shape[0]
+
+    #     ema_nets = self.ema.averaged_model
+
+    #     left_obs_vec, left_center, left_scale = self.proc_pc(left_pc, 'left_pc', ema_nets = ema_nets)
+    #     right_obs_vec, right_center, right_scale = self.proc_pc(right_pc, 'right_pc', ema_nets = ema_nets)
+
+    #     obs_vec = {"left": left_obs_vec, "right": right_obs_vec}
+    #     center = {"left": left_center, "right": right_center}
+    #     scale = {"left": left_scale, "right": right_scale}
+
+    #     ##### start denoising #####
+
+    #     initial_noise_scale = 1
+    #     noisy_left_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims['left'], 3)).to(self.device)\
+    #     * initial_noise_scale
+    #     noisy_right_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims['right'], 3)).to(self.device)\
+    #     * initial_noise_scale
+
+    #     noisy_left_gripper = torch.randn((batch_size, self.pred_horizon, 1)).to(self.device) * initial_noise_scale
+    #     noisy_right_gripper = torch.randn((batch_size, self.pred_horizon, 1)).to(self.device) * initial_noise_scale
+
+    #     noisy_jpose = torch.randn((batch_size,  self.num_eef*self.dof)).to(self.device) * initial_noise_scale,
+    #     if type(noisy_jpose) == tuple:
+    #         noisy_jpose = noisy_jpose[0]
+
+
+    #     self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
+
+    #     curr_action = {"left_grasp": noisy_left_xt, "right_grasp": noisy_right_xt, \
+    #         "left_gripper": noisy_left_gripper, "right_gripper": noisy_right_gripper, \
+    #         "dual_jpose": noisy_jpose}
+
+    #     denoise_history = []
+    #     for k in self.noise_scheduler.timesteps:
+
+    #         ####### inverse diffusion step
+    #         new_action = {"left_grasp": None, "right_grasp": None, \
+    #             "left_gripper": None, "right_gripper": None, \
+    #             "dual_jpose": None}
+
+    #         for side in ["left", "right"]:
+    #             vec_noise_pred, gripper_noise_pred = ema_nets[side+"_noise_pred_net"](\
+    #                 sample=curr_action[side+ "_grasp"],
+    #                 timestep = k,
+    #                 scalar_sample = curr_action[side + "_gripper"], 
+    #                 cond= obs_vec[side],
+    #                 scalar_cond=None,
+    #             )
+    #             new_action[side+ "_grasp"] = self.noise_scheduler.step(
+    #                 model_output=vec_noise_pred, timestep=k, sample=curr_action[side+ "_grasp"]
+    #             ).prev_sample
+
+    #             new_action[side + "_gripper"] = self.noise_scheduler.step(
+    #                 model_output=gripper_noise_pred, timestep=k, sample=curr_action[side + "_gripper"]
+    #             ).prev_sample
+
+    #         scalar_noise_pred = ema_nets["jpose_noise_pred_net"](\
+    #             sample=curr_action["dual_jpose"],
+    #             timesteps = k,
+    #         )
+    #         new_action['dual_jpose'] = self.noise_scheduler.step(
+    #             model_output=scalar_noise_pred, timestep=k, sample=curr_action["dual_jpose"]
+    #         ).prev_sample
+
+    #         curr_action = new_action
+
+    #     action_dict, eval_metrics = self.get_action_dict_and_metrics(batch, curr_action, center, scale)
+
+    #     if history_bid >= 0:
+    #         ## in traj mode, we do not visulize the history. Instead, we visualize the final action
+    #         traj_len = self.pred_horizon
+    #         for i in range(traj_len):
+    #             action_slice = ActionSlice(mode="separated")
+    #             for side in ["left", "right"]:
+    #                 action_slice.update(side+'_grasp', action_dict[side+'_grasp'][i])
+
+    #                 action_slice.update(side+'_gripper', action_dict[side+'_gripper'][i])
+
+    #             action_slice.update('dual_jpose', action_dict['dual_jpose'].reshape(-1))
+
+    #             denoise_history.append(action_slice)
+
+    #     return action_dict, eval_metrics, denoise_history
+
+    # def get_action_dict_and_metrics(self, batch, final_action, center, scale):
+    #     eval_metrics = {}
+    #     action_dict = {}
+
+    #     for side in ["left", "right"]:
+    #         has_eff = self.has_eff_dict[side]
+    #         ## predicted values
+    #         trans_batch, unnormed_grasp_xyz, rot6d_batch = self.recover_grasp(\
+    #             final_action[side+'_grasp'], scale[side], center[side], key=side+'_grasp')
+    #         assert trans_batch.shape[3] == 4
+
+    #         ## recover gripper
+    #         gripper_batch = self.recover_gripper(final_action[side+'_gripper'], key=side+'_gripper')
+
+    #         ## update action dict if only test
+    #         batch_size = trans_batch.shape[0]
+    #         if batch_size == 1:
+    #             action_dict[side+'_grasp'] = trans_batch[0]
+    #             action_dict[side+'_gripper'] = gripper_batch[0]
+    #         ## calc metrics if in training
+    #         else:
+    #             gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(batch[side+"_grasp"], has_eff=has_eff)
+    #             gt_grasp_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
+
+    #             xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
+    #             rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
+    #             eval_metrics[side+"_xyz_mse"] = xyz_mse
+    #             eval_metrics[side+"_rot_mse"] = rot_mse
+
+
+    #     unnormed_joint = self.recover_jpose(final_action['dual_jpose'], key='dual_jpose')
+    #     unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
+    #     if batch_size == 1:
+    #         action_dict['dual_jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
+    #     else:
+    #         gt_joint = batch["dual_jpose"]
+    #         joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
+    #         eval_metrics["dual_joint_mse"] = joint_mse
+    #     return action_dict, eval_metrics
+
+    # def conclude_masks(self):
+    #     has_grasp = False
+    #     has_jpose = False
+    #     if self.symb_mask[0] != 'None' or self.symb_mask[1] != 'None':
+    #         has_jpose = True
+    #     if self.symb_mask[2] != 'None' or self.symb_mask[3] != 'None':
+    #         has_grasp = True
+    #     if has_grasp and has_jpose:
+    #         return "both"
+    #     elif has_grasp:
+    #         return "only_grasp"
+    #     elif has_jpose:
+    #         return "only_jpose"

@@ -4,7 +4,7 @@ import torch
 import hydra
 import numpy as np
 
-from equibot.policies.utils.misc import get_agent, get_dataset, ActionSlice, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH
+from equibot.policies.utils.misc import get_agent, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
 
@@ -147,15 +147,33 @@ class pddl_wrapper(object):
                         agent_obs = self.decentralize_obs(obs_gpu, offset_dict),
                         vis_eff = False, #self.dataset.has_eff, 
                         **kwargs)
-            
+        ## decentralize the final action
         if offset_dict is not None:
             action_w = self.decentralize_action(action_c, offset_dict)
         else:
             action_w = action_c
         return action_w
 
+    def gen_objcentric_traj(self, side, obj, sk, agent_obs):
+        obs_tensor = to_tensor(agent_obs)
+        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric)
+        obs_c = to_tensor(obs_c)
+        obs_gpu = to_torch(obs_c, self.cfg.device)
+        
+        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(side, obs_gpu)
 
+        ## decentralize the final action
+        if offset_dict is not None:
+            action_w = self.decentralize_action(action_c, offset_dict)
+        else:
+            action_w = action_c
 
+        return action_w
+    
+    def gen_uncond_jposes(self, arm1, arm2, sk):
+        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(batch_size = 1)
+        jpose_out = to_np(action_dict)['dual_jpose']
+        return jpose_out
 
 
 def get_obsc_offset_dict(tamp_wrapper, ply_paths = None, obj_centric = False, **kwargs):
@@ -243,6 +261,7 @@ def eval_with_rotation(task_name = 'screwdriver', history_bid = -1):
     for rot in rot_to_apply_ls:
 
         rotated_obs_np = rotate_observation(agent_obs, rot)
+        ## infer_real = centralize + predict_action + decentralize
         action_dict = tamp_wrapper.infer_real(rotated_obs_np, history_bid=history_bid)
        
         # pred_grasp_angle = rot_mat_from_action_dict(action_dict)  
