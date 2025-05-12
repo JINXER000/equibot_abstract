@@ -57,7 +57,7 @@ def rotate_observation(np_obs, yaw_rotation):
             rotated_pc = rotate_around_z(pc_np, yaw_rotation)
             obs_rotated[k] = rotated_pc
 
-        elif 'grasp' in k:
+        elif 'grasp' in k or 'eef_pos' in k:
             grasp_np = v
 
             assert len(grasp_np.shape) == 4  # B, 1, 8, 4
@@ -235,6 +235,25 @@ def convert_vec_to_trans(rot6d_batch, unnormed_grasp_xyz, has_eff = False):
 
     trans_mat_batch = trans_mat_batch.reshape(batch_size, horizon, -1, 4)
     return trans_mat_batch
+
+def rotate_vec_grasp(grasp, rot_z):
+    ## vectorize the  grasp
+    pred_grasp_trans = grasp[:, :4, :].reshape(1, 1, 4, 4)
+    # pred_grasp_trans[:, :, :3, :3] = pred_grasp_trans[:, :, :3, :3].transpose(-2, -1)
+    grasp_xyz, grasp_dir1, grasp_dir2 = convert_trans_to_vec(pred_grasp_trans, has_eff = False)
+    gt_grasp_z = torch.cat([grasp_xyz, grasp_dir1, grasp_dir2], dim=-2)
+
+    gt_z_np = gt_grasp_z.detach().cpu().numpy()
+    rotated_gt_z = rotate_around_z(gt_z_np, rot_z)
+    rotated_grasp_vec = torch.tensor(rotated_gt_z).float()
+
+    # rotated_grasp_vec = torch.einsum('bnij, ', gt_grasp_z, torch.tensor(rotation_matrix).float())
+    rotated_rot6d = rotated_grasp_vec[:, :,  1:, :].reshape(-1, 1, 1, 6)
+    rotated_xyz = rotated_grasp_vec[:, :, 0, :].reshape(-1, 1, 1, 3)
+    rotated_grasp_trans = convert_vec_to_trans(rotated_rot6d, rotated_xyz, has_eff = False)
+    # rotated_grasp_trans[:, :, :3, :3] = rotated_grasp_trans[:, :, :3, :3].transpose(-2, -1)
+
+    return rotated_grasp_trans
 
 class ActionSlice(object):
     def __init__(self, mode = "separated"):

@@ -9,16 +9,16 @@ from equibot.policies.utils.constants import qpos_to_eepose
 
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_around_z, to_tensor, to_np, convert_trans_to_vec, convert_vec_to_trans, EQUIBOT_PATH
+from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_around_z, to_tensor, rotate_vec_grasp
 
 
 import hydra
 import sys
 sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-# sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
-# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
-# from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
+sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
+from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
 
 import pathlib
 EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
@@ -563,24 +563,7 @@ class ALOHAPoseDataset(Dataset):
         print('processed all hdf5 file!')
 
 
-def rotate_vec_grasp(grasp, rot_z):
-    ## vectorize the  grasp
-    pred_grasp_trans = grasp[:, :4, :].reshape(1, 1, 4, 4)
-    # pred_grasp_trans[:, :, :3, :3] = pred_grasp_trans[:, :, :3, :3].transpose(-2, -1)
-    grasp_xyz, grasp_dir1, grasp_dir2 = convert_trans_to_vec(pred_grasp_trans, has_eff = False)
-    gt_grasp_z = torch.cat([grasp_xyz, grasp_dir1, grasp_dir2], dim=-2)
 
-    gt_z_np = gt_grasp_z.detach().cpu().numpy()
-    rotated_gt_z = rotate_around_z(gt_z_np, rot_z)
-    rotated_grasp_vec = torch.tensor(rotated_gt_z).float()
-
-    # rotated_grasp_vec = torch.einsum('bnij, ', gt_grasp_z, torch.tensor(rotation_matrix).float())
-    rotated_rot6d = rotated_grasp_vec[:, :,  1:, :].reshape(-1, 1, 1, 6)
-    rotated_xyz = rotated_grasp_vec[:, :, 0, :].reshape(-1, 1, 1, 3)
-    rotated_grasp_trans = convert_vec_to_trans(rotated_rot6d, rotated_xyz, has_eff = False)
-    # rotated_grasp_trans[:, :, :3, :3] = rotated_grasp_trans[:, :, :3, :3].transpose(-2, -1)
-
-    return rotated_grasp_trans
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):

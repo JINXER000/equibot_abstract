@@ -1,0 +1,353 @@
+import os
+import h5py
+import networkx as nx
+import json
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset
+from tqdm import tqdm
+from collections import namedtuple
+from scipy.spatial.transform import Rotation
+from equibot.policies.utils.constants import qpos_to_eepose
+# from equibot.envs.sim_mobile.utils.transformations import quat2mat
+from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
+from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
+from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH   
+
+
+import hydra
+import sys
+sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+# sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
+from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+
+
+
+
+def downsample_pc(pc, num_points):
+    if pc.shape[0] > num_points:
+        sampled_indices = np.random.choice(pc.shape[0], num_points, replace=False)
+        pc = pc[sampled_indices]
+    elif pc.shape[0] < num_points:
+        if pc.shape[0] < num_points *0.5:
+            raise ValueError('Input pc shape is not enough points!')
+        else:
+            random_repeated_indices = np.random.choice(pc.shape[0], num_points - pc.shape[0], replace=True)
+            pc = np.concatenate([pc, pc[random_repeated_indices]], axis=0)
+    return pc
+
+
+
+class DMGDataset(Dataset):
+    def __init__(self, cfg, mode, transform=None, pre_transform=None, pre_filter=None, force_process = False, **kwargs):
+        super().__init__()
+        self.mode = mode
+        self.dir_name = cfg.path
+        self.root = self.dir_name
+        # self.symb_mask = cfg.symb_mask
+        self.transform = transform
+        self.pre_transform = pre_transform
+        self.pre_filter = pre_filter
+        self.composed_inference = False
+
+        self.pc_shape = (cfg.num_points, 3)
+        # self.has_eff_list = cfg.has_eff_list
+        # self.has_eff = True in self.has_eff_list
+
+        self.is_obj_centric = cfg.is_obj_centric
+
+        self.num_eef = cfg.num_eef
+        self.dof = cfg.dof
+
+        # self.process_select(cfg,**kwargs)
+        if mode == 'train' or force_process == True:
+            # Process the data
+            print('Processing dataset...')
+            self.process_select(cfg,**kwargs)
+        else:
+            print('Loading dataset...')
+        
+        if mode != 'inference':
+            # Load processed data
+            self.data, self.slices = torch.load(self.processed_file_path)
+
+    @property
+    def raw_file_names(self):
+        return os.listdir(os.path.join(self.root, 'raw'))
+
+    @property
+    def processed_file_path(self):
+        return os.path.join(self.root, 'processed', 'data.pt')
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        sample = self.data[idx]
+        if self.transform:
+            sample = self.transform(sample)
+        return sample
+    
+    def centralize_cond_pc(self,  pc, obj_centric = True):
+        input_pc = np.asarray(pc)
+        assert len(input_pc.shape) == 2 
+        input_pc= downsample_pc(input_pc, self.pc_shape[0])
+    
+        if obj_centric:
+            pc_offset = np.min(input_pc, axis=0)
+            input_pc = input_pc - pc_offset
+        else:
+            pc_offset = np.zeros(3)
+        return input_pc, pc_offset
+    
+    def centralize_grasp(self, grasp, pc_offset):
+        grasp[:3, 3] -= pc_offset
+        # if self.has_eff:
+        #     grasp[4:7, 3] -= pc_offset
+        return grasp
+    
+    def decentralize_cond_pc(self,  pc, pc_offset):
+        pc = pc + pc_offset
+        return pc
+    
+      
+    def decentralize_grasp(self,  grasp, pc_offset, ref_grasp = None, **kwargs):
+        ## if the data is grasp pose, expand the dimension 
+        if len(grasp.shape) == 2:
+            is_grasp_pose = True
+            grasp = np.expand_dims(grasp, axis=0)
+        else:
+            is_grasp_pose = False
+
+        grasp[:, :3, 3] += pc_offset
+        ##below for debug, visualize right grasp rot
+        if ref_grasp is not None:
+            grasp[:, :3, :3] = ref_grasp
+        if grasp.shape[1] ==8:
+            grasp[:, 4:7, 3] += pc_offset
+
+        ## shrink the dim 
+        if is_grasp_pose:
+            grasp = np.squeeze(grasp, axis=0)
+        return grasp
+    
+    def process_select(self, cfg, **kwargs):
+
+        if cfg.dataset_type == 'dexmimicgen':
+            self.process_dexmimicgen(cfg, **kwargs)
+        else:
+            raise NotImplementedError(f'Dataset type {cfg.dataset_type} not implemented!')
+        
+    def process_dexmimicgen(self, cfg, **kwargs):
+        def get_sg(hdf5_group, sg_name):
+            sg_json = hdf5_group[sg_name][()] if sg_name in hdf5_group else None
+            if sg_json is None:
+                return None
+            sg_str = sg_json.decode('utf-8')
+            sg = nx.node_link_graph(json.loads(sg_str))
+            return sg
+
+        def get_rbt_actions(obs_grp, robot_names):
+            data_dict = {}
+            for robot_name in robot_names:
+                data_dict[f'{robot_name}_joint_pos'] = obs_grp[f'{robot_name}_joint_pos'][()]
+                data_dict[f'{robot_name}_eef_pos'] = obs_grp[f'{robot_name}_eef_pos'][()]
+                data_dict[f'{robot_name}_eef_quat'] = obs_grp[f'{robot_name}_eef_quat'][()]
+
+            return data_dict
+
+        ## quaternion is (x, y, z, w)
+        def compose_transformation(xyz, quat):
+            rot_mat = Rotation.from_quat(quat).as_matrix()
+            trans = np.concatenate([np.concatenate([rot_mat, np.array([xyz]).T], axis=1), np.array([[0, 0, 0, 1]])], axis=0)
+            return trans
+        
+        def choose_ids(traj_len, idx_list, essential_ids = None, skill_key = None):
+             ## for release, only use essential ids
+            if skill_key == 'release':
+                selected_ids = np.random.choice(essential_ids, size=traj_len, replace=True).astype(np.int32)
+                return np.sort(selected_ids).tolist()
+
+            intermediate_len = traj_len - 2
+            if essential_ids is None:
+                selected_ids = np.random.choice(idx_list, size=intermediate_len, replace=False).astype(np.int32)
+            elif len(essential_ids) < intermediate_len:
+                non_essential_num = intermediate_len - len(essential_ids)
+                non_essential_ids = set(idx_list) - set(essential_ids)
+                non_essential_ids = np.random.choice(list(non_essential_ids), size=non_essential_num, replace=False)
+                selected_ids = np.concatenate([essential_ids, non_essential_ids], axis=0).astype(np.int32)
+            else:
+                selected_ids = np.random.choice(essential_ids, size=intermediate_len, replace=False).astype(np.int32)
+            selected_ids = [idx_list[0]] + list(np.sort(selected_ids)) + [idx_list[-1]]
+            return selected_ids
+        
+        print('Processing hdf5 dataset...')
+        data_list = []
+        raw_files = self.raw_file_names
+        traj_len = cfg.pred_horizon
+        traj_nums = 64
+        interested_skills = cfg.uniskills
+
+        for file_id in range(len(raw_files)):
+            file_name = raw_files[file_id]
+            if 'hdf5' not in  file_name:
+                continue
+        
+            hdf5_path = os.path.join(self.root, 'raw', file_name)
+            with h5py.File(hdf5_path, 'r') as f:
+                ## read sg
+                sg_info = f['sg_info']
+                sg_params_json = f['sg_params'][()]
+                sg_params = json.loads(sg_params_json.decode('utf-8'))
+                robot_names = sg_params['robots']   
+
+                demo_id = file_name.split('_')[-2]
+                obs_grp = f[f'data/demo_{demo_id}/obs']
+                rbt_actions = get_rbt_actions(obs_grp, robot_names)
+
+                abs_actions = f[f'data/abs_actions'][()]
+                abs_actions = abs_actions.reshape(*abs_actions.shape[:1], -1, 7)
+                gripper_array = abs_actions[...,[-1]] ## TODO: map [-1, 1] to [0, 0.04] in execution
+                gripper_actions = {'robot0': gripper_array[:, 0], 'robot1': gripper_array[:, 1]}
+
+                obj_pcds =  {}
+                for obj_pc_key in f['data/obj_pcd'].keys():
+                    raw_vlen = f[f'data/obj_pcd/{obj_pc_key}'][()]
+                    pc_list = [raw_vlen[i].reshape(-1, 3) for i in range(len(raw_vlen))]
+                    obj_pcds[obj_pc_key] = pc_list
+
+                for _ in range(traj_nums):
+                    data_slice = {}
+
+                    for skill_name, skill_info in sg_info.items():
+                        pre_sg = get_sg(skill_info, 'pre_sg')
+                        cur_sg = get_sg(skill_info, 'cur_sg')
+                        eff_sg = get_sg(skill_info, 'eff_sg')
+                        
+                        if 'bimanual' in skill_name:
+                            pre_idx_list = pre_sg.graph['idx_list']
+
+                            pre_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][pre_idx_list], \
+                                rbt_actions['robot1_joint_pos'][pre_idx_list]], axis=1)
+                            qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1)
+                            data_slice['dual_jpose'] = pre_dual_jpose_all[qtraj_indice]
+
+                            if 'eff_sg' in skill_info:
+                                eff_idx_list = eff_sg.graph['idx_list']
+                                eff_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][eff_idx_list], \
+                                    rbt_actions['robot1_joint_pos'][eff_idx_list]], axis=1)
+                                qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
+                                data_slice['eff_dual_jpose'] = eff_dual_jpose_all[qtraj_indice]
+
+                        else:
+                            if 'grasp' in skill_name:
+                                if 'grasp' not in interested_skills:
+                                    continue
+                                essential_ids = skill_info['essential_ids'][()]
+                                skill_key = 'grasp'
+                                obj_name = skill_name.split('_', 1)[1]
+                                obj_pc = obj_pcds[f'{obj_name}_points'][pre_sg.graph['idx_list'][0]]
+                            elif 'contact' in skill_name:
+                                if 'contact' not in interested_skills:
+                                    continue
+                                essential_ids = None
+                                skill_key = 'contact'
+                                obj_name = skill_name.split('_contact_', 1)[1]
+                                obj_pc = obj_pcds[f'{obj_name}_points'][pre_sg.graph['idx_list'][0]]
+                            elif 'release' in skill_name:
+                                if 'release' not in interested_skills:
+                                    continue
+                                essential_ids = skill_info['essential_ids'][()]
+                                skill_key = 'release'
+                                obj_name = skill_name.split('_', 1)[1]
+                                obj_pc = obj_pcds[f'{obj_name}_points'][eff_sg.graph['idx_list'][0]]
+                            else:
+                                raise NotImplementedError(f'Skill name {skill_name} not implemented!')
+                            
+                            
+                            obj_pc_n, obj_offset = self.centralize_cond_pc(obj_pc)
+                            obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
+                            
+                            rbt_name = skill_info['related_rbts'][0].decode('utf-8')
+
+                            idx_list = cur_sg.graph['idx_list']
+                            choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+                            eef_pos_list = rbt_actions[f'{rbt_name}_eef_pos'][choiced_ids]
+                            eef_quat_list = rbt_actions[f'{rbt_name}_eef_quat'][choiced_ids]
+                            eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
+                            normalized_eef_pos_list = list(map(self.centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
+                            normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
+
+                            gripper_list = gripper_actions[rbt_name][choiced_ids]
+                            data_slice[f'{skill_key}_{obj_name}_pc'] = obj_pc_tensor
+                            data_slice[f'{skill_key}_{obj_name}_eefpos'] = normalized_eef_pos_tensor
+                            data_slice[f'{skill_key}_{obj_name}_gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
+
+                    data_list.append(data_slice)
+        
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print('processed all hdf5 file!')
+
+
+def get_skill_names(np_obs):
+    data_keys = list(np_obs.keys())
+    skill_names = []
+    for key in data_keys:
+        skill_name = "_".join(key.split('_')[:-1])
+        skill_names.append(skill_name)
+    return set(skill_names)
+
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_assembly")
+def main(cfg):
+    test_dataset = DMGDataset(cfg.data.dataset, "test", force_process = True)
+    num_workers = 0
+    batch_size = 1
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=False,
+        drop_last=True,
+        pin_memory=True,
+    )
+    
+    for batch_id, batch in enumerate(test_loader):
+        # rot_list = [0, np.pi/2, np.pi, np.pi/2*3]
+        rot_list = [0]
+        for rot_z in rot_list:
+            np_obs= rotate_observation(batch, rot_z)
+            cpu_obs = to_tensor(np_obs)
+
+            skill_names = get_skill_names(cpu_obs)
+
+            for skill_name in skill_names:
+                if 'bimanual' in skill_name:
+                    raise NotImplementedError('Bimanual skill is not implemented!')
+                
+                pc_vis_data = cpu_obs[skill_name+'_pc'][0]
+                grasp_vis_data = cpu_obs[skill_name+'_eefpos'][0]
+
+                history_list = []
+                tmp_pc = pc_vis_data[0].reshape(-1, 3).numpy()
+                traj_len = grasp_vis_data.shape[0]
+                for i in range(traj_len):
+                    grasp_pose = grasp_vis_data[i,:4].reshape(1,-1,4).numpy()
+                    grasp_pose_tensor = torch.tensor(grasp_pose)
+
+                    vecrot_grasp = rotate_vec_grasp(grasp_pose_tensor, rot_z)
+                    action_slice = (vecrot_grasp.reshape(-1, 4), None)
+                    history_list.append(action_slice)
+
+                render_pose(history_list, use_gui=True, \
+                            directory = None, obj_points = tmp_pc)
+
+
+
+if __name__ == '__main__':
+    main()
+
+                        
+                        

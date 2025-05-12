@@ -1,0 +1,45 @@
+defaults:
+  - base
+
+use_wandb: true
+
+training:
+  # ckpt: "logs/train/mj_peg_hole/ckpt_mj_traj.pth" 
+  eval_interval: 1
+  num_epochs: 2000
+
+env:
+  env_class: 'dmg_assembly'
+  num_eef: 2
+  dof: 7
+  max_episode_length: 50
+
+agent:
+  # agent_name: aloha
+  # agent_name: compaloha
+  agent_name: traj
+
+model:
+### use VDGCNN and transfer from pretrained model
+  hidden_dim: 256
+  encoder:
+    backbone_type: VDGCNN
+    backbone_args: 
+      num_layers: 7
+      preload_path: "pretrained/chairs.pt"
+
+data:
+  dataset:
+    num_points: 128
+    uniskills: ['grasp', 'contact']
+    
+    dataset_type: 'dexmimicgen'
+
+    is_obj_centric: True
+
+
+eval:
+  history_bid: 10
+
+
+
