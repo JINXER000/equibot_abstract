@@ -190,6 +190,7 @@ class DMGDataset(Dataset):
         traj_nums = 64
         interested_skills = cfg.uniskills
 
+
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
             if 'hdf5' not in  file_name:
@@ -213,77 +214,91 @@ class DMGDataset(Dataset):
                 gripper_actions = {'robot0': gripper_array[:, 0], 'robot1': gripper_array[:, 1]}
 
                 obj_pcds =  {}
+                obj_conditioned_skills = {}
                 for obj_pc_key in f['data/obj_pcd'].keys():
                     raw_vlen = f[f'data/obj_pcd/{obj_pc_key}'][()]
                     pc_list = [raw_vlen[i].reshape(-1, 3) for i in range(len(raw_vlen))]
-                    obj_pcds[obj_pc_key] = pc_list
+                    obj_name = obj_pc_key.split('_points')[0]
+                    obj_pcds[obj_name] = pc_list
+
+                    ## associate each skill with the corresponding object
+                    # related_skills = [skill_name for skill_name, skill_info in sg_info.items() if obj_name in skill_info['related_objs']]
+                    related_skills = []
+                    for skill_name, skill_info in sg_info.items():
+                        related_objs = [rel_obj.decode('utf-8') for rel_obj in skill_info['related_objs']]
+                        related_skills += [skill_name for rel_obj in related_objs if obj_name == rel_obj]
+                    obj_conditioned_skills[obj_name] = related_skills
 
                 for _ in range(traj_nums):
                     data_slice = {}
 
-                    for skill_name, skill_info in sg_info.items():
-                        pre_sg = get_sg(skill_info, 'pre_sg')
-                        cur_sg = get_sg(skill_info, 'cur_sg')
-                        eff_sg = get_sg(skill_info, 'eff_sg')
-                        
-                        if 'bimanual' in skill_name:
-                            pre_idx_list = pre_sg.graph['idx_list']
+                    for obj_name, obj_pc_list in obj_pcds.items(): ## now we only reuse obj encoder. pc is not concatenated. 
+                        for skill_name in obj_conditioned_skills[obj_name]:
+                            skill_info = sg_info[skill_name]
+                            pre_sg = get_sg(skill_info, 'pre_sg')
+                            cur_sg = get_sg(skill_info, 'cur_sg')
+                            eff_sg = get_sg(skill_info, 'eff_sg')
+                            
+                            if 'bimanual' in skill_name:
+                                pre_idx_list = pre_sg.graph['idx_list']
 
-                            pre_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][pre_idx_list], \
-                                rbt_actions['robot1_joint_pos'][pre_idx_list]], axis=1)
-                            qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1)
-                            data_slice['dual_jpose'] = pre_dual_jpose_all[qtraj_indice]
+                                pre_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][pre_idx_list], \
+                                    rbt_actions['robot1_joint_pos'][pre_idx_list]], axis=1)
+                                qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1)
+                                data_slice['dual_jpose'] = pre_dual_jpose_all[qtraj_indice]
 
-                            if 'eff_sg' in skill_info:
-                                eff_idx_list = eff_sg.graph['idx_list']
-                                eff_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][eff_idx_list], \
-                                    rbt_actions['robot1_joint_pos'][eff_idx_list]], axis=1)
-                                qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
-                                data_slice['eff_dual_jpose'] = eff_dual_jpose_all[qtraj_indice]
+                                if 'eff_sg' in skill_info:
+                                    eff_idx_list = eff_sg.graph['idx_list']
+                                    eff_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][eff_idx_list], \
+                                        rbt_actions['robot1_joint_pos'][eff_idx_list]], axis=1)
+                                    qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
+                                    data_slice['eff_dual_jpose'] = eff_dual_jpose_all[qtraj_indice]
 
-                        else:
-                            if 'grasp' in skill_name:
-                                if 'grasp' not in interested_skills:
-                                    continue
-                                essential_ids = skill_info['essential_ids'][()]
-                                skill_key = 'grasp'
-                                obj_name = skill_name.split('_', 1)[1]
-                                obj_pc = obj_pcds[f'{obj_name}_points'][pre_sg.graph['idx_list'][0]]
-                            elif 'contact' in skill_name:
-                                if 'contact' not in interested_skills:
-                                    continue
-                                essential_ids = None
-                                skill_key = 'contact'
-                                obj_name = skill_name.split('_contact_', 1)[1]
-                                obj_pc = obj_pcds[f'{obj_name}_points'][pre_sg.graph['idx_list'][0]]
-                            elif 'release' in skill_name:
-                                if 'release' not in interested_skills:
-                                    continue
-                                essential_ids = skill_info['essential_ids'][()]
-                                skill_key = 'release'
-                                obj_name = skill_name.split('_', 1)[1]
-                                obj_pc = obj_pcds[f'{obj_name}_points'][eff_sg.graph['idx_list'][0]]
                             else:
-                                raise NotImplementedError(f'Skill name {skill_name} not implemented!')
-                            
-                            
-                            obj_pc_n, obj_offset = self.centralize_cond_pc(obj_pc)
-                            obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
-                            
-                            rbt_name = skill_info['related_rbts'][0].decode('utf-8')
+                                if 'grasp' in skill_name:
+                                    if 'grasp' not in interested_skills:
+                                        continue
+                                    essential_ids = skill_info['essential_ids'][()]
+                                    skill_key = 'grasp'
+                                    # obj_name = skill_name.split('_', 1)[1]
+                                    obj_pc = obj_pc_list[pre_sg.graph['idx_list'][0]]
+                                elif 'contact' in skill_name:
+                                    if 'contact' not in interested_skills:
+                                        continue
+                                    essential_ids = None
+                                    skill_key = 'contact'
+                                    # obj_name = skill_name.split('_contact_', 1)[1]
+                                    obj_pc = obj_pc_list[cur_sg.graph['idx_list'][0]]
+                                elif 'release' in skill_name:
+                                    if 'release' not in interested_skills:
+                                        continue
+                                    essential_ids = skill_info['essential_ids'][()]
+                                    skill_key = 'release'
+                                    # obj_name = skill_name.split('_', 1)[1]
+                                    obj_pc = obj_pc_list[eff_sg.graph['idx_list'][-1]]
+                                else:
+                                    raise NotImplementedError(f'Skill name {skill_name} not implemented!')
+                                
+                                
+                                obj_pc_n, obj_offset = self.centralize_cond_pc(obj_pc)
+                                obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
+                                
+                                rbt_name = skill_info['related_rbts'][0].decode('utf-8')
 
-                            idx_list = cur_sg.graph['idx_list']
-                            choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
-                            eef_pos_list = rbt_actions[f'{rbt_name}_eef_pos'][choiced_ids]
-                            eef_quat_list = rbt_actions[f'{rbt_name}_eef_quat'][choiced_ids]
-                            eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
-                            normalized_eef_pos_list = list(map(self.centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
-                            normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
+                                idx_list = cur_sg.graph['idx_list']
+                                choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+                                eef_pos_list = rbt_actions[f'{rbt_name}_eef_pos'][choiced_ids]
+                                eef_quat_list = rbt_actions[f'{rbt_name}_eef_quat'][choiced_ids]
+                                eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
+                                normalized_eef_pos_list = list(map(self.centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
+                                normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
 
-                            gripper_list = gripper_actions[rbt_name][choiced_ids]
-                            data_slice[f'{skill_key}_{obj_name}_pc'] = obj_pc_tensor
-                            data_slice[f'{skill_key}_{obj_name}_eefpos'] = normalized_eef_pos_tensor
-                            data_slice[f'{skill_key}_{obj_name}_gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
+                                gripper_list = gripper_actions[rbt_name][choiced_ids]
+                                
+                                data_slice[f'{skill_name}:pc'] = obj_pc_tensor
+                                data_slice[f'{skill_name}:eefpos'] = normalized_eef_pos_tensor
+                                data_slice[f'{skill_name}:gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
+                                data_slice[f'{skill_name}:obj_name'] = str_to_ascii_tensor(obj_name)
 
                     data_list.append(data_slice)
         
@@ -291,12 +306,22 @@ class DMGDataset(Dataset):
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 file!')
 
+def str_to_ascii_tensor(text: str) -> torch.Tensor:
+    """将字符串转换为 ASCII 值的 torch.Tensor"""
+    ascii_values = [ord(char) for char in text]  # 获取每个字符的 ASCII 值
+    return torch.tensor(ascii_values, dtype=torch.int32)  # 使用 int32 存储
+
+def ascii_tensor_to_str(tensor: torch.Tensor) -> str:
+    """将 ASCII 值的 Tensor 还原为字符串"""
+    if tensor.dim() == 0:  # 处理单个数字（标量）的情况
+        return chr(int(tensor.item()))
+    return ''.join([chr(int(code)) for code in tensor.tolist()])
 
 def get_skill_names(np_obs):
     data_keys = list(np_obs.keys())
     skill_names = []
     for key in data_keys:
-        skill_name = "_".join(key.split('_')[:-1])
+        skill_name = key.split(':')[0]
         skill_names.append(skill_name)
     return set(skill_names)
 
@@ -327,8 +352,10 @@ def main(cfg):
                 if 'bimanual' in skill_name:
                     raise NotImplementedError('Bimanual skill is not implemented!')
                 
-                pc_vis_data = cpu_obs[skill_name+'_pc'][0]
-                grasp_vis_data = cpu_obs[skill_name+'_eefpos'][0]
+                pc_vis_data = cpu_obs[skill_name+':pc'][0]
+                grasp_vis_data = cpu_obs[skill_name+':eefpos'][0]
+                obj_name = ascii_tensor_to_str(cpu_obs[skill_name+':obj_name'][0])
+                print(f'obj_name: {obj_name}, skill_name: {skill_name}')
 
                 history_list = []
                 tmp_pc = pc_vis_data[0].reshape(-1, 3).numpy()
@@ -342,7 +369,8 @@ def main(cfg):
                     history_list.append(action_slice)
 
                 render_pose(history_list, use_gui=True, \
-                            directory = None, obj_points = tmp_pc)
+                            directory = None, obj_points = tmp_pc,
+                            robot_name = 'panda_dual')
 
 
 

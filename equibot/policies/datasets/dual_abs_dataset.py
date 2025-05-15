@@ -1,4 +1,4 @@
-from abstract_dataset import ALOHAPoseDataset, \
+from .abstract_dataset import ALOHAPoseDataset, \
     solve_pairwise_registration, VecDGCNN_att_frozen,\
     rotate_around_z, rotate_vec_grasp, rotate_observation,\
     to_tensor, render_pose

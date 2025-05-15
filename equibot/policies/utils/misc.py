@@ -52,12 +52,12 @@ def rotate_observation(np_obs, yaw_rotation):
 
     obs_rotated = np_obs.copy()
     for k, v in np_obs.items():
-        if 'pc' in k:
+        if k.endswith('pc'):
             pc_np = v
             rotated_pc = rotate_around_z(pc_np, yaw_rotation)
             obs_rotated[k] = rotated_pc
 
-        elif 'grasp' in k or 'eef_pos' in k:
+        elif k.endswith('eef_pos') or k.endswith('eef_pos'):
             grasp_np = v
 
             assert len(grasp_np.shape) == 4  # B, 1, 8, 4
