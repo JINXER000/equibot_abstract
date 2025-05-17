@@ -13,7 +13,8 @@ from equibot.policies.utils.constants import qpos_to_eepose
 # from equibot.envs.sim_mobile.utils.transformations import quat2mat
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH   
+from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, str_to_ascii_tensor, ascii_tensor_to_str, get_skill_names
+    
 
 
 import hydra
@@ -306,24 +307,6 @@ class DMGDataset(Dataset):
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 file!')
 
-def str_to_ascii_tensor(text: str) -> torch.Tensor:
-    """将字符串转换为 ASCII 值的 torch.Tensor"""
-    ascii_values = [ord(char) for char in text]  # 获取每个字符的 ASCII 值
-    return torch.tensor(ascii_values, dtype=torch.int32)  # 使用 int32 存储
-
-def ascii_tensor_to_str(tensor: torch.Tensor) -> str:
-    """将 ASCII 值的 Tensor 还原为字符串"""
-    if tensor.dim() == 0:  # 处理单个数字（标量）的情况
-        return chr(int(tensor.item()))
-    return ''.join([chr(int(code)) for code in tensor.tolist()])
-
-def get_skill_names(np_obs):
-    data_keys = list(np_obs.keys())
-    skill_names = []
-    for key in data_keys:
-        skill_name = key.split(':')[0]
-        skill_names.append(skill_name)
-    return set(skill_names)
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_assembly")
 def main(cfg):

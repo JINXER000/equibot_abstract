@@ -7,7 +7,8 @@ EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 def to_torch(batch, device):    return {k: v.to(device) for k, v in batch.items()}
 
 def to_tensor(obs):
-    return {k: torch.tensor(v).float() for k, v in obs.items()}
+    return {k: (torch.tensor(v).float() if not isinstance(v, torch.Tensor) else v) 
+            for k, v in obs.items()}
 
 def to_np(obs):
     for k, v in obs.items():
@@ -103,6 +104,13 @@ def get_dataset(cfg, mode="train"):
     elif agent_name == "compaloha" or agent_name == 'traj':
         from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
         return DualAbsDataset(cfg.data.dataset, mode)
+    elif agent_name == "traj":
+        from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
+        return DualAbsDataset(cfg.data.dataset, mode)
+    elif agent_name == "dmg":
+        from equibot.policies.datasets.dmg_dataset import DMGDataset
+        return DMGDataset(cfg.data.dataset, mode)
+
     else:
         from equibot.policies.datasets.dataset import BaseDataset
         return BaseDataset(cfg.data.dataset, mode)
@@ -124,6 +132,9 @@ def get_agent(agent_name):
     elif agent_name == "traj":
         from equibot.policies.agents.traj_agent import TrajAgent
         return TrajAgent
+    elif agent_name == "dmg":
+        from equibot.policies.agents.dmg_agent import DMGAgent
+        return DMGAgent
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
 
@@ -296,3 +307,24 @@ def origin_loss_scaling(vec_loss, scalar_loss):
 def manual_loss_scaling(vec_loss, scalar_loss, alpha):
     loss = alpha * vec_loss + (1 - alpha) * scalar_loss
     return loss
+
+
+### for dmg agent
+def str_to_ascii_tensor(text: str) -> torch.Tensor:
+    """将字符串转换为 ASCII 值的 torch.Tensor"""
+    ascii_values = [ord(char) for char in text]  # 获取每个字符的 ASCII 值
+    return torch.tensor(ascii_values, dtype=torch.int32)  # 使用 int32 存储
+
+def ascii_tensor_to_str(tensor: torch.Tensor) -> str:
+    """将 ASCII 值的 Tensor 还原为字符串"""
+    if tensor.dim() == 0:  # 处理单个数字（标量）的情况
+        return chr(int(tensor.item()))
+    return ''.join([chr(int(code)) for code in tensor.tolist()])
+
+def get_skill_names(cpu_obs):
+    data_keys = list(cpu_obs.keys())
+    skill_names = []
+    for key in data_keys:
+        skill_name = key.split(':')[0]
+        skill_names.append(skill_name)
+    return set(skill_names)
