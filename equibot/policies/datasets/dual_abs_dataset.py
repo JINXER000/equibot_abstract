@@ -1,7 +1,7 @@
 from .abstract_dataset import ALOHAPoseDataset, \
     solve_pairwise_registration, VecDGCNN_att_frozen,\
     rotate_around_z, rotate_vec_grasp, rotate_observation,\
-    to_tensor, render_pose
+    to_tensor
 import os
 import numpy as np
 import torch
@@ -270,6 +270,8 @@ class DualAbsDataset(ALOHAPoseDataset):
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):
+    from .abstract_dataset import render_pose
+    
     cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/mj_peg_hole/')
     test_dataset = DualAbsDataset(cfg.data.dataset, "test", force_process = True)
     num_workers = 0

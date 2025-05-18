@@ -71,23 +71,18 @@ class DMGAgent(object):
         return normed_pc_scale
 
 
-    def _init_multi_normalizers(self, n_skilldata_dict, n_pcdata_dict):
+    def _init_multi_normalizers(self, n_data_dict):
         all_normalizers = {}
         for skill_name in self.actor.skill_names:
             if 'bimanual' in skill_name:
-                jpose_normalizer = self.get_jpose_normalizer(n_skilldata_dict[f'{skill_name}:jpose'])
+                jpose_normalizer = self.get_jpose_normalizer(n_data_dict[f'{skill_name}:jpose'])
                 all_normalizers[f'{skill_name}:jpose'] = jpose_normalizer
                 continue
 
             ## pc normalizer
-            obj_name = self.actor.skill_obj_mapping[skill_name]
-            if f'{obj_name}:pc' not in all_normalizers:
-                pc_normalizer = self.get_xyz_normalizer(n_pcdata_dict[f'{obj_name}:pc'])
-                all_normalizers[f'{obj_name}:pc'] = pc_normalizer
-                all_normalizers[f'{obj_name}:pc_scale'] = self.get_pc_scale(n_pcdata_dict[f'{obj_name}:pc'], pc_normalizer.stats["max"].max())
-
-            else:
-                pc_normalizer = all_normalizers[f'{obj_name}:pc']
+            pc_normalizer = self.get_xyz_normalizer(n_data_dict[f'{skill_name}:pc'])
+            all_normalizers[f'{skill_name}:pc'] = pc_normalizer
+            all_normalizers[f'{skill_name}:pc_scale'] = self.get_pc_scale(n_data_dict[f'{skill_name}:pc'], pc_normalizer.stats["max"].max())
 
             ## skill normalizer
             grasp_normalizer = Normalizer(
@@ -98,7 +93,7 @@ class DMGAgent(object):
             )
             all_normalizers[f'{skill_name}:eefpos'] = grasp_normalizer
 
-            gripper_normalizer = Normalizer(n_skilldata_dict[f'{skill_name}:gripper'], symmetric=True, indices=[[0]])
+            gripper_normalizer = Normalizer(n_data_dict[f'{skill_name}:gripper'], symmetric=True, indices=[[0]])
             all_normalizers[f'{skill_name}:gripper'] = gripper_normalizer
 
 
@@ -109,8 +104,8 @@ class DMGAgent(object):
     def train(self, training=True):
         self.actor.nets.train(training)
 
-    def learn_bimanual_traj(self, skill_name, n_skilldata_dict):
-        scalar_dual_jpose = n_skilldata_dict[skill_name]
+    def learn_bimanual_traj(self, skill_name, n_data_dict):
+        scalar_dual_jpose = n_data_dict[skill_name]
         batch_size = scalar_dual_jpose.shape[0]
         timesteps = torch.randint(
             0,
@@ -128,14 +123,12 @@ class DMGAgent(object):
         return scalar_loss
 
     ## TODO: geodest distance for rotation, and L1 distance for translation
-    def learn_unimanual_traj(self, skill_name, n_skilldata_dict, pc_feature_dict):
-        obj_name = self.actor.skill_obj_mapping[skill_name]
-
+    def learn_unimanual_traj(self, skill_name, n_data_dict):
         ## cached pc feature
-        obs_vec, center, scale = pc_feature_dict[f'{obj_name}:pc']
+        obs_vec, center, scale = self.actor.proc_pc(n_data_dict[f'{skill_name}:pc'], skill_name)
 
-        eefpos = n_skilldata_dict[f'{skill_name}:eefpos']
-        gripper = n_skilldata_dict[f'{skill_name}:gripper']
+        eefpos = n_data_dict[f'{skill_name}:eefpos']
+        gripper = n_data_dict[f'{skill_name}:gripper']
 
         ## proc grasp
         gt_eefpos_z = self.actor.proc_eef(eefpos, f'{skill_name}:eefpos', center, scale)
@@ -150,7 +143,6 @@ class DMGAgent(object):
             (batch_size,),
             device=self.device,
         ).long()
-
         
         ## z_t
         ## x_t = add_noise(x_0, z_t)
@@ -181,46 +173,43 @@ class DMGAgent(object):
         ###### Load data, preprocessing using mask ######
         batch = to_torch(batch, self.device)
 
-        n_skilldata_dict = {}
-        n_pcdata_dict = {}
+        n_data_dict = {}
         for skill_name in self.actor.skill_names:
             if 'bimanual' in skill_name:
-                n_skilldata_dict[f'{skill_name}:jpose'] = batch[skill_name + ':jpose']
+                n_data_dict[f'{skill_name}:jpose'] = batch[skill_name + ':jpose']
                 continue
 
-            obj_name = self.actor.skill_obj_mapping[skill_name]
-            if f'{obj_name}_pc' not in n_pcdata_dict:
-                obj_pc = batch[f'{skill_name}:pc']
-                n_pcdata_dict[f'{obj_name}:pc'] = obj_pc.repeat(1, self.obs_horizon, 1, 1)
+            obj_pc = batch[f'{skill_name}:pc']
+            n_data_dict[f'{skill_name}:pc'] = obj_pc.repeat(1, self.obs_horizon, 1, 1)
 
-            n_skilldata_dict[f'{skill_name}:eefpos'] = batch[f'{skill_name}:eefpos']
-            n_skilldata_dict[f'{skill_name}:gripper'] = batch[f'{skill_name}:gripper']
+            n_data_dict[f'{skill_name}:eefpos'] = batch[f'{skill_name}:eefpos']
+            n_data_dict[f'{skill_name}:gripper'] = batch[f'{skill_name}:gripper']
 
         
         if self.all_normalizers is None:
-            self.all_normalizers = self._init_multi_normalizers(n_skilldata_dict, n_pcdata_dict)
+            self.all_normalizers = self._init_multi_normalizers(n_data_dict)
             self.actor.all_normalizers = self.all_normalizers
 
     ######## train the pred net ########
         metrics = {}
-        ### proc pc
-        pc_feature_dict = {}
-        for obj_name in self.actor.objects:
-            pc_key = f'{obj_name}:pc'
-            pc_feature_dict[pc_key] = self.actor.proc_pc(n_pcdata_dict[pc_key], obj_name)
+        # ### proc pc
+        # pc_feature_dict = {}
+        # for obj_name in self.actor.objects:
+        #     pc_key = f'{obj_name}:pc'
+        #     pc_feature_dict[pc_key] = self.actor.proc_pc(n_data_dict[pc_key], obj_name)
 
-            obs_vec, _, _ = pc_feature_dict[pc_key]
-            metrics[f'{obj_name}_obsv'] = np.linalg.norm(
-                obs_vec.detach().cpu().numpy(), axis=1
-            ).mean()
+        #     obs_vec, _, _ = pc_feature_dict[pc_key]
+        #     metrics[f'{obj_name}_obsv'] = np.linalg.norm(
+        #         obs_vec.detach().cpu().numpy(), axis=1
+        #     ).mean()
         
        
         for skill_name in self.actor.skill_names:
             if 'bimanual' in skill_name:
-                scalar_loss = self.learn_bimanual_traj(skill_name, n_skilldata_dict)
+                scalar_loss = self.learn_bimanual_traj(skill_name, n_data_dict)
                 metrics[f'{skill_name}_scalar_loss'] = scalar_loss
             else:
-                vec_loss, scalar_loss = self.learn_unimanual_traj(skill_name, n_skilldata_dict, pc_feature_dict)
+                vec_loss, scalar_loss = self.learn_unimanual_traj(skill_name, n_data_dict)
                 metrics[f'{skill_name}_vec_loss'] = vec_loss
                 metrics[f'{skill_name}_scalar_loss'] = scalar_loss
 
@@ -269,16 +258,15 @@ class DMGAgent(object):
             ema_model=self.actor.ema.averaged_model.state_dict(),
         )
 
-        for obj_name in self.actor.obj_names:
-            state_dict[f"{obj_name}:pc_scale"] = self.all_normalizers[f"{obj_name}:pc_scale"]
-            state_dict[f"{obj_name}:pc_normalizer"] = self.all_normalizers[f"{obj_name}:pc"].state_dict()
-        
+       
         for skill_name in self.actor.skill_names:
             if 'bimanual' in skill_name:
                 state_dict[f"{skill_name}:jpose_normalizer"] = self.all_normalizers[f"{skill_name}:jpose"].state_dict()
             else:
                 state_dict[f"{skill_name}:eefpos_normalizer"] = self.all_normalizers[f"{skill_name}:eefpos"].state_dict()
                 state_dict[f"{skill_name}:gripper_normalizer"] = self.all_normalizers[f"{skill_name}:gripper"].state_dict()
+                state_dict[f"{skill_name}:pc_scale"] = self.all_normalizers[f"{skill_name}:pc_scale"]
+                state_dict[f"{skill_name}:pc_normalizer"] = self.all_normalizers[f"{skill_name}:pc"].state_dict()
 
         torch.save(state_dict, save_path)
 
@@ -288,9 +276,6 @@ class DMGAgent(object):
         state_dict = torch.load(load_path_full)
         
         self.all_normalizers = {}
-        for obj_name in self.actor.obj_names:
-            self.all_normalizers[f"{obj_name}:pc_scale"] = state_dict[f"{obj_name}:pc_scale"]
-            self.all_normalizers[f"{obj_name}:pc"] = Normalizer(state_dict[f"{obj_name}:pc_normalizer"])
 
         for skill_name in self.actor.skill_names:
             if 'bimanual' in skill_name:
@@ -298,6 +283,8 @@ class DMGAgent(object):
             else:
                 self.all_normalizers[f"{skill_name}:eefpos"] = state_dict[f"{skill_name}:eefpos_normalizer"]
                 self.all_normalizers[f"{skill_name}:gripper"] = state_dict[f"{skill_name}:gripper_normalizer"]
+                self.all_normalizers[f"{skill_name}:pc_scale"] = state_dict[f"{skill_name}:pc_scale"]
+                self.all_normalizers[f"{skill_name}:pc"] = Normalizer(state_dict[f"{skill_name}:pc_normalizer"])
         self.actor.all_normalizers = self.all_normalizers
 
  
@@ -317,9 +304,9 @@ class DMGAgent(object):
         self.train(False)
         random_yaw = np.random.uniform(-np.pi, np.pi)
         np_obs= rotate_observation(obs, random_yaw)
-
         cpu_obs = to_tensor(np_obs)
         gpu_obs = to_torch(cpu_obs, self.device)
+
         # gpu_obs = obs
 
         action_dict, eval_metrics, denoise_history = self.actor(gpu_obs, skill_id=skill_id)

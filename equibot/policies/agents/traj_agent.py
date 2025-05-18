@@ -304,7 +304,7 @@ class TrajAgent(object):
         
 
     ## call this function during evaluation (only during training)
-    def act(self, obs, history_bid = -1):
+    def eval_with_rotation(self, obs, history_bid = -1):
         self.train(False)
         random_yaw = np.random.uniform(-np.pi, np.pi)
         np_obs= rotate_observation(obs, random_yaw)

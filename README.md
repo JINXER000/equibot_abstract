@@ -160,6 +160,11 @@ CUDA_VISIBLE_DEVICES=1 python -m equibot.policies.train_traj --config-name mj_pe
     prefix=mj_peg_hole \
     data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/
 ```
+
+CUDA_VISIBLE_DEVICES=0 python -m equibot.policies.train_skills --config-name dmg_assembly \
+    prefix=dmg_assembly \
+    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
+```
 ### Evaluation
 
 The commands below evaluate the trained EquiBot policy on the four different setups mentioned in the paper: `Original`, `R+Su`, `R+Sn`, and `R+Sn+P`. To run these evaluations for the DP baseline, replace all occurrences of `equibot` to`dp`. For the log directory, fill `[log_dir]` with the absolute path to the log directory. By default, this directory is `./log`.

@@ -85,7 +85,7 @@ class DMGPolicy(nn.Module):
                 scalar_input_dim= 1,
                 diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
                 cond_predict_scale=True,
-                down_dims=[64, 128, 256],
+                # down_dims=[64, 128, 256],
                 )
         
         self.nets = nn.ModuleDict(net_dict)
@@ -176,17 +176,18 @@ class DMGPolicy(nn.Module):
                 )
         return unnormed_gripper
 
-    def proc_pc(self, pc, obj_name, ema_nets = None):
-        pc_key = f'{obj_name}:pc'
+    def proc_pc(self, pc, skill_name, ema_nets = None):
+        obj_name = self.skill_obj_mapping[skill_name]
+        pc_key = f'{skill_name}:pc'
         pc = self.normalize_from_key(pc_key, pc)
         batch_size = pc.shape[0]
 
         ## in training
         if ema_nets is None:
             encoder_handle = self.nets[f"{obj_name}_encoder"]
-            feat_dict = encoder_handle(pc, target_norm=self.all_normalizers[f'{obj_name}:pc_scale'])
+            feat_dict = encoder_handle(pc, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
         else: # in inference
-            feat_dict = ema_nets[f"{obj_name}_encoder"](pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[f'{obj_name}:pc_scale'])
+            feat_dict = ema_nets[f"{obj_name}_encoder"](pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
         
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
@@ -262,13 +263,13 @@ class DMGPolicy(nn.Module):
 
         return action_dict, eval_metrics
     
-    def pred_unimaual_traj(self, skill_name, obj_name, agent_obs, gt_batch = None):
-        pc_data = agent_obs[f'{obj_name}:pc']
+    def pred_unimaual_traj(self, skill_name, agent_obs, gt_batch = None):
+        pc_data = agent_obs[f'{skill_name}:pc']
         batch_size =  pc_data.shape[0]
 
         ema_nets = self.ema.averaged_model
 
-        obs_vec, center, scale = self.proc_pc(pc_data, obj_name, ema_nets = ema_nets)
+        obs_vec, center, scale = self.proc_pc(pc_data, skill_name, ema_nets = ema_nets)
 
         ##### start denoising #####
 
@@ -346,9 +347,8 @@ class DMGPolicy(nn.Module):
                 action_dict, eval_metrics = self.pred_bimanual_jposes(skill_name, batch_size=batch_size, gt_batch=batch)
             else:
                 pc_data = batch[f'{skill_name}:pc'].repeat(1, self.obs_horizon, 1, 1)
-                obj_name = self.skill_obj_mapping[skill_name]
-                agent_obs = {f'{obj_name}:pc': pc_data}
-                action_dict, eval_metrics = self.pred_unimaual_traj(skill_name, obj_name, agent_obs, gt_batch=batch)
+                agent_obs = {f'{skill_name}:pc': pc_data}
+                action_dict, eval_metrics = self.pred_unimaual_traj(skill_name, agent_obs, gt_batch=batch)
             action_dict_all.update(action_dict)
             eval_metrics_all.update(eval_metrics)
 

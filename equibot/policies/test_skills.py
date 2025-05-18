@@ -49,7 +49,7 @@ def run_eval(
 
     # predict actions
     st = time.time()
-    unnormed_history, metrics = agent.eval_with_rotation(batch, skill_id=history_bid)
+    unnormed_history, metrics = agent.eval_with_rotation(batch, history_bid)
     # print(f"Inference time: {time.time() - st:.3f}s")
 
     if vis and history_bid >=0:

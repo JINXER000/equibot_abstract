@@ -12,7 +12,7 @@ from glob import glob
 
 from equibot.policies.utils.misc import EQUIBOT_PATH, get_agent, get_dataset
 
-from test_skills import run_eval
+from .test_skills import run_eval
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):
@@ -21,28 +21,6 @@ def main(cfg):
 
     # initialize parameters
     batch_size = cfg.training.batch_size
-
-
-    # wandb
-    if cfg.use_wandb:
-        log_dir = os.getcwd()
-        cur_date = os.popen("date +'%Y-%m-%d_%H-%M-%S'").read().strip()
-        log_dir = os.path.join(log_dir, f"{cur_date}", 'checkpoints')
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        wandb_config = omegaconf.OmegaConf.to_container(
-            cfg, resolve=True, throw_on_missing=False
-        )
-        wandb.init(
-            entity=cfg.wandb.entity,
-            project=cfg.wandb.project,
-            tags=["train"],
-            name=cfg.prefix,
-            settings=wandb.Settings(code_dir="."),
-            config=wandb_config,
-        )
-    else:
-        log_dir = None
 
     train_dataset = get_dataset(cfg, "train")
     num_workers = cfg.data.dataset.num_workers
@@ -67,6 +45,26 @@ def main(cfg):
     else:
         start_epoch_ix = 0
 
+    # wandb
+    if cfg.use_wandb:
+        log_dir = os.getcwd()
+        cur_date = os.popen("date +'%Y-%m-%d_%H-%M-%S'").read().strip()
+        log_dir = os.path.join(log_dir, f"{cur_date}", 'checkpoints')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        wandb_config = omegaconf.OmegaConf.to_container(
+            cfg, resolve=True, throw_on_missing=False
+        )
+        wandb.init(
+            entity=cfg.wandb.entity,
+            project=cfg.wandb.project,
+            tags=["train"],
+            name=cfg.prefix,
+            settings=wandb.Settings(code_dir="."),
+            config=wandb_config,
+        )
+    else:
+        log_dir = None
 
     # train loop
     # min_eval_rot_error = 1e9
@@ -97,7 +95,7 @@ def main(cfg):
             )
             and epoch_ix > 0
         ):
-            eval_metrics = run_eval(agent = agent, vis= False, batch= batch, history_bid= -1 )
+            _, eval_metrics = run_eval(agent = agent, vis= False, batch= batch, history_bid= -1 )
             if cfg.use_wandb:
                 wandb.log(
                     {"eval/" + k: v for k, v in eval_metrics.items()},

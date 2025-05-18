@@ -1,10 +1,10 @@
 defaults:
   - base
 
-use_wandb: false 
+use_wandb: true 
 
 training:
-  ckpt: "logs/train/mj_peg_hole/ckpt_mj_traj_action.pth" 
+  # ckpt: "logs/train/mj_peg_hole/ckpt_mj_traj_action.pth" 
   eval_interval: 1
   num_epochs: 2000
 
