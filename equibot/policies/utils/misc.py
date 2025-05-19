@@ -7,8 +7,7 @@ EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 def to_torch(batch, device):    return {k: v.to(device) for k, v in batch.items()}
 
 def to_tensor(obs):
-    return {k: (torch.tensor(v).float() if not isinstance(v, torch.Tensor) else v) 
-            for k, v in obs.items()}
+    return {k: torch.tensor(v).float() for k, v in obs.items()}
 
 def to_np(obs):
     for k, v in obs.items():
@@ -58,7 +57,7 @@ def rotate_observation(np_obs, yaw_rotation):
             rotated_pc = rotate_around_z(pc_np, yaw_rotation)
             obs_rotated[k] = rotated_pc
 
-        elif k.endswith('eef_pos') or k.endswith('eef_pos'):
+        elif k.endswith('grasp')  or k.endswith('eefpos'):
             grasp_np = v
 
             assert len(grasp_np.shape) == 4  # B, 1, 8, 4
@@ -95,25 +94,25 @@ def get_env_class(env_name):
     else:
         raise ValueError()
 
-
 def get_dataset(cfg, mode="train"):
-    agent_name = cfg.agent.agent_name
-    if agent_name == "aloha":
+    dataset_type = cfg.data.dataset.dataset_type
+    if dataset_type == "hdf5_mini":
         from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
         return ALOHAPoseDataset(cfg.data.dataset, mode)
-    elif agent_name == "compaloha" or agent_name == 'traj':
+    elif dataset_type == "dual_hdf5_mini":
         from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
         return DualAbsDataset(cfg.data.dataset, mode)
-    elif agent_name == "traj":
+    elif dataset_type == "mj_insertion_pred":
         from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
         return DualAbsDataset(cfg.data.dataset, mode)
-    elif agent_name == "dmg":
+    elif dataset_type == "dexmimicgen" or dataset_type == "dexmimicgen_leftright":
         from equibot.policies.datasets.dmg_dataset import DMGDataset
         return DMGDataset(cfg.data.dataset, mode)
 
     else:
         from equibot.policies.datasets.dataset import BaseDataset
         return BaseDataset(cfg.data.dataset, mode)
+
 
 
 def get_agent(agent_name):
@@ -137,6 +136,8 @@ def get_agent(agent_name):
         return DMGAgent
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
+
+
 
 # impl from: https://pytorch3d.readthedocs.io/en/latest/_modules/pytorch3d/transforms/rotation_conversions.html#rotation_6d_to_matrix
 def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
