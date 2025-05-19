@@ -350,8 +350,9 @@ class TrajPolicy(nn.Module):
 
         action_dict_all = {}
         eval_metrics_all = {}
+        agent_obs = {}
         for side in ["left", "right"]:
-            # pc_data = batch[side + '_pc'].repeat(1, self.obs_horizon, 1, 1)
+            agent_obs[side + '_pc'] = batch[side + '_pc']
             action_dict, eval_metrics = self.pred_unimaual_traj(side, batch, gt_batch=batch)
             action_dict_all.update(action_dict)
             eval_metrics_all.update(eval_metrics)

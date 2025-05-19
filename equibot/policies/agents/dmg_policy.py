@@ -264,7 +264,7 @@ class DMGPolicy(nn.Module):
         return action_dict, eval_metrics
     
     def pred_unimaual_traj(self, skill_name, agent_obs, gt_batch = None):
-        pc_data = agent_obs[f'{skill_name}:pc']
+        pc_data = agent_obs[f'{skill_name}:pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
 
         ema_nets = self.ema.averaged_model
@@ -346,7 +346,7 @@ class DMGPolicy(nn.Module):
                 batch_size = batch[f'{skill_name}:jpose'].shape[0]
                 action_dict, eval_metrics = self.pred_bimanual_jposes(skill_name, batch_size=batch_size, gt_batch=batch)
             else:
-                pc_data = batch[f'{skill_name}:pc'].repeat(1, self.obs_horizon, 1, 1)
+                pc_data = batch[f'{skill_name}:pc']
                 agent_obs = {f'{skill_name}:pc': pc_data}
                 action_dict, eval_metrics = self.pred_unimaual_traj(skill_name, agent_obs, gt_batch=batch)
             action_dict_all.update(action_dict)
