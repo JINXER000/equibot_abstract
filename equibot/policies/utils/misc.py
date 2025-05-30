@@ -192,6 +192,19 @@ def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
     transpose_matrix = matrix.transpose(-1, -2)
     return transpose_matrix[..., :2, :].clone().reshape(batch_dim + (6,))
 
+def geodestDist(Rgts, Rps):
+    # Compute Rgts^T @ Rps in batch
+    Rds = torch.matmul(Rgts.transpose(-1, -2), Rps)
+    
+    # Compute trace for each rotation matrix in batch
+    Rt = Rds.diagonal(dim1=-2, dim2=-1).sum(-1)
+    
+    # Clamp for numerical stability and compute theta
+    theta = torch.acos(torch.clamp(0.5 * (Rt - 1), -1 + 1e-6, 1 - 1e-6))
+    
+    return theta
+
+
 def convert_trans_to_vec(grasp_trans_arr, has_eff=False):
     batch_size, horizon, _, _ = grasp_trans_arr.shape
     grasp_xyz = grasp_trans_arr[:, :, :3, 3].reshape(batch_size, horizon, 1, 3)  # B, H, 1, 3

@@ -201,7 +201,7 @@ class TrajAgent(object):
             scalar_cond=None,
         )
 
-        right_vec_noise_pred, righ_tgripper_noise_pred = self.actor.right_noise_pred_net_handle(
+        right_vec_noise_pred, righ_gripper_noise_pred = self.actor.right_noise_pred_net_handle(
             noisy_right_grasp,
             timesteps,
             scalar_sample = noisy_right_gripper, 
@@ -218,7 +218,7 @@ class TrajAgent(object):
         metrics["right_vec_loss"] = right_vec_loss
         left_scalar_loss = nn.functional.mse_loss(left_gripper_noise_pred, left_gripper_noise)
         metrics["left_scalar_loss"] = left_scalar_loss
-        right_scalar_loss = nn.functional.mse_loss(righ_tgripper_noise_pred, right_gripper_noise)
+        right_scalar_loss = nn.functional.mse_loss(righ_gripper_noise_pred, right_gripper_noise)
         metrics["right_scalar_loss"] = right_scalar_loss
 
         joint_scalar_loss = nn.functional.mse_loss(scalar_noise_pred, jpose_noise)
