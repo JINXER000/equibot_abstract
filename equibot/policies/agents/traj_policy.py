@@ -11,7 +11,8 @@ from equibot.policies.utils.equivariant_diffusion.unconditional_mlp import Uncon
 import numpy as np
 
 from equibot.policies.utils.misc import to_torch, \
-    convert_trans_to_vec, convert_vec_to_trans, ActionSlice
+    convert_trans_to_vec, convert_vec_to_trans, ActionSlice,\
+    rotation_6d_to_matrix, geodestDist
 
 
     
@@ -334,13 +335,20 @@ class TrajPolicy(nn.Module):
         ## calc metrics if in training
         else:
             gt_grasp_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(gt_batch[side+"_grasp"], has_eff=has_eff)
-            gt_grasp_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
+            # gt_grasp_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
 
-            xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
-            rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
-            eval_metrics[side+"_xyz_mse"] = xyz_mse
-            eval_metrics[side+"_rot_mse"] = rot_mse
+            # xyz_mse = torch.nn.functional.mse_loss(unnormed_grasp_xyz, gt_grasp_xyz)
+            # rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_grasp_rot6d)
+            # eval_metrics[side+"_xyz_mse"] = xyz_mse
+            # eval_metrics[side+"_rot_mse"] = rot_mse
+            xyz_l1 = torch.nn.functional.l1_loss(unnormed_grasp_xyz, gt_grasp_xyz)
+            eval_metrics[f"{side}:xyz_l1"] = xyz_l1
 
+            gt_eefpos_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
+            gt_Rs = rotation_6d_to_matrix(gt_eefpos_rot6d)
+            pred_Rs = rotation_6d_to_matrix(rot6d_batch)
+            diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
+            eval_metrics[f"{side}:rot_diff"] = diff_theta * 180 / torch.pi
         return action_dict, eval_metrics
 
     def forward(self, batch, history_bid=-1):

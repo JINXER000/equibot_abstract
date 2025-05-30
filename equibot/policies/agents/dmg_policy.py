@@ -11,7 +11,8 @@ from equibot.policies.utils.equivariant_diffusion.unconditional_mlp import Uncon
 import numpy as np
 
 from equibot.policies.utils.misc import to_torch, \
-    convert_trans_to_vec, convert_vec_to_trans, ActionSlice
+    convert_trans_to_vec, convert_vec_to_trans, ActionSlice,\
+    rotation_6d_to_matrix, geodestDist
 
 
     
@@ -324,12 +325,19 @@ class DMGPolicy(nn.Module):
         ## calc metrics if in training
         else:
             gt_eefpos_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(gt_batch[f"{skill_name}:eefpos"])
-            gt_eefpos_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
 
-            xyz_mse = torch.nn.functional.mse_loss(unnormed_eefpos_xyz, gt_eefpos_xyz)
-            rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_eefpos_rot6d)
-            eval_metrics[f"{skill_name}:xyz_mse"] = xyz_mse
-            eval_metrics[f"{skill_name}:rot_mse"] = rot_mse
+            xyz_l1 = torch.nn.functional.l1_loss(unnormed_eefpos_xyz, gt_eefpos_xyz)
+            eval_metrics[f"{skill_name}:xyz_l1"] = xyz_l1
+
+            gt_eefpos_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
+            gt_Rs = rotation_6d_to_matrix(gt_eefpos_rot6d)
+            pred_Rs = rotation_6d_to_matrix(rot6d_batch)
+            diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
+            eval_metrics[f"{skill_name}:rot_diff"] = diff_theta * 180 / torch.pi
+            # xyz_mse = torch.nn.functional.mse_loss(unnormed_eefpos_xyz, gt_eefpos_xyz)
+            # rot_mse = torch.nn.functional.mse_loss(rot6d_batch, gt_eefpos_rot6d)
+            # eval_metrics[f"{skill_name}:xyz_mse"] = xyz_mse
+            # eval_metrics[f"{skill_name}:rot_mse"] = rot_mse
 
         return action_dict, eval_metrics
 
