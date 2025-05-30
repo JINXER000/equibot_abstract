@@ -17,11 +17,7 @@ from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_vec
     
 import hydra
 
-# import sys
-# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-# # sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-# # sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
-# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+
 
 
 
@@ -285,7 +281,8 @@ class DMGDataset(Dataset):
                                 
                                 rbt_name = skill_info['related_rbts'][0].decode('utf-8')
 
-                                idx_list = cur_sg.graph['idx_list']
+                                # idx_list = cur_sg.graph['idx_list']
+                                idx_list = skill_info['extended_ids'][()]
                                 choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
                                 eef_pos_list = rbt_actions[f'{rbt_name}_eef_pos'][choiced_ids]
                                 eef_quat_list = rbt_actions[f'{rbt_name}_eef_quat'][choiced_ids]
@@ -309,7 +306,13 @@ class DMGDataset(Dataset):
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_assembly")
 def main(cfg):
-    test_dataset = DMGDataset(cfg.data.dataset, "test", force_process = True)
+    import sys
+    sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
+    # sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
+    # sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
+    from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+
+    test_dataset = DMGDataset(cfg.data.dataset, "test", force_process = False)
     num_workers = 0
     batch_size = 1
     test_loader = torch.utils.data.DataLoader(

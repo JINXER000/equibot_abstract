@@ -95,7 +95,8 @@ class pddl_wrapper(object):
                 action_slice.data[k] = self.dataset.decentralize_grasp(action_slice.data[k], offset_dict[k], **kwargs)
         return history
     
-    def decentralize_action(self, action_dict, offset_dict):
+    def decentralize_action(self, action_dict_c, offset_dict):
+        action_dict = action_dict_c.copy()
         for k, v in offset_dict.items():
             action_dict[k] = self.dataset.decentralize_grasp(action_dict[k], offset_dict[k])
         return action_dict
@@ -154,14 +155,27 @@ class pddl_wrapper(object):
             action_w = action_c
         return action_w
 
-    def gen_objcentric_traj(self, side, obj, sk, agent_obs):
+    def gen_objcentric_traj(self, obs_key, agent_obs):
+
+        def revise_key(action_output, key_mapping):
+
+            for origin_k, revised_k in key_mapping:
+                action_output = {
+                    key.replace(origin_k, revised_k): value for key, value in action_output.items()
+                }
+            return action_output
+
         obs_tensor = to_tensor(agent_obs)
         obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric)
         obs_c = to_tensor(obs_c)
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
-        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(side, obs_gpu)
+        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(obs_key, obs_gpu)
 
+        key_mapping = [('grasp_piece_1:','left_'),('eefpos','grasp'),\
+                       ('grasp_piece_2:','right_'), ('piece_1_contact_base:','left_')]
+        action_c = revise_key(action_c, key_mapping)
+        offset_dict = revise_key(offset_dict, key_mapping)
         ## decentralize the final action
         if offset_dict is not None:
             action_w = self.decentralize_action(action_c, offset_dict)

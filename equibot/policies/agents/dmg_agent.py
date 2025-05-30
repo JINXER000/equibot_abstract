@@ -279,17 +279,17 @@ class DMGAgent(object):
 
         for skill_name in self.actor.skill_names:
             if 'bimanual' in skill_name:
-                self.all_normalizers[f"{skill_name}:jpose"] = state_dict[f"{skill_name}:jpose_normalizer"]
+                self.all_normalizers[f"{skill_name}:jpose"] = Normalizer(state_dict[f"{skill_name}:jpose_normalizer"])
             else:
-                self.all_normalizers[f"{skill_name}:eefpos"] = state_dict[f"{skill_name}:eefpos_normalizer"]
-                self.all_normalizers[f"{skill_name}:gripper"] = state_dict[f"{skill_name}:gripper_normalizer"]
+                self.all_normalizers[f"{skill_name}:eefpos"] =Normalizer(state_dict[f"{skill_name}:eefpos_normalizer"])
+                self.all_normalizers[f"{skill_name}:gripper"] = Normalizer(state_dict[f"{skill_name}:gripper_normalizer"])
                 self.all_normalizers[f"{skill_name}:pc_scale"] = state_dict[f"{skill_name}:pc_scale"]
                 self.all_normalizers[f"{skill_name}:pc"] = Normalizer(state_dict[f"{skill_name}:pc_normalizer"])
         self.actor.all_normalizers = self.all_normalizers
 
- 
-        for net_key in self.actor.nets:
-            del self.actor.nets[net_key]
+        # net_keys = list(self.actor.nets.keys())
+        # for net_key in net_keys:
+        #     del self.actor.nets[net_key]
         self.actor.load_state_dict(self.fix_checkpoint_keys(state_dict["actor"]))
         self.actor._init_torch_compile()
 
