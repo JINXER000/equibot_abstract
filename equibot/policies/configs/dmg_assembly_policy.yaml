@@ -1,0 +1,51 @@
+defaults:
+  - base
+
+use_wandb: true
+
+training:
+  eval_interval: 10
+  num_epochs: 2000
+
+env:
+  env_class: 'dmg_assembly'
+  num_eef: 2
+  dof: 10
+  max_episode_length: 50
+
+agent:
+  agent_name: eefequibot ## instead of outputing eef velocity, output eef pose
+
+model:
+  ac_mode: abs
+# ## use vec_pointnet and train from scratch
+#   hidden_dim: 32
+#   encoder:
+#     backbone_type: vn_pointnet
+#     backbone_args: 
+#       num_layers: 4
+#       preload_path: 'None' 
+
+### use VDGCNN and transfer from pretrained model
+  hidden_dim: 256
+
+  obs_horizon: 2
+  
+  encoder:
+    backbone_type: VDGCNN
+    backbone_args: 
+      num_layers: 7
+      preload_path: "pretrained/chairs.pt"
+
+data:
+  dataset:
+    num_points: 1024
+    dataset_type: 'dmg_policy'
+
+
+
+eval:
+  history_bid: 10
+
+
+

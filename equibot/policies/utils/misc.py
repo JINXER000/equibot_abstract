@@ -95,6 +95,9 @@ def get_env_class(env_name):
         raise ValueError()
 
 def get_dataset(cfg, mode="train"):
+    if 'dataset_type' not in cfg.data.dataset:
+        from equibot.policies.datasets.dataset import BaseDataset
+        return BaseDataset(cfg.data.dataset, mode)
     dataset_type = cfg.data.dataset.dataset_type
     if dataset_type == "hdf5_mini":
         from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
@@ -105,13 +108,14 @@ def get_dataset(cfg, mode="train"):
     elif dataset_type == "mj_insertion_pred":
         from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
         return DualAbsDataset(cfg.data.dataset, mode)
-    elif dataset_type == "dexmimicgen" or dataset_type == "dexmimicgen_leftright":
+    elif dataset_type == "dexmimicgen":
         from equibot.policies.datasets.dmg_dataset import DMGDataset
         return DMGDataset(cfg.data.dataset, mode)
-
+    elif dataset_type == "dmg_policy":
+        from equibot.policies.datasets.dmg_policy_dataset import DMGPolicyDataset
+        return DMGPolicyDataset(cfg.data.dataset, mode)
     else:
-        from equibot.policies.datasets.dataset import BaseDataset
-        return BaseDataset(cfg.data.dataset, mode)
+        raise ValueError(f"Dataset type [{dataset_type}] not supported.")
 
 
 
@@ -134,6 +138,9 @@ def get_agent(agent_name):
     elif agent_name == "dmg":
         from equibot.policies.agents.dmg_agent import DMGAgent
         return DMGAgent
+    elif agent_name == "eefequibot":
+        from equibot.policies.agents.eefequibot_agent import EefEquiBotAgent
+        return EefEquiBotAgent
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
 
@@ -342,3 +349,11 @@ def get_skill_names(cpu_obs):
         skill_name = key.split(':')[0]
         skill_names.append(skill_name)
     return set(skill_names)
+
+from scipy.spatial.transform import Rotation
+
+## quaternion is (x, y, z, w)
+def compose_transformation(xyz, quat):
+    rot_mat = Rotation.from_quat(quat).as_matrix()
+    trans = np.concatenate([np.concatenate([rot_mat, np.array([xyz]).T], axis=1), np.array([[0, 0, 0, 1]])], axis=0)
+    return trans

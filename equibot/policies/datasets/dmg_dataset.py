@@ -8,13 +8,12 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from collections import namedtuple
-from scipy.spatial.transform import Rotation
 from equibot.policies.utils.constants import qpos_to_eepose
 # from equibot.envs.sim_mobile.utils.transformations import quat2mat
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, str_to_ascii_tensor, ascii_tensor_to_str, get_skill_names
-    
+from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, str_to_ascii_tensor, ascii_tensor_to_str, get_skill_names, compose_transformation
+
 import hydra
 
 
@@ -154,11 +153,7 @@ class DMGDataset(Dataset):
 
             return data_dict
 
-        ## quaternion is (x, y, z, w)
-        def compose_transformation(xyz, quat):
-            rot_mat = Rotation.from_quat(quat).as_matrix()
-            trans = np.concatenate([np.concatenate([rot_mat, np.array([xyz]).T], axis=1), np.array([[0, 0, 0, 1]])], axis=0)
-            return trans
+
         
         def choose_ids(traj_len, idx_list, essential_ids = None, skill_key = None):
              ## for release, only use essential ids
@@ -206,7 +201,7 @@ class DMGDataset(Dataset):
 
                 abs_actions = f[f'data/abs_actions'][()]
                 abs_actions = abs_actions.reshape(*abs_actions.shape[:1], -1, 7)
-                gripper_array = abs_actions[...,[-1]] ## TODO: map [-1, 1] to [0, 0.04] in execution
+                gripper_array = abs_actions[...,[-1]] 
                 gripper_actions = {'robot0': gripper_array[:, 0], 'robot1': gripper_array[:, 1]}
 
                 obj_pcds =  {}

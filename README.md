@@ -159,10 +159,14 @@ CUDA_VISIBLE_DEVICES=3 python -m equibot.policies.train_compaloha --config-name 
 CUDA_VISIBLE_DEVICES=1 python -m equibot.policies.train_traj --config-name mj_peg_hole \
     prefix=mj_peg_hole \
     data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/
-```
+
 
 CUDA_VISIBLE_DEVICES=0 python -m equibot.policies.train_skills --config-name dmg_assembly \
     prefix=dmg_assembly \
+    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
+
+CUDA_VISIBLE_DEVICES=0 python -m equibot.policies.train_skills --config-name dmg_assembly_policy \
+    prefix=dmg_assembly_policy \
     data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
 ```
 ### Evaluation
