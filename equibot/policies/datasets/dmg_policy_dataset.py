@@ -120,16 +120,27 @@ class DMGPolicyDataset(Dataset):
                 # self.ep_length_dict[ep_key] = biop_end_idx
                 
 
-                ######## transformation size: demo_len， 2， 4， 4
-                eef_action_trans = f[f'data/demo_{demo_id}/datagen_info/target_pose'][()]   
-                eef_action_3vec = eef_action_trans[:, :, :3, [3, 0, 1]].transpose(0, 1, 3, 2)
-                eef_action_9d = eef_action_3vec.reshape(demo_len, self.num_eef, 9)
-                eef_action_10d = np.concatenate([eef_action_9d, gripper_array], axis=-1)
+                # ######## transformation size: demo_len， 2， 4， 4
+                if self.dof == 10:
+                    eef_action_trans = f[f'data/demo_{demo_id}/datagen_info/target_pose'][()]   
+                    eef_action_3vec = eef_action_trans[:, :, :3, [3, 0, 1]].transpose(0, 1, 3, 2)
+                    eef_action_9d = eef_action_3vec.reshape(demo_len, self.num_eef, 9)
+                    eef_action_10d = np.concatenate([gripper_array, eef_action_9d], axis=-1)
   
-                # cache eef actions
-                self.cache[ep_key]['eef10d:action'] = eef_action_10d.reshape(demo_len, -1)
-                # self.cache[ep_key]['gripper:action'] = gripper_array
+                    # cache eef actions
+                    self.cache[ep_key]['eef10d:action'] = eef_action_10d.reshape(demo_len, -1)
+                    # self.cache[ep_key]['gripper:action'] = gripper_array
 
+                ## for original 
+                elif self.dof == 7:
+                    left_eef_action_relpos = f[f'data/demo_{demo_id}/action_dict/left_rel_pos'][()]
+                    left_eef_action_relrot = f[f'data/demo_{demo_id}/action_dict/left_rel_rot_axis_angle'][()]
+                    right_eef_action_relpos = f[f'data/demo_{demo_id}/action_dict/right_rel_pos'][()]
+                    right_eef_action_relrot = f[f'data/demo_{demo_id}/action_dict/right_rel_rot_axis_angle'][()]
+                    eef_action_relpos = np.concatenate([np.expand_dims(left_eef_action_relpos, axis=1), np.expand_dims(right_eef_action_relpos, axis=1)], axis=1)
+                    eef_action_relrot = np.concatenate([np.expand_dims(left_eef_action_relrot, axis=1), np.expand_dims(right_eef_action_relrot, axis=1)], axis=1)
+                    eef_action_7d = np.concatenate([gripper_array, eef_action_relpos, eef_action_relrot], axis=-1)
+                    self.cache[ep_key]['eef7d:action'] = eef_action_7d.reshape(demo_len, -1)
 
                 ####### get pc, demo_len, N, 3
                 obj_pcds =  {}
@@ -406,7 +417,7 @@ def main(cfg):
     sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
     # sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
     # sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
-    from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
+    # from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 
     test_dataset = DMGPolicyDataset(cfg.data.dataset, "test")
     num_workers = 0

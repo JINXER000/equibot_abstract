@@ -4,20 +4,21 @@ defaults:
 use_wandb: true
 
 training:
-  eval_interval: 10
+  # ckpt: "logs/train/dmg_assembly_policy/dmg_test.pth" 
+  # eval_interval: 10
   num_epochs: 2000
 
 env:
   env_class: 'dmg_assembly'
   num_eef: 2
-  dof: 10
+  dof: 7
   max_episode_length: 50
 
 agent:
   agent_name: eefequibot ## instead of outputing eef velocity, output eef pose
 
 model:
-  ac_mode: abs
+  # ac_mode: abs
 # ## use vec_pointnet and train from scratch
 #   hidden_dim: 32
 #   encoder:
@@ -41,11 +42,16 @@ data:
   dataset:
     num_points: 1024
     dataset_type: 'dmg_policy'
+    ## below got from sg
+    related_objs: ['piece_1', 'piece_2', 'base']
+    related_robots: ['robot0', 'robot1']
 
 
 
 eval:
   history_bid: 10
+  dmg_dir: '/home/user/yzchen_ws/imitation_learning/dexmimicgen/'
+
 
 
 

@@ -19,8 +19,11 @@ class EefEquiBotAgent(DPAgent):
         if self.ac_normalizer is None:
             gt_action = batch["action"]
             flattened_gt_action = gt_action.view(-1, self.dof)
-            assert self.dof == 10
-            indices = [[0], [1, 2, 3], [4, 5, 6, 7, 8, 9]]
+            if self.dof == 10:
+              indices = [[0], [1, 2, 3], [4, 5, 6, 7, 8, 9]]
+            elif self.dof == 7:
+                indices = [[0], [1, 2, 3], [4, 5, 6]] 
+                
 
             ac_normalizer = Normalizer(
                 flattened_gt_action, symmetric=True, indices=indices
@@ -243,12 +246,17 @@ class EefEquiBotAgent(DPAgent):
         self.pc_scale = state_dict["pc_scale"]
         self.actor.pc_scale = self.pc_scale
 
-    ## call this function during evaluation (only during training)
+    ## using the act() in dp_agent.py
     def eval_with_rotation(self, obs, skill_id = -1):
-        self.train(False)
+        # self.train(False)
 
-        gpu_obs = to_torch(obs, self.device)
+        # gpu_obs = to_torch(obs, self.device)
 
-        eval_metrics = self.actor(gpu_obs)
+        # eval_metrics = self.actor(gpu_obs, debug=True)
 
-        return None,eval_metrics
+        # return None,eval_metrics
+
+        ## using dp.act(), replace the key 'eef_pos' with 'state'
+        if 'eef_pos' in obs:
+            obs['state'] = obs['eef_pos']
+        return self.act(obs, return_dict=True)

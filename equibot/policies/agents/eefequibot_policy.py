@@ -57,7 +57,7 @@ class EefEquiBotPolicy(nn.Module):
             raise NotImplementedError()
         else:
             self.obs_dim = self.encoder_out_dim + self.num_eef * (self.eef_dim // 3)
-        self.action_dim = 3 * self.num_eef # (pos + rot6d )*2
+        self.action_dim = int((self.dof-1)/3 * self.num_eef) # (pos + rot6d )*2
 
         num_scalar_dims =  self.num_eef
         self.noise_pred_net = VecConditionalUnet1D(
@@ -117,10 +117,10 @@ class EefEquiBotPolicy(nn.Module):
         # rotation actions are always treated as relative axis-angle rotation
         ac = ac.view(ac.shape[0], ac.shape[1], -1, self.dof)
         gripper_ac = ac[:, :, :, 0]  # (B, H, E)
-        eef_ac = ac[:, :, :, 1:]  # (B, H, E, 6)
+        eef_ac = ac[:, :, :, 1:]  # (B, H, E, 9)
         eef_ac = eef_ac.reshape(
             ac.shape[0], ac.shape[1], -1, 3
-        )  # (B, H, E * 2, 3)
+        )  # (B, H, E * 3, 3)
         return eef_ac.permute(0, 2, 3, 1), gripper_ac.permute(0, 2, 1)
 
 
@@ -132,7 +132,7 @@ class EefEquiBotPolicy(nn.Module):
         assert eef_ac.shape[-1] == gripper_ac.shape[-1]
         assert eef_ac.shape[2] == 3
         eef_ac = eef_ac.reshape(
-            eef_ac.shape[0], self.num_eef, 9, -1
+            eef_ac.shape[0], self.num_eef, self.dof -1, -1
         )
         grip_ac = gripper_ac[:, :, None]
         scalar_ac = torch.cat([grip_ac, eef_ac], dim=2).permute(0, 3, 1, 2)
