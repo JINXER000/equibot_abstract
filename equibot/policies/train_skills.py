@@ -41,7 +41,7 @@ def main(cfg):
     agent = get_agent(cfg.agent.agent_name)(cfg)
     if cfg.training.ckpt is not None:
         agent.load_snapshot(cfg.training.ckpt)
-        start_epoch_ix = int(cfg.training.ckpt.split("/")[-1].split(".")[0][4:])
+        start_epoch_ix = int(cfg.training.ckpt.split("/")[-1].split(".")[0][4:]) ## format: ckptxxxxx.pth
     else:
         start_epoch_ix = 0
 

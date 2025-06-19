@@ -4,7 +4,7 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "logs/train/dmg_assembly_policy/dmg_test.pth" 
+  ckpt: "/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/dmg_assembly_policy/2025-06-02_23-56-11/checkpoints/ckpt00800.pth"
   # eval_interval: 10
   num_epochs: 2000
 

@@ -240,7 +240,7 @@ class DMGPolicy(nn.Module):
         for k in self.noise_scheduler.timesteps:
             new_action = {f'{skill_name}:jpose': None}
 
-            scalar_noise_pred = ema_nets["jpose_noise_pred_net"](\
+            scalar_noise_pred = ema_nets[f'{skill_name}_noise_pred_net'](\
                 sample=curr_action[f'{skill_name}:jpose'],
                 timesteps = k,
             )
@@ -258,7 +258,7 @@ class DMGPolicy(nn.Module):
         if batch_size ==1:
             action_dict[f'{skill_name}:jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
         else:
-            gt_joint = gt_batch[f'{skill_name}:jpose']
+            gt_joint = gt_batch[f'{skill_name}:jpose'].reshape(-1, self.num_eef, self.dof)
             joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
             eval_metrics["dual_joint_mse"] = joint_mse
 

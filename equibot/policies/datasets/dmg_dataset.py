@@ -199,10 +199,9 @@ class DMGDataset(Dataset):
                 obs_grp = f[f'data/demo_{demo_id}/obs']
                 rbt_actions = get_rbt_actions(obs_grp, robot_names)
 
-                abs_actions = f[f'data/abs_actions'][()]
-                abs_actions = abs_actions.reshape(*abs_actions.shape[:1], -1, 7)
-                gripper_array = abs_actions[...,[-1]] 
-                gripper_actions = {'robot0': gripper_array[:, 0], 'robot1': gripper_array[:, 1]}
+                left_gripper_actions = f[f'data/demo_{demo_id}/action_dict/left_gripper'][()]
+                right_gripper_actions = f[f'data/demo_{demo_id}/action_dict/right_gripper'][()]
+                gripper_actions = {'robot0': left_gripper_actions, 'robot1': right_gripper_actions}
 
                 obj_pcds =  {}
                 obj_conditioned_skills = {}
@@ -236,14 +235,15 @@ class DMGDataset(Dataset):
                                 pre_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][pre_idx_list], \
                                     rbt_actions['robot1_joint_pos'][pre_idx_list]], axis=1)
                                 qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1)
-                                data_slice['dual_jpose'] = pre_dual_jpose_all[qtraj_indice]
+                                data_slice[f'{skill_name}:jpose'] = pre_dual_jpose_all[qtraj_indice].astype(np.float32)
 
                                 if 'eff_sg' in skill_info:
                                     eff_idx_list = eff_sg.graph['idx_list']
                                     eff_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][eff_idx_list], \
                                         rbt_actions['robot1_joint_pos'][eff_idx_list]], axis=1)
                                     qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
-                                    data_slice['eff_dual_jpose'] = eff_dual_jpose_all[qtraj_indice]
+                                    eff_dual_jpose= eff_dual_jpose_all[qtraj_indice].astype(np.float32)
+                                    data_slice[f'{skill_name}:jpose'] = np.concatenate([data_slice[f'{skill_name}:jpose'], eff_dual_jpose], axis=0)
 
                             else:
                                 if 'grasp' in skill_name:
@@ -268,7 +268,8 @@ class DMGDataset(Dataset):
                                     # obj_name = skill_name.split('_', 1)[1]
                                     obj_pc = obj_pc_list[eff_sg.graph['idx_list'][-1]]
                                 else:
-                                    raise NotImplementedError(f'Skill name {skill_name} not implemented!')
+                                    continue
+                                    # raise NotImplementedError(f'Skill name {skill_name} not implemented!')
                                 
                                 
                                 obj_pc_n, obj_offset = self.centralize_cond_pc(obj_pc)

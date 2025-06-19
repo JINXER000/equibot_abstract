@@ -161,11 +161,11 @@ CUDA_VISIBLE_DEVICES=1 python -m equibot.policies.train_traj --config-name mj_pe
     data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/
 
 
-CUDA_VISIBLE_DEVICES=0 python -m equibot.policies.train_skills --config-name dmg_assembly \
-    prefix=dmg_assembly \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
+CUDA_VISIBLE_DEVICES=3 python -m equibot.policies.train_skills --config-name dmg_threading \
+    prefix=dmg_threading \
+    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_threading/
 
-CUDA_VISIBLE_DEVICES=0 python -m equibot.policies.train_skills --config-name dmg_assembly_policy \
+CUDA_VISIBLE_DEVICES=2 python -m equibot.policies.train_skills --config-name dmg_assembly_policy \
     prefix=dmg_assembly_policy \
     data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
 ```
