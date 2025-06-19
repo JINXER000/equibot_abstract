@@ -1,11 +1,11 @@
 defaults:
   - base
 
-use_wandb: true
+use_wandb: false
 
 training:
-  # ckpt: "logs/train/dmg_assembly_policy/dmg_test.pth" 
-  # eval_interval: 10
+  ckpt: "logs/train/dmg_assembly/ckpt_traj_grasp_bimanual.pth" 
+  eval_interval: 1
   num_epochs: 2000
 
 env:
@@ -15,22 +15,13 @@ env:
   max_episode_length: 50
 
 agent:
-  agent_name: eefequibot ## instead of outputing eef velocity, output eef pose
+  agent_name: dmg
 
 model:
-  # ac_mode: abs
-# ## use vec_pointnet and train from scratch
-#   hidden_dim: 32
-#   encoder:
-#     backbone_type: vn_pointnet
-#     backbone_args: 
-#       num_layers: 4
-#       preload_path: 'None' 
-
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
 
-  obs_horizon: 2
+  obs_horizon: 1
   
   encoder:
     backbone_type: VDGCNN
@@ -40,18 +31,20 @@ model:
 
 data:
   dataset:
-    num_points: 1024
-    dataset_type: 'dmg_policy'
-    ## below got from sg
-    related_objs: ['piece_1', 'piece_2', 'base']
-    related_robots: ['robot0', 'robot1']
+    num_points: 128
+    # uniskills: ['grasp', 'contact']
+    # skill_names: ['grasp_piece_1', 'grasp_piece_2', 'piece_2_contact_piece_1', 'piece_1_contact_base']
+    # conditioned_objects: ['piece_1', 'piece_2', 'piece_1', 'base']
+    uniskills: ['grasp']
+    skill_names: ['robot0_grasp_piece_1', 'robot1_grasp_piece_2', 'bimanual_0']
+    conditioned_objects: ['piece_1', 'piece_2', 'None']
+    dataset_type: 'dexmimicgen'
 
+    is_obj_centric: True
 
 
 eval:
   history_bid: 10
-  dmg_dir: '/home/user/yzchen_ws/imitation_learning/dexmimicgen/'
-
 
 
 

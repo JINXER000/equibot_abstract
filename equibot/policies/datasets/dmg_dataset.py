@@ -26,7 +26,7 @@ def downsample_pc(pc, num_points):
         sampled_indices = np.random.choice(pc.shape[0], num_points, replace=False)
         pc = pc[sampled_indices]
     elif pc.shape[0] < num_points:
-        if pc.shape[0] < num_points *0.5:
+        if pc.shape[0] < num_points *0.3:
             raise ValueError('Input pc shape is not enough points!')
         else:
             random_repeated_indices = np.random.choice(pc.shape[0], num_points - pc.shape[0], replace=True)
@@ -199,10 +199,9 @@ class DMGDataset(Dataset):
                 obs_grp = f[f'data/demo_{demo_id}/obs']
                 rbt_actions = get_rbt_actions(obs_grp, robot_names)
 
-                abs_actions = f[f'data/abs_actions'][()]
-                abs_actions = abs_actions.reshape(*abs_actions.shape[:1], -1, 7)
-                gripper_array = abs_actions[...,[-1]] 
-                gripper_actions = {'robot0': gripper_array[:, 0], 'robot1': gripper_array[:, 1]}
+                left_gripper_actions = f[f'data/demo_{demo_id}/action_dict/left_gripper'][()]
+                right_gripper_actions = f[f'data/demo_{demo_id}/action_dict/right_gripper'][()]
+                gripper_actions = {'robot0': left_gripper_actions, 'robot1': right_gripper_actions}
 
                 obj_pcds =  {}
                 obj_conditioned_skills = {}
@@ -236,14 +235,15 @@ class DMGDataset(Dataset):
                                 pre_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][pre_idx_list], \
                                     rbt_actions['robot1_joint_pos'][pre_idx_list]], axis=1)
                                 qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1)
-                                data_slice['dual_jpose'] = pre_dual_jpose_all[qtraj_indice]
+                                data_slice[f'{skill_name}:jpose'] = pre_dual_jpose_all[qtraj_indice].astype(np.float32)
 
                                 if 'eff_sg' in skill_info:
                                     eff_idx_list = eff_sg.graph['idx_list']
                                     eff_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][eff_idx_list], \
                                         rbt_actions['robot1_joint_pos'][eff_idx_list]], axis=1)
                                     qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
-                                    data_slice['eff_dual_jpose'] = eff_dual_jpose_all[qtraj_indice]
+                                    eff_dual_jpose= eff_dual_jpose_all[qtraj_indice].astype(np.float32)
+                                    data_slice[f'{skill_name}:jpose'] = np.concatenate([data_slice[f'{skill_name}:jpose'], eff_dual_jpose], axis=0)
 
                             else:
                                 if 'grasp' in skill_name:
@@ -268,7 +268,8 @@ class DMGDataset(Dataset):
                                     # obj_name = skill_name.split('_', 1)[1]
                                     obj_pc = obj_pc_list[eff_sg.graph['idx_list'][-1]]
                                 else:
-                                    raise NotImplementedError(f'Skill name {skill_name} not implemented!')
+                                    continue
+                                    # raise NotImplementedError(f'Skill name {skill_name} not implemented!')
                                 
                                 
                                 obj_pc_n, obj_offset = self.centralize_cond_pc(obj_pc)
@@ -286,6 +287,8 @@ class DMGDataset(Dataset):
                                 normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
 
                                 gripper_list = gripper_actions[rbt_name][choiced_ids]
+                                # open_num = len(gripper_list[gripper_list < 0])
+                                # print("open num is: ", open_num)
                                 
                                 data_slice[f'{skill_name}:pc'] = obj_pc_tensor
                                 data_slice[f'{skill_name}:eefpos'] = normalized_eef_pos_tensor
@@ -307,14 +310,14 @@ def main(cfg):
     # sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
     from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 
-    test_dataset = DMGDataset(cfg.data.dataset, "test", force_process = False)
+    test_dataset = DMGDataset(cfg.data.dataset, "test", force_process = True)
     num_workers = 0
     batch_size = 1
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=batch_size,
         num_workers=num_workers,
-        shuffle=False,
+        shuffle=True,
         drop_last=True,
         pin_memory=True,
     )
@@ -330,27 +333,40 @@ def main(cfg):
 
             for skill_name in skill_names:
                 if 'bimanual' in skill_name:
-                    raise NotImplementedError('Bimanual skill is not implemented!')
+                    ## vis non-prehension skills
+                    history_list = []
+                    jpose_data = cpu_obs[skill_name+':jpose']
+                    for i in range(jpose_data.shape[0]):
+                        jpose = jpose_data[i].reshape(-1)
+                        action_slice = (None, jpose)
+                        history_list.append(action_slice)
+
+                    render_pose(history_list, use_gui=True, \
+                                        directory = None, 
+                                        robot_name = 'panda_dual')
+
+                # else:
+                #     ## vis prehension skills
+                #     pc_vis_data = cpu_obs[skill_name+':pc'][0]
+                #     grasp_vis_data = cpu_obs[skill_name+':eefpos'][0]
+                #     obj_name = ascii_tensor_to_str(cpu_obs[skill_name+':obj_name'][0])
+                #     print(f'obj_name: {obj_name}, skill_name: {skill_name}')
+
+                #     history_list = []
+                #     tmp_pc = pc_vis_data[0].reshape(-1, 3).numpy()
+                #     traj_len = grasp_vis_data.shape[0]
+                #     for i in range(traj_len):
+                #         grasp_pose = grasp_vis_data[i,:4].reshape(1,-1,4).numpy()
+                #         grasp_pose_tensor = torch.tensor(grasp_pose)
+
+                #         vecrot_grasp = rotate_vec_grasp(grasp_pose_tensor, rot_z)
+                #         action_slice = (vecrot_grasp.reshape(-1, 4), None)
+                #         history_list.append(action_slice)
+
+                #     render_pose(history_list, use_gui=True, \
+                #                 directory = None, obj_points = tmp_pc,
+                #                 robot_name = 'panda_dual')
                 
-                pc_vis_data = cpu_obs[skill_name+':pc'][0]
-                grasp_vis_data = cpu_obs[skill_name+':eefpos'][0]
-                obj_name = ascii_tensor_to_str(cpu_obs[skill_name+':obj_name'][0])
-                print(f'obj_name: {obj_name}, skill_name: {skill_name}')
-
-                history_list = []
-                tmp_pc = pc_vis_data[0].reshape(-1, 3).numpy()
-                traj_len = grasp_vis_data.shape[0]
-                for i in range(traj_len):
-                    grasp_pose = grasp_vis_data[i,:4].reshape(1,-1,4).numpy()
-                    grasp_pose_tensor = torch.tensor(grasp_pose)
-
-                    vecrot_grasp = rotate_vec_grasp(grasp_pose_tensor, rot_z)
-                    action_slice = (vecrot_grasp.reshape(-1, 4), None)
-                    history_list.append(action_slice)
-
-                render_pose(history_list, use_gui=True, \
-                            directory = None, obj_points = tmp_pc,
-                            robot_name = 'panda_dual')
 
 
 

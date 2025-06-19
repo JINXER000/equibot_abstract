@@ -238,27 +238,28 @@ class DMGPolicy(nn.Module):
 
         ####### inverse diffusion step
         for k in self.noise_scheduler.timesteps:
-            new_action = {f'{skill_name}:jpose': None}
+            biop_key = f'{skill_name}:jpose'
+            new_action = {biop_key: None}
 
-            scalar_noise_pred = ema_nets["jpose_noise_pred_net"](\
-                sample=curr_action[f'{skill_name}:jpose'],
+            scalar_noise_pred = ema_nets[f'{skill_name}_noise_pred_net'](\
+                sample=curr_action[biop_key],
                 timesteps = k,
             )
-            new_action[f'{skill_name}:jpose'] = self.noise_scheduler.step(
-                model_output=scalar_noise_pred, timestep=k, sample=curr_action[f'{skill_name}:jpose']
+            new_action[biop_key] = self.noise_scheduler.step(
+                model_output=scalar_noise_pred, timestep=k, sample=curr_action[biop_key]
             ).prev_sample
 
             curr_action = new_action
 
-        unnormed_joint = self.recover_jpose(curr_action[f'{skill_name}:jpose'], key=f'{skill_name}:jpose')
+        unnormed_joint = self.recover_jpose(curr_action[biop_key], key=biop_key)
         unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
 
         action_dict = {}
         eval_metrics = {}
         if batch_size ==1:
-            action_dict[f'{skill_name}:jpose'] = unnormed_joint.reshape(self.num_eef, self.dof)
+            action_dict[biop_key] = unnormed_joint.reshape(self.num_eef, self.dof)
         else:
-            gt_joint = gt_batch[f'{skill_name}:jpose']
+            gt_joint = gt_batch[biop_key]
             joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
             eval_metrics["dual_joint_mse"] = joint_mse
 

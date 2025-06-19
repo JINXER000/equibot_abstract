@@ -157,14 +157,26 @@ class pddl_wrapper(object):
 
     def gen_objcentric_traj(self, obs_key, agent_obs):
 
+        # def revise_key(action_output, key_mapping):
+
+        #     for origin_k, revised_k in key_mapping:
+        #         action_output = {
+        #             key.replace(origin_k, revised_k): value for key, value in action_output.items()
+        #         }
+        #     return action_output
+        import re
         def revise_key(action_output, key_mapping):
-
-            for origin_k, revised_k in key_mapping:
-                action_output = {
-                    key.replace(origin_k, revised_k): value for key, value in action_output.items()
-                }
-            return action_output
-
+            new_action_output = {}
+            for key, value in action_output.items():
+                # First do the regex replacements
+                new_key = re.sub(r'robot0[^:]*:', 'left_', key)
+                new_key = re.sub(r'robot1[^:]*:', 'right_', new_key)
+                # Then do the specific key mappings
+                for origin_k, revised_k in key_mapping:
+                    new_key = new_key.replace(origin_k, revised_k)
+                new_action_output[new_key] = value
+            return new_action_output
+        
         obs_tensor = to_tensor(agent_obs)
         obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric)
         obs_c = to_tensor(obs_c)
@@ -172,8 +184,9 @@ class pddl_wrapper(object):
         
         action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(obs_key, obs_gpu)
 
-        key_mapping = [('grasp_piece_1:','left_'),('eefpos','grasp'),\
-                       ('grasp_piece_2:','right_'), ('piece_1_contact_base:','left_')]
+        # key_mapping = [('robot0_grasp_piece_1:','left_'),('eefpos','grasp'),\
+                    #    ('robot1_grasp_piece_2:','right_'), ('robot0_piece_1_contact_base:','left_')]
+        key_mapping = [('eefpos','grasp')]
         action_c = revise_key(action_c, key_mapping)
         offset_dict = revise_key(offset_dict, key_mapping)
         ## decentralize the final action
@@ -185,8 +198,8 @@ class pddl_wrapper(object):
         return action_w
     
     def gen_uncond_jposes(self, arm1, arm2, sk):
-        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(batch_size = 1)
-        jpose_out = to_np(action_dict)['dual_jpose']
+        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, batch_size = 1)
+        jpose_out = to_np(action_dict)[f'{sk}:jpose']
         return jpose_out
 
 
