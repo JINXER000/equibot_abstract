@@ -199,9 +199,10 @@ class DMGDataset(Dataset):
                 obs_grp = f[f'data/demo_{demo_id}/obs']
                 rbt_actions = get_rbt_actions(obs_grp, robot_names)
 
+                ## NOTE: robot1 --> left, robot0 --> right
                 left_gripper_actions = f[f'data/demo_{demo_id}/action_dict/left_gripper'][()]
                 right_gripper_actions = f[f'data/demo_{demo_id}/action_dict/right_gripper'][()]
-                gripper_actions = {'robot0': left_gripper_actions, 'robot1': right_gripper_actions}
+                gripper_actions = {'robot1': left_gripper_actions, 'robot0': right_gripper_actions}
 
                 obj_pcds =  {}
                 obj_conditioned_skills = {}
@@ -288,7 +289,7 @@ class DMGDataset(Dataset):
 
                                 gripper_list = gripper_actions[rbt_name][choiced_ids]
                                 # open_num = len(gripper_list[gripper_list < 0])
-                                # print("open num is: ", open_num)
+                                # print(f"open num is: {open_num}, skill name: {skill_name}, obj name: {obj_name}")
                                 
                                 data_slice[f'{skill_name}:pc'] = obj_pc_tensor
                                 data_slice[f'{skill_name}:eefpos'] = normalized_eef_pos_tensor
@@ -302,7 +303,7 @@ class DMGDataset(Dataset):
         print('processed all hdf5 file!')
 
 
-@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_assembly")
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_threading")
 def main(cfg):
     import sys
     sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
