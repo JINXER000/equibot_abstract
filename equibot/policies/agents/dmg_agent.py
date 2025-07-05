@@ -105,8 +105,11 @@ class DMGAgent(object):
         self.actor.nets.train(training)
 
     def learn_bimanual_traj(self, skill_name, n_data_dict):
-        scalar_dual_jpose = n_data_dict[f'{skill_name}:jpose']
-        batch_size = scalar_dual_jpose.shape[0]
+        jpose_key = f'{skill_name}:jpose'
+        scalar_dual_jpose_raw = n_data_dict[jpose_key]
+        batch_size = scalar_dual_jpose_raw.shape[0]
+        scalar_dual_jpose_raw = scalar_dual_jpose_raw.reshape(batch_size, -1, self.dof)
+        scalar_dual_jpose = self.actor.proc_jpose(scalar_dual_jpose_raw,  jpose_key).squeeze(1)
         timesteps = torch.randint(
             0,
             self.actor.noise_scheduler.config.num_train_timesteps,
@@ -192,18 +195,7 @@ class DMGAgent(object):
 
     ######## train the pred net ########
         metrics = {}
-        # ### proc pc
-        # pc_feature_dict = {}
-        # for obj_name in self.actor.objects:
-        #     pc_key = f'{obj_name}:pc'
-        #     pc_feature_dict[pc_key] = self.actor.proc_pc(n_data_dict[pc_key], obj_name)
-
-        #     obs_vec, _, _ = pc_feature_dict[pc_key]
-        #     metrics[f'{obj_name}_obsv'] = np.linalg.norm(
-        #         obs_vec.detach().cpu().numpy(), axis=1
-        #     ).mean()
-        
-       
+           
         for skill_name in self.actor.skill_names:
             if 'bimanual' in skill_name:
                 scalar_loss = self.learn_bimanual_traj(skill_name, n_data_dict)

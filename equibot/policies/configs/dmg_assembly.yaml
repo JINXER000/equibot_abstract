@@ -33,7 +33,7 @@ model:
 
 data:
   dataset:
-    num_points: 128
+    num_points: 256
     # uniskills: ['grasp', 'contact']
     # skill_names: ['grasp_piece_1', 'grasp_piece_2', 'piece_2_contact_piece_1', 'piece_1_contact_base']
     # conditioned_objects: ['piece_1', 'piece_2', 'piece_1', 'base']

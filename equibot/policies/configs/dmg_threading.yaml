@@ -4,7 +4,7 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "logs/train/mj_peg_hole/ckpt_mj_traj.pth" 
+  # ckpt: "logs/train/dmg_threading/2025-07-03_21-13-09/checkpoints/ckpt00400.pth" 
   eval_interval: 10
   num_epochs: 2000
 
@@ -33,10 +33,10 @@ model:
 
 data:
   dataset:
-    num_points: 128
-    # uniskills: ['grasp', 'contact']
-    # skill_names: ['grasp_piece_1', 'grasp_piece_2', 'piece_2_contact_piece_1', 'piece_1_contact_base']
-    # conditioned_objects: ['piece_1', 'piece_2', 'piece_1', 'base']
+    num_points: 256
+    # uniskills: []
+    # skill_names: ['bimanual_0']
+    # conditioned_objects: ['None']
     uniskills: ['grasp']
     skill_names: ['robot0_grasp_tripod_obj', 'robot1_grasp_needle_obj', 'bimanual_0']
     conditioned_objects: ['tripod_obj', 'needle_obj', 'None']
