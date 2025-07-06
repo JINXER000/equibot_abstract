@@ -165,8 +165,12 @@ CUDA_VISIBLE_DEVICES=3 python -m equibot.policies.train_skills --config-name dmg
     prefix=dmg_threading \
     data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_threading/
 
-CUDA_VISIBLE_DEVICES=2 python -m equibot.policies.train_skills --config-name dmg_assembly_policy \
+CUDA_VISIBLE_DEVICES=1 python -m equibot.policies.train_skills --config-name dmg_assembly_policy \
     prefix=dmg_assembly_policy \
+    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
+
+CUDA_VISIBLE_DEVICES=1 python -m equibot.policies.train_skills --config-name dmg_assembly \
+    prefix=dmg_assembly \
     data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
 ```
 ### Evaluation

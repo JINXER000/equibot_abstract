@@ -157,12 +157,14 @@ class DMGAgent(object):
         noisy_gripper_action = self.actor.noise_scheduler.add_noise(gt_gripper_action, gripper_action_noise, timesteps)
 
         ## /tilde{z}_t = prednet(x_t, Cond, t)
-        eefpos_noise_pred, gripper_noise_pred = self.actor.nets[f'{skill_name}_noise_pred_net'](
+        skill_scalar_id = self.actor.skill_scalar_mapping[skill_name].repeat(batch_size,1)
+        eefpos_noise_pred, gripper_noise_pred = self.actor.nets['unitraj_noise_pred_net'](
+        # eefpos_noise_pred, gripper_noise_pred = self.actor.nets[f'{skill_name}_noise_pred_net'](
             noisy_eefpos,
             timesteps,
             scalar_sample = noisy_gripper_action,
             cond = obs_vec,
-            scalar_cond = None,
+            scalar_cond = skill_scalar_id,
         )
         
         vec_loss = nn.functional.mse_loss(eefpos_noise_pred, eefpos_noise)
@@ -250,7 +252,6 @@ class DMGAgent(object):
             ema_model=self.actor.ema.averaged_model.state_dict(),
         )
 
-       
         for skill_name in self.actor.skill_names:
             if 'bimanual' in skill_name:
                 state_dict[f"{skill_name}:jpose_normalizer"] = self.all_normalizers[f"{skill_name}:jpose"].state_dict()
