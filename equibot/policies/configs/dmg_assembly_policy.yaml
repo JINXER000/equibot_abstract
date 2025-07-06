@@ -1,7 +1,7 @@
 defaults:
   - base
 
-use_wandb: false
+use_wandb: true
 
 training:
   # ckpt: "logs/train/dmg_assembly/ckpt_traj_grasp_bimanual.pth" 
@@ -18,10 +18,11 @@ agent:
   agent_name: eefequibot
 
 model:
+  down_dims: [256, 512, 1024]
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
 
-  obs_horizon: 1
+  obs_horizon: 2
   
   encoder:
     backbone_type: VDGCNN

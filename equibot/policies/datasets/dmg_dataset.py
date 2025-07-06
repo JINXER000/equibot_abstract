@@ -161,17 +161,28 @@ class DMGDataset(Dataset):
                 selected_ids = np.random.choice(essential_ids, size=traj_len, replace=True).astype(np.int32)
                 return np.sort(selected_ids).tolist()
 
-            intermediate_len = traj_len - 2
+            assert traj_len % 2 == 0, 'traj_len should be even!'
+            intermediate_len = (traj_len - 2) // 2
+
+            # Determine candidate transitional ids
+            remaining_ids = list(set(idx_list) - set([] if essential_ids is None else essential_ids)\
+                                 - set([idx_list[0], idx_list[-1]]))
+
             if essential_ids is None:
-                selected_ids = np.random.choice(idx_list, size=intermediate_len, replace=False).astype(np.int32)
+                selected_ids = np.random.choice(idx_list, size=traj_len - 2, replace=False)
             elif len(essential_ids) < intermediate_len:
-                non_essential_num = intermediate_len - len(essential_ids)
-                non_essential_ids = set(idx_list) - set(essential_ids)
-                non_essential_ids = np.random.choice(list(non_essential_ids), size=non_essential_num, replace=False)
-                selected_ids = np.concatenate([essential_ids, non_essential_ids], axis=0).astype(np.int32)
+                # Not enough essentials: use all of them and sample remaining
+                transitional_num = traj_len - 2 - len(essential_ids)
+                transitional_ids = np.random.choice(remaining_ids, size=transitional_num, replace=False)
+                selected_ids = np.concatenate([essential_ids, transitional_ids])
             else:
-                selected_ids = np.random.choice(essential_ids, size=intermediate_len, replace=False).astype(np.int32)
-            selected_ids = [idx_list[0]] + list(np.sort(selected_ids)) + [idx_list[-1]]
+                # More than enough essentials: choose a subset as critical
+                critical_ids = np.random.choice(essential_ids, size=intermediate_len, replace=False)
+                transitional_ids = np.random.choice(remaining_ids, size=intermediate_len, replace=False)
+                selected_ids = np.concatenate([critical_ids, transitional_ids])
+
+            # Sort and add endpoints
+            selected_ids = [idx_list[0]] + sorted(selected_ids.astype(np.int32).tolist()) + [idx_list[-1]]
             return selected_ids
         
         print('Processing hdf5 dataset...')

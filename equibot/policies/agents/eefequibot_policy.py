@@ -67,6 +67,7 @@ class EefEquiBotPolicy(nn.Module):
             scalar_input_dim=num_scalar_dims,
             diffusion_step_embed_dim=self.obs_dim * self.obs_horizon,
             cond_predict_scale=True,
+            down_dims=cfg.model.down_dims,
         )
 
         self.nets = nn.ModuleDict(
@@ -244,8 +245,8 @@ class EefEquiBotPolicy(nn.Module):
         action = action.reshape(B, Hp, E * self.dof)
 
         eval_metrics = {}
-        eval_metrics['eef_posvel_error'] = torch.nn.functional.mse_loss(gt_action[..., 1:4], action[..., 1:4], reduction='none').mean(dim=-1).mean(dim=-1)
-        eval_metrics['eef_rotvel_error'] = torch.nn.functional.mse_loss(gt_action[..., 4:], action[..., 4:], reduction='none').mean(dim=-1).mean(dim=-1)
+        eval_metrics['eef_posvel_error'] = torch.nn.functional.mse_loss(gt_action[..., 1:4], action[..., 1:4])
+        eval_metrics['eef_rotvel_error'] = torch.nn.functional.mse_loss(gt_action[..., 4:], action[..., 4:])
 
         ret = dict(ac=action, metrics = eval_metrics)
         return ret

@@ -53,8 +53,8 @@ class DMGPolicy(nn.Module):
         net_dict = {}
         self.objects = set(cfg.data.dataset.conditioned_objects)
         for obj in self.objects:
-            # net_dict[f'{obj}_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
-            net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
+            net_dict[f'{obj}_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
+            # net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
 
         self.eef_dims = {}
         self.skill_names = cfg.data.dataset.skill_names
@@ -85,7 +85,7 @@ class DMGPolicy(nn.Module):
                 scalar_input_dim= 1,  ## output gripper val
                 diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
                 cond_predict_scale=False,
-                # down_dims=[64, 128, 256],
+                down_dims=cfg.model.down_dims,
                 )
         
         self.nets = nn.ModuleDict(net_dict)
@@ -184,10 +184,10 @@ class DMGPolicy(nn.Module):
 
         ## in training
         if ema_nets is None:
-            encoder_handle = self.nets["obj_encoder"]
+            encoder_handle = self.nets[f'{obj_name}_encoder']
             feat_dict = encoder_handle(pc, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
         else: # in inference
-            feat_dict = ema_nets["obj_encoder"](pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
+            feat_dict = ema_nets[f'{obj_name}_encoder'](pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
         
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)

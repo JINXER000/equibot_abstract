@@ -20,6 +20,7 @@ agent:
   agent_name: dmg
 
 model:
+  down_dims: [128, 256, 512]
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
 
