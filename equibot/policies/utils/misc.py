@@ -112,8 +112,8 @@ def get_dataset(cfg, mode="train"):
         from equibot.policies.datasets.dmg_dataset import DMGDataset
         return DMGDataset(cfg.data.dataset, mode)
     elif dataset_type == "dmg_policy":
-        from equibot.policies.datasets.dmg_policy_dataset import DMGPolicyDataset
-        return DMGPolicyDataset(cfg.data.dataset, mode)
+        from equibot.policies.datasets.robosuite_policy_dataset import RobosuitePolicyDataset
+        return RobosuitePolicyDataset(cfg.data.dataset, mode)
     else:
         raise ValueError(f"Dataset type [{dataset_type}] not supported.")
 

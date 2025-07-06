@@ -140,14 +140,15 @@ class EefEquiBotPolicy(nn.Module):
 
         return scalar_ac
 
-    def forward(self, obs, predict_action=True, debug=False):
+    def forward(self, eval_batch):
         # assumes that observation has format:
         # - pc: [BS, obs_horizon, num_pts, 3]
         # - state: [BS, obs_horizon, obs_dim]
         # returns:
         # - action: [BS, pred_horizon, ac_dim]
-        pc = obs["pc"]
-        state = obs["eef_pos"]
+        pc = eval_batch["pc"]
+        state = eval_batch["eef_pos"]
+        gt_action = eval_batch['action']
 
         pc = self.pc_normalizer.normalize(pc)
 
@@ -179,7 +180,7 @@ class EefEquiBotPolicy(nn.Module):
             z_scalar.reshape(B, -1) if z_scalar is not None else None
         )
 
-        initial_noise_scale = 0.0 if debug else 1.0
+        initial_noise_scale =  1.0
         noisy_action = (
             torch.randn((B, Hp, self.action_dim, 3)).to(self.device)
             * initial_noise_scale,
@@ -216,64 +217,37 @@ class EefEquiBotPolicy(nn.Module):
             action = self._convert_action_to_scalar(
                 curr_action[0].permute(0, 2, 3, 1),
                 curr_action[1].permute(0, 2, 1),
-                batch=obs,
+                batch=eval_batch,
             )
         else:
             action = self._convert_action_to_scalar(
-                curr_action[0].permute(0, 2, 3, 1), batch=obs
+                curr_action[0].permute(0, 2, 3, 1), batch=eval_batch
             )
-        if self.obs_mode.startswith("pc"):
-            E = self.num_eef
-            if self.ac_mode == "abs":
-                center = (
-                    feat_dict["center"]
-                    .reshape(B, Ho, 3)[:, [-1], None]
-                    .repeat(1, Hp, 1, 1)
-                )
-            else:
-                center = 0
-            scale = (
-                feat_dict["scale"].reshape(B, Ho, 1)[:, [-1], None].repeat(1, Hp, 1, 1)
+
+        E = self.num_eef
+        if self.ac_mode == "abs":
+            center = (
+                feat_dict["center"]
+                .reshape(B, Ho, 3)[:, [-1], None]
+                .repeat(1, Hp, 1, 1)
             )
-            action = action.reshape(B, Hp, E, self.dof)
+        else:
+            center = 0
+        scale = (
+            feat_dict["scale"].reshape(B, Ho, 1)[:, [-1], None].repeat(1, Hp, 1, 1)
+        )
+        action = action.reshape(B, Hp, E, self.dof)
 
-            action[..., 1:4] = action[..., 1:4] * scale + center
+        # self.dof == 7
+        action[..., 1:4] = action[..., 1:4] * scale + center
 
-            action = action.reshape(B, Hp, E * self.dof)
+        action = action.reshape(B, Hp, E * self.dof)
 
-        ret = dict(ac=action)
-        if debug:
-            ret.update(
-                dict(
-                    obs_cond_vec=obs_cond_vec.detach().cpu().numpy(),
-                )
-            )
-            if obs_cond_scalar is not None:
-                ret.update(
-                    dict(
-                        obs_cond_scalar=(
-                            obs_cond_scalar.detach().cpu().numpy()
-                            if obs_cond_scalar is not None
-                            else None
-                        )
-                    )
-                )
-            if self.obs_mode != "state":
-                ret.update(
-                    dict(
-                        center=feat_dict["center"]
-                        .detach()
-                        .reshape(B, Ho, 3)
-                        .cpu()
-                        .numpy(),
-                        scale=feat_dict["scale"].detach().reshape(B, Ho).cpu().numpy(),
-                        feat_so3=feat_dict["so3"]
-                        .detach()
-                        .reshape(B, Ho, -1, 3)
-                        .cpu()
-                        .numpy(),
-                    )
-                )
+        eval_metrics = {}
+        eval_metrics['eef_posvel_error'] = torch.nn.functional.mse_loss(gt_action[..., 1:4], action[..., 1:4], reduction='none').mean(dim=-1).mean(dim=-1)
+        eval_metrics['eef_rotvel_error'] = torch.nn.functional.mse_loss(gt_action[..., 4:], action[..., 4:], reduction='none').mean(dim=-1).mean(dim=-1)
+
+        ret = dict(ac=action, metrics = eval_metrics)
         return ret
 
     def step_ema(self):

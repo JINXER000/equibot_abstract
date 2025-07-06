@@ -4,7 +4,7 @@ import numpy as np
 import time
 
 from equibot.policies.utils.norm import Normalizer
-from equibot.policies.utils.misc import to_torch
+from equibot.policies.utils.misc import to_torch, to_np
 from equibot.policies.agents.dp_agent import DPAgent
 from equibot.policies.agents.eefequibot_policy import EefEquiBotPolicy
 
@@ -248,15 +248,19 @@ class EefEquiBotAgent(DPAgent):
 
     ## using the act() in dp_agent.py
     def eval_with_rotation(self, obs, skill_id = -1):
-        # self.train(False)
+        self.train(False)
 
-        # gpu_obs = to_torch(obs, self.device)
+        gpu_obs = to_torch(obs, self.device)
 
         # eval_metrics = self.actor(gpu_obs, debug=True)
 
         # return None,eval_metrics
 
-        ## using dp.act(), replace the key 'eef_pos' with 'state'
-        if 'eef_pos' in obs:
-            obs['state'] = obs['eef_pos']
-        return self.act(obs, return_dict=True)
+        # ## using dp.act(), replace the key 'eef_pos' with 'state'
+        # if 'eef_pos' in obs:
+        #     obs['state'] = obs['eef_pos']
+        # np_obs = to_np(obs)
+
+        ret = self.actor(gpu_obs)
+        eval_metrics = ret['metrics']
+        return None, eval_metrics

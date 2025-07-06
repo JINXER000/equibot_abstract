@@ -14,7 +14,7 @@ from equibot.policies.utils.misc import rotate_around_z, EQUIBOT_PATH, compose_t
 matrix_to_rotation_6d
 
 
-class DMGPolicyDataset(Dataset):
+class RobosuitePolicyDataset(Dataset):
     def __init__(self, cfg, mode) -> None:
         super().__init__()
 
@@ -87,17 +87,23 @@ class DMGPolicyDataset(Dataset):
                
                 self.cache[ep_key] = {}
 
+              # Get absolute actions and gripper info
+                # abs_actions = f[f'data/abs_actions'][()]
+                # abs_actions = abs_actions.reshape(*abs_actions.shape[:1], -1, 7)
+                # gripper_array = abs_actions[..., [-1]]
+
+                ## NOTE: robot1 --> left, robot0 --> right
+                left_gripper_actions = f[f'data/demo_{demo_id}/action_dict/left_gripper'][()]
+                right_gripper_actions = f[f'data/demo_{demo_id}/action_dict/right_gripper'][()]
+                gripper_array = np.concatenate([left_gripper_actions, right_gripper_actions], axis=1)
+                gripper_array = np.expand_dims(gripper_array, axis=-1)  # shape: demo_len, 2, 1
+
+                demo_len = gripper_array.shape[0]
+
                 sg_info = f['sg_info']
                 sg_params_json = f['sg_params'][()]
                 sg_params = json.loads(sg_params_json.decode('utf-8'))
                 robot_names = sg_params['robots']   
-
-              # Get absolute actions and gripper info
-                abs_actions = f[f'data/abs_actions'][()]
-                abs_actions = abs_actions.reshape(*abs_actions.shape[:1], -1, 7)
-                gripper_array = abs_actions[..., [-1]]
-
-                demo_len = gripper_array.shape[0]
 
                 ## decide the boundary
                 biop_skill_info = sg_info['bimanual_0'] ## TODO: use kw to represent the biop skill
@@ -110,9 +116,17 @@ class DMGPolicyDataset(Dataset):
                 else:
                     biop_end_idx = demo_len
 
+                # self.ep_metadata[ep_key] = {
+                #     'biop_start_idx': biop_start_idx,
+                #     'biop_end_idx': biop_end_idx,
+                #     'robot_names': robot_names,
+                #     'demo_len': demo_len,
+                # }
+
+                ## NOTE: currently train whole episodes. The solution maybe: robot0, robot1 is reversed!
                 self.ep_metadata[ep_key] = {
-                    'biop_start_idx': biop_start_idx,
-                    'biop_end_idx': biop_end_idx,
+                    'biop_start_idx': 0,
+                    'biop_end_idx': demo_len-1,
                     'robot_names': robot_names,
                     'demo_len': demo_len,
                 }
@@ -195,6 +209,7 @@ class DMGPolicyDataset(Dataset):
                 ## cache states
                 self.cache[ep_key]['eef13d:state'] = eef_state_13d
                 # self.cache[ep_key]['gripper:state'] = gripper_vals
+
                 for start_id in range(biop_start_idx, biop_end_idx- self.pred_horizon + 1):
                     self.timestep_indices.append((file_idx, start_id))
 
@@ -419,7 +434,7 @@ def main(cfg):
     # sys.path.append('/home/xuhang/interbotix_ws/src/pddlstream_aloha')
     # from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 
-    test_dataset = DMGPolicyDataset(cfg.data.dataset, "test")
+    test_dataset = RobosuitePolicyDataset(cfg.data.dataset, "test")
     num_workers = 0
     batch_size = 1
     test_loader = torch.utils.data.DataLoader(
