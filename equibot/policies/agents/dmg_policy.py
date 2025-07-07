@@ -53,8 +53,8 @@ class DMGPolicy(nn.Module):
         net_dict = {}
         self.objects = set(cfg.data.dataset.conditioned_objects)
         for obj in self.objects:
-            net_dict[f'{obj}_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
-            # net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
+            # net_dict[f'{obj}_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
+            net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
 
         self.eef_dims = {}
         self.skill_names = cfg.data.dataset.skill_names
@@ -74,10 +74,10 @@ class DMGPolicy(nn.Module):
                     diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
                 )   
             else:
-                ## TODO: check if scalar conditional works
-                if 'unitraj_noise_pred_net' in net_dict:
-                    continue
-                net_dict['unitraj_noise_pred_net'] = VecConditionalUnet1D(
+                # ## TODO: check if scalar conditional works
+                # if 'unitraj_noise_pred_net' in net_dict:
+                #     continue
+                net_dict[f"{skill_name}_noise_pred_net"] = VecConditionalUnet1D(
                 # net_dict[f'{skill_name}_noise_pred_net'] = VecConditionalUnet1D(
                 input_dim=self.eef_dims[skill_name],  ## vec dim, rot is 2, xyz is 1
                 cond_dim=self.obs_dim* self.obs_horizon,
@@ -184,10 +184,10 @@ class DMGPolicy(nn.Module):
 
         ## in training
         if ema_nets is None:
-            encoder_handle = self.nets[f'{obj_name}_encoder']
+            encoder_handle = self.nets["obj_encoder"]
             feat_dict = encoder_handle(pc, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
         else: # in inference
-            feat_dict = ema_nets[f'{obj_name}_encoder'](pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
+            feat_dict = ema_nets["obj_encoder"](pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
         
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
@@ -292,8 +292,8 @@ class DMGPolicy(nn.Module):
 
             new_action = {f"{skill_name}:eefpos": None, f"{skill_name}:gripper": None }
 
-            vec_noise_pred, gripper_noise_pred = ema_nets["unitraj_noise_pred_net"](\
-            # vec_noise_pred, gripper_noise_pred = ema_nets[f"{skill_name}_noise_pred_net"](\
+            # vec_noise_pred, gripper_noise_pred = ema_nets["unitraj_noise_pred_net"](\
+            vec_noise_pred, gripper_noise_pred = ema_nets[f"{skill_name}_noise_pred_net"](\
                 sample=curr_action[f"{skill_name}:eefpos"],
                 timestep = k,
                 scalar_sample = curr_action[f"{skill_name}:gripper"], 
