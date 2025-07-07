@@ -63,7 +63,7 @@ class DMGPolicy(nn.Module):
         self.skill_scalar_mapping = {}
         for i, skill_name in enumerate(self.skill_names):
             self.skill_obj_mapping[skill_name] = cfg.data.dataset.conditioned_objects[i]
-            self.skill_scalar_mapping[skill_name] = torch.tensor(i).to(self.device) # scalar cond for unimanual skills
+            self.skill_scalar_mapping[skill_name] = torch.tensor(i*100).to(self.device) # scalar cond for unimanual skills
 
         for skill_name in self.skill_names:
             self.eef_dims[skill_name] = 3
@@ -74,10 +74,10 @@ class DMGPolicy(nn.Module):
                     diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
                 )   
             else:
-                # ## TODO: check if scalar conditional works
-                # if 'unitraj_noise_pred_net' in net_dict:
-                #     continue
-                net_dict[f"{skill_name}_noise_pred_net"] = VecConditionalUnet1D(
+                ## TODO: check if scalar conditional works
+                if 'unitraj_noise_pred_net' in net_dict:
+                    continue
+                net_dict["unitraj_noise_pred_net"] = VecConditionalUnet1D(
                 # net_dict[f'{skill_name}_noise_pred_net'] = VecConditionalUnet1D(
                 input_dim=self.eef_dims[skill_name],  ## vec dim, rot is 2, xyz is 1
                 cond_dim=self.obs_dim* self.obs_horizon,
@@ -292,8 +292,8 @@ class DMGPolicy(nn.Module):
 
             new_action = {f"{skill_name}:eefpos": None, f"{skill_name}:gripper": None }
 
-            # vec_noise_pred, gripper_noise_pred = ema_nets["unitraj_noise_pred_net"](\
-            vec_noise_pred, gripper_noise_pred = ema_nets[f"{skill_name}_noise_pred_net"](\
+            vec_noise_pred, gripper_noise_pred = ema_nets["unitraj_noise_pred_net"](\
+            # vec_noise_pred, gripper_noise_pred = ema_nets[f"{skill_name}_noise_pred_net"](\
                 sample=curr_action[f"{skill_name}:eefpos"],
                 timestep = k,
                 scalar_sample = curr_action[f"{skill_name}:gripper"], 

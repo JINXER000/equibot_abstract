@@ -92,10 +92,10 @@ class RobosuitePolicyDataset(Dataset):
                 # abs_actions = abs_actions.reshape(*abs_actions.shape[:1], -1, 7)
                 # gripper_array = abs_actions[..., [-1]]
 
-                ## NOTE: robot1 --> left, robot0 --> right
+                ## NOTE: in action_dict, robot1 --> left, robot0 --> right
                 left_gripper_actions = f[f'data/demo_{demo_id}/action_dict/left_gripper'][()]
                 right_gripper_actions = f[f'data/demo_{demo_id}/action_dict/right_gripper'][()]
-                gripper_array = np.concatenate([left_gripper_actions, right_gripper_actions], axis=1)
+                gripper_array = np.concatenate([right_gripper_actions, left_gripper_actions], axis=1)
                 gripper_array = np.expand_dims(gripper_array, axis=-1)  # shape: demo_len, 2, 1
 
                 demo_len = gripper_array.shape[0]
@@ -147,12 +147,13 @@ class RobosuitePolicyDataset(Dataset):
 
                 ## for original 
                 elif self.dof == 7:
+                    ## NOTE: in action_dict, robot1 --> left, robot0 --> right
                     left_eef_action_relpos = f[f'data/demo_{demo_id}/action_dict/left_rel_pos'][()]
                     left_eef_action_relrot = f[f'data/demo_{demo_id}/action_dict/left_rel_rot_axis_angle'][()]
                     right_eef_action_relpos = f[f'data/demo_{demo_id}/action_dict/right_rel_pos'][()]
                     right_eef_action_relrot = f[f'data/demo_{demo_id}/action_dict/right_rel_rot_axis_angle'][()]
-                    eef_action_relpos = np.concatenate([np.expand_dims(left_eef_action_relpos, axis=1), np.expand_dims(right_eef_action_relpos, axis=1)], axis=1)
-                    eef_action_relrot = np.concatenate([np.expand_dims(left_eef_action_relrot, axis=1), np.expand_dims(right_eef_action_relrot, axis=1)], axis=1)
+                    eef_action_relpos = np.concatenate([np.expand_dims(right_eef_action_relpos, axis=1), np.expand_dims(left_eef_action_relpos, axis=1)], axis=1)
+                    eef_action_relrot = np.concatenate([np.expand_dims(right_eef_action_relrot, axis=1), np.expand_dims(left_eef_action_relrot, axis=1)], axis=1)
                     eef_action_7d = np.concatenate([gripper_array, eef_action_relpos, eef_action_relrot], axis=-1)
                     self.cache[ep_key]['eef7d:action'] = eef_action_7d.reshape(demo_len, -1)
 
