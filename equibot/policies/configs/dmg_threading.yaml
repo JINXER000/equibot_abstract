@@ -23,9 +23,13 @@ model:
   down_dims: [128, 256, 512]
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
-
   obs_horizon: 1
-  
+
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
+
+  num_diffusion_iters: 15 ## inference for DDIM
+
   encoder:
     backbone_type: VDGCNN
     backbone_args: 
