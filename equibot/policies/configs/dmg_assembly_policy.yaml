@@ -4,11 +4,12 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "logs/train/dmg_assembly/ckpt_traj_grasp_bimanual.pth" 
+  ckpt: "logs/train/dmg_assembly_policy/ckpt_fixed_leftright.pth" 
   eval_interval: 10
   num_epochs: 2000
 
 env:
+  env_name: 'two_arm_three_piece_assembly'
   env_class: 'dmg_assembly'
   num_eef: 2
   dof: 7
@@ -39,10 +40,22 @@ data:
     uniskills: ['grasp']
     skill_names: ['robot0_grasp_piece_1', 'robot1_grasp_piece_2', 'bimanual_0']
     conditioned_objects: ['piece_1', 'piece_2', 'None']
+    related_robots: ['robot0', 'robot1']
+    related_objects: ['piece_1', 'piece_2', 'base']
+    
     dataset_type: 'dmg_policy'
 
     is_obj_centric: True
 
+  shape_meta: &shape_meta
+    # acceptable types: rgb, low_dim
+    obs:
+      eef_pos:
+        shape: [2, 13]
+      pc:
+        shape: [256, 3]
+    action: 
+      shape: [2, 9]
 
 eval:
   history_bid: 10

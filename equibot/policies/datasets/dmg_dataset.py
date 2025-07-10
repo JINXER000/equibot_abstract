@@ -314,7 +314,7 @@ class DMGDataset(Dataset):
         print('processed all hdf5 file!')
 
 
-@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_threading")
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_assembly")
 def main(cfg):
     import sys
     sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
@@ -357,27 +357,27 @@ def main(cfg):
                                         directory = None, 
                                         robot_name = 'panda_dual')
 
-                # else:
-                #     ## vis prehension skills
-                #     pc_vis_data = cpu_obs[skill_name+':pc'][0]
-                #     grasp_vis_data = cpu_obs[skill_name+':eefpos'][0]
-                #     obj_name = ascii_tensor_to_str(cpu_obs[skill_name+':obj_name'][0])
-                #     print(f'obj_name: {obj_name}, skill_name: {skill_name}')
+                else:
+                    ## vis prehensile skills
+                    pc_vis_data = cpu_obs[skill_name+':pc'][0]
+                    grasp_vis_data = cpu_obs[skill_name+':eefpos'][0]
+                    obj_name = ascii_tensor_to_str(cpu_obs[skill_name+':obj_name'][0])
+                    print(f'obj_name: {obj_name}, skill_name: {skill_name}')
 
-                #     history_list = []
-                #     tmp_pc = pc_vis_data[0].reshape(-1, 3).numpy()
-                #     traj_len = grasp_vis_data.shape[0]
-                #     for i in range(traj_len):
-                #         grasp_pose = grasp_vis_data[i,:4].reshape(1,-1,4).numpy()
-                #         grasp_pose_tensor = torch.tensor(grasp_pose)
+                    history_list = []
+                    tmp_pc = pc_vis_data[0].reshape(-1, 3).numpy()
+                    traj_len = grasp_vis_data.shape[0]
+                    for i in range(traj_len):
+                        grasp_pose = grasp_vis_data[i,:4].reshape(1,-1,4).numpy()
+                        grasp_pose_tensor = torch.tensor(grasp_pose)
 
-                #         vecrot_grasp = rotate_vec_grasp(grasp_pose_tensor, rot_z)
-                #         action_slice = (vecrot_grasp.reshape(-1, 4), None)
-                #         history_list.append(action_slice)
+                        vecrot_grasp = rotate_vec_grasp(grasp_pose_tensor, rot_z)
+                        action_slice = (vecrot_grasp.reshape(-1, 4), None)
+                        history_list.append(action_slice)
 
-                #     render_pose(history_list, use_gui=True, \
-                #                 directory = None, obj_points = tmp_pc,
-                #                 robot_name = 'panda_dual')
+                    render_pose(history_list, use_gui=True, \
+                                directory = None, obj_points = tmp_pc,
+                                robot_name = 'panda_dual')
                 
 
 

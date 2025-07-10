@@ -49,6 +49,10 @@ class RobosuitePolicyDataset(Dataset):
             self.obs_horizon = 1
             self.pred_horizon = 1
 
+        if mode == 'inference':
+            print('This is a dummy dataset for inference, no data loading')
+            return
+
         self.root = cfg["path"]
         self.data_dir = os.path.join(self.root, "raw")
         

@@ -141,15 +141,9 @@ class EefEquiBotPolicy(nn.Module):
 
         return scalar_ac
 
-    def forward(self, eval_batch):
-        # assumes that observation has format:
-        # - pc: [BS, obs_horizon, num_pts, 3]
-        # - state: [BS, obs_horizon, obs_dim]
-        # returns:
-        # - action: [BS, pred_horizon, ac_dim]
+    def predict_action(self, eval_batch):
         pc = eval_batch["pc"]
         state = eval_batch["eef_pos"]
-        gt_action = eval_batch['action']
 
         pc = self.pc_normalizer.normalize(pc)
 
@@ -243,6 +237,21 @@ class EefEquiBotPolicy(nn.Module):
         action[..., 1:4] = action[..., 1:4] * scale + center
 
         action = action.reshape(B, Hp, E * self.dof)
+
+        return action
+
+
+    def forward_with_metrics(self, eval_batch):
+        # assumes that observation has format:
+        # - pc: [BS, obs_horizon, num_pts, 3]
+        # - state: [BS, obs_horizon, obs_dim]
+        # returns:
+        # - action: [BS, pred_horizon, ac_dim]
+        pc = eval_batch["pc"]
+        state = eval_batch["eef_pos"]
+        gt_action = eval_batch['action']
+
+        action = self.predict_action(eval_batch)
 
         eval_metrics = {}
         eval_metrics['eef_posvel_error'] = torch.nn.functional.mse_loss(gt_action[..., 1:4], action[..., 1:4])

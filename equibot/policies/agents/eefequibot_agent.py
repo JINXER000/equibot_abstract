@@ -261,6 +261,12 @@ class EefEquiBotAgent(DPAgent):
         #     obs['state'] = obs['eef_pos']
         # np_obs = to_np(obs)
 
-        ret = self.actor(gpu_obs)
+        ret = self.actor.forward_with_metrics(gpu_obs)
         eval_metrics = ret['metrics']
         return None, eval_metrics
+
+    def predict_action(self, obs):
+        self.train(False)
+        gpu_obs = to_torch(obs, self.device)
+        action = self.actor.predict_action(gpu_obs)
+        return action
