@@ -357,3 +357,124 @@ def compose_transformation(xyz, quat):
     rot_mat = Rotation.from_quat(quat).as_matrix()
     trans = np.concatenate([np.concatenate([rot_mat, np.array([xyz]).T], axis=1), np.array([[0, 0, 0, 1]])], axis=0)
     return trans
+
+## pointcloud preprocessing
+from pointnet2_ops.pointnet2_utils import furthest_point_sample, \
+    gather_operation
+
+def fps_subsample(pcd, n_points=2048):
+    """
+    Args
+        pcd: (b, 16384, 3)
+
+    returns
+        new_pcd: (b, n_points, 3)
+    """
+    if pcd.shape[1] == n_points:
+        return pcd
+    elif pcd.shape[1] < n_points:
+        raise ValueError(
+            'FPS subsampling receives a larger n_points: {:d} > {:d}'.format(
+                n_points, pcd.shape[1]))
+    new_pcd = gather_operation(
+        pcd.permute(0, 2, 1).contiguous(),
+        furthest_point_sample(pcd, n_points))
+    new_pcd = new_pcd.permute(0, 2, 1).contiguous()
+    return new_pcd
+
+import open3d as o3d
+
+def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
+    if pc.shape[0] < num_points* 0.3:
+        raise ValueError('Input pc shape is not enough points!')
+    elif pc.shape[0] < num_points:
+        random_repeated_indices = np.random.choice(pc.shape[0], num_points - pc.shape[0], replace=True)
+        pc = np.concatenate([pc, pc[random_repeated_indices]], axis=0)
+        return pc
+
+    # Convert numpy array to Open3D point cloud
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pc)
+    if method == 'random':
+        pcd_down = pcd.random_down_sample(sampling_ratio=num_points / pc.shape[0])
+    elif method == 'fps':
+        reshaped_points = pc.reshape(1, -1, 3)
+        pc_tensor = torch.from_numpy(reshaped_points).to(torch.float32).to(torch.device('cuda'))
+        downsampled_pc_tensor = fps_subsample(pc_tensor, num_points)
+        downsampled_pc = downsampled_pc_tensor.cpu().numpy().squeeze()
+        pcd_down = o3d.geometry.PointCloud()
+        pcd_down.points = o3d.utility.Vector3dVector(downsampled_pc)
+    elif method == 'uniform':
+        every_k_points = max(1, pc.shape[0] // num_points)
+        pcd_down = pcd.uniform_down_sample(every_k_points=every_k_points)
+    else:
+        raise ValueError(f'Method {method} not supported!')
+
+    ## save the pc
+    if debug_visualize:
+        o3d.io.write_point_cloud(f'{method}_pc.ply', pcd_down)
+
+    return np.asarray(pcd_down.points)
+
+def add_projected_point(pc, num_ratio = 0.5):
+    """
+    Project the point cloud onto the plane at the minimum z value, then downsample to 100 points.
+    Args:
+        pc (np.ndarray): Input point cloud of shape (N, 3)
+    Returns:
+        np.ndarray: Downsampled projected point cloud of shape (100, 3)
+    """
+    # Find the minimum z value
+    min_z = np.min(pc[:, 2])
+    # Project all points onto the plane z = min_z
+    projected_pc = pc.copy()
+    projected_pc[:, 2] = min_z
+    
+    num_points = int(pc.shape[0] * num_ratio)
+    projected_pc_down = downsample_pc(projected_pc, num_points, method = 'random')
+    return projected_pc_down
+
+def centralize_downsample(pc, pc_shape, obj_centric = True, add_bottom = False, method = 'random', debug_visualize = True):
+    input_pc = np.asarray(pc)
+    assert len(input_pc.shape) == 2 
+
+    if add_bottom:
+        input_pc = np.concatenate([input_pc, add_projected_point(input_pc)], axis=0)
+
+    input_pc= downsample_pc(input_pc, pc_shape[0], method=method, debug_visualize=debug_visualize)
+
+    if obj_centric:
+        pc_offset = np.min(input_pc, axis=0)
+        input_pc = input_pc - pc_offset
+    else:
+        pc_offset = np.zeros(3)
+    return input_pc, pc_offset
+
+def centralize_grasp( grasp, pc_offset):
+    grasp[:3, 3] -= pc_offset
+    return grasp
+
+def decentralize_cond_pc(pc, pc_offset):
+    pc = pc + pc_offset
+    return pc
+
+    
+def decentralize_grasp(grasp, pc_offset, ref_grasp = None):
+    ## if the data is grasp pose, expand the dimension 
+    if len(grasp.shape) == 2:
+        is_grasp_pose = True
+        grasp = np.expand_dims(grasp, axis=0)
+    else:
+        is_grasp_pose = False
+
+    grasp[:, :3, 3] += pc_offset
+    ##below for debug, visualize right grasp rot
+    if ref_grasp is not None:
+        grasp[:, :3, :3] = ref_grasp
+    if grasp.shape[1] ==8:
+        grasp[:, 4:7, 3] += pc_offset
+
+    ## shrink the dim 
+    if is_grasp_pose:
+        grasp = np.squeeze(grasp, axis=0)
+    return grasp

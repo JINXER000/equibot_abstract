@@ -4,12 +4,8 @@ import torch
 import hydra
 import numpy as np
 
-from equibot.policies.utils.misc import get_agent, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH
-from equibot.policies.agents.aloha_agent import ALOHAAgent  
-from equibot.policies.agents.compaloha_agent import CompALOHAAgent  
+from equibot.policies.utils.misc import get_agent, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, decentralize_cond_pc, decentralize_grasp, centralize_downsample
 
-# from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
-# from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 
 TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
 
@@ -66,7 +62,7 @@ class pddl_wrapper(object):
         for k, v in obs.items():
             if 'pc' in k:
                 pc = v.numpy().reshape(-1, 3)
-                centered_pc, offset = self.dataset.centralize_cond_pc(pc, obj_centric = obj_centric)
+                centered_pc, offset = centralize_downsample(pc, self.dataset.pc_shape, obj_centric = obj_centric, add_bottom = self.dataset.is_add_bottom)
                 centralized_obs[k] = torch.tensor(centered_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
                 
                 grasp_key = k.replace('pc', 'grasp')
@@ -84,7 +80,7 @@ class pddl_wrapper(object):
                 v_cpu = v.cpu().detach()
                 pc = v_cpu.numpy().reshape(-1, 3)
                 grasp_key = k.replace('pc', 'grasp')
-                decentralized_pc = self.dataset.decentralize_cond_pc(pc, offset_dict[grasp_key])
+                decentralized_pc = decentralize_cond_pc(pc, offset_dict[grasp_key])
                 # decentralize_obs[k] = decentralized_pc
                 decentralize_obs[k] = torch.tensor(decentralized_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
         return decentralize_obs
@@ -92,13 +88,13 @@ class pddl_wrapper(object):
     def decentralize_history(self, history, offset_dict, **kwargs):
         for action_slice in history:
             for k, v in offset_dict.items():
-                action_slice.data[k] = self.dataset.decentralize_grasp(action_slice.data[k], offset_dict[k], **kwargs)
+                action_slice.data[k] = decentralize_grasp(action_slice.data[k], offset_dict[k], **kwargs)
         return history
     
     def decentralize_action(self, action_dict_c, offset_dict):
         action_dict = action_dict_c.copy()
         for k, v in offset_dict.items():
-            action_dict[k] = self.dataset.decentralize_grasp(action_dict[k], offset_dict[k])
+            action_dict[k] = decentralize_grasp(action_dict[k], offset_dict[k])
         return action_dict
     
     def dict_tensor_to_numpy(self, dict_tensor):

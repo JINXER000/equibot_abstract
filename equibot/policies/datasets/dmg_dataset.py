@@ -12,26 +12,10 @@ from equibot.policies.utils.constants import qpos_to_eepose
 # from equibot.envs.sim_mobile.utils.transformations import quat2mat
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, str_to_ascii_tensor, ascii_tensor_to_str, get_skill_names, compose_transformation
+from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, str_to_ascii_tensor, ascii_tensor_to_str, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp
 
 import hydra
 
-
-
-
-
-
-def downsample_pc(pc, num_points):
-    if pc.shape[0] > num_points:
-        sampled_indices = np.random.choice(pc.shape[0], num_points, replace=False)
-        pc = pc[sampled_indices]
-    elif pc.shape[0] < num_points:
-        if pc.shape[0] < num_points *0.3:
-            raise ValueError('Input pc shape is not enough points!')
-        else:
-            random_repeated_indices = np.random.choice(pc.shape[0], num_points - pc.shape[0], replace=True)
-            pc = np.concatenate([pc, pc[random_repeated_indices]], axis=0)
-    return pc
 
 
 
@@ -52,6 +36,7 @@ class DMGDataset(Dataset):
         # self.has_eff = True in self.has_eff_list
 
         self.is_obj_centric = cfg.is_obj_centric
+        self.is_add_bottom = cfg.is_add_bottom
 
         self.num_eef = cfg.num_eef
         self.dof = cfg.dof
@@ -85,48 +70,6 @@ class DMGDataset(Dataset):
             sample = self.transform(sample)
         return sample
     
-    def centralize_cond_pc(self,  pc, obj_centric = True):
-        input_pc = np.asarray(pc)
-        assert len(input_pc.shape) == 2 
-        input_pc= downsample_pc(input_pc, self.pc_shape[0])
-    
-        if obj_centric:
-            pc_offset = np.min(input_pc, axis=0)
-            input_pc = input_pc - pc_offset
-        else:
-            pc_offset = np.zeros(3)
-        return input_pc, pc_offset
-    
-    def centralize_grasp(self, grasp, pc_offset):
-        grasp[:3, 3] -= pc_offset
-        # if self.has_eff:
-        #     grasp[4:7, 3] -= pc_offset
-        return grasp
-    
-    def decentralize_cond_pc(self,  pc, pc_offset):
-        pc = pc + pc_offset
-        return pc
-    
-      
-    def decentralize_grasp(self,  grasp, pc_offset, ref_grasp = None, **kwargs):
-        ## if the data is grasp pose, expand the dimension 
-        if len(grasp.shape) == 2:
-            is_grasp_pose = True
-            grasp = np.expand_dims(grasp, axis=0)
-        else:
-            is_grasp_pose = False
-
-        grasp[:, :3, 3] += pc_offset
-        ##below for debug, visualize right grasp rot
-        if ref_grasp is not None:
-            grasp[:, :3, :3] = ref_grasp
-        if grasp.shape[1] ==8:
-            grasp[:, 4:7, 3] += pc_offset
-
-        ## shrink the dim 
-        if is_grasp_pose:
-            grasp = np.squeeze(grasp, axis=0)
-        return grasp
     
     def process_select(self, cfg, **kwargs):
 
@@ -284,7 +227,7 @@ class DMGDataset(Dataset):
                                     # raise NotImplementedError(f'Skill name {skill_name} not implemented!')
                                 
                                 
-                                obj_pc_n, obj_offset = self.centralize_cond_pc(obj_pc)
+                                obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = 'fps', debug_visualize=False)
                                 obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
                                 
                                 rbt_name = skill_info['related_rbts'][0].decode('utf-8')
@@ -295,7 +238,7 @@ class DMGDataset(Dataset):
                                 eef_pos_list = rbt_actions[f'{rbt_name}_eef_pos'][choiced_ids]
                                 eef_quat_list = rbt_actions[f'{rbt_name}_eef_quat'][choiced_ids]
                                 eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
-                                normalized_eef_pos_list = list(map(self.centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
+                                normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
                                 normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
 
                                 gripper_list = gripper_actions[rbt_name][choiced_ids]
@@ -314,7 +257,7 @@ class DMGDataset(Dataset):
         print('processed all hdf5 file!')
 
 
-@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_assembly")
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_threading")
 def main(cfg):
     import sys
     sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')

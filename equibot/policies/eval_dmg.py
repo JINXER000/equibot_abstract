@@ -42,7 +42,7 @@ class Robosuite_Evaluator(DMG_env_switchable):
 
     def initialize_env(self, cfg, reset_grippers= True, **kwargs):
         self.cur_env_name = cfg.env.env_name
-        self.load_checkpoint(cfg, **kwargs)        
+        self.load_checkpoint(cfg, width = 168, height = 168)        
         self.ts = self.reset_all(reset_grippers = reset_grippers)
 
 
@@ -152,7 +152,7 @@ class Robosuite_Evaluator(DMG_env_switchable):
 
         return action_out
     
-    def load_checkpoint(self, cfg, width = 84, height = 84, controller_name = "OSC_POSE", **kwargs):
+    def load_checkpoint(self, cfg, width = 168, height = 168, controller_name = "OSC_POSE", **kwargs):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         # load checkpoint
         self.cfg = cfg
