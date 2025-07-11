@@ -45,6 +45,9 @@ class DMGPolicy(nn.Module):
 
         self.encoder_out_dim = cfg.model.encoder.c_dim
 
+        self.separate_encoder = cfg.model.separate_encoder
+        self.separate_policy = cfg.model.separate_policy
+
         self.dof = cfg.env.dof # 6
         self.num_eef = cfg.env.num_eef
 
@@ -53,8 +56,8 @@ class DMGPolicy(nn.Module):
         net_dict = {}
         self.objects = set(cfg.data.dataset.conditioned_objects)
         for obj in self.objects:
-            # net_dict[f'{obj}_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
-            net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
+            encoder_key = f'{obj}_encoder' if self.separate_encoder else 'obj_encoder'
+            net_dict[encoder_key] = SIM3Vec4Latent(**cfg.model.encoder)
 
         self.eef_dims = {}
         self.skill_names = cfg.data.dataset.skill_names
@@ -74,11 +77,15 @@ class DMGPolicy(nn.Module):
                     diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
                 )   
             else:
-                ## TODO: check if scalar conditional works
+                ## TODO: check if we should use word embedding
                 if 'unitraj_noise_pred_net' in net_dict:
                     continue
-                net_dict["unitraj_noise_pred_net"] = VecConditionalUnet1D(
-                # net_dict[f'{skill_name}_noise_pred_net'] = VecConditionalUnet1D(
+
+                if self.separate_policy:
+                    policy_key = f'{skill_name}_noise_pred_net'
+                else:
+                    policy_key = 'unitraj_noise_pred_net'
+                net_dict[policy_key] = VecConditionalUnet1D(
                 input_dim=self.eef_dims[skill_name],  ## vec dim, rot is 2, xyz is 1
                 cond_dim=self.obs_dim* self.obs_horizon,
                 scalar_cond_dim= self.obs_horizon,  ## if =1,  it is the skill_scalar_id
@@ -183,11 +190,12 @@ class DMGPolicy(nn.Module):
         batch_size = pc.shape[0]
 
         ## in training
+        encoder_key = f'{obj_name}_encoder' if self.separate_encoder else "obj_encoder"
+        encoder_handle = self.nets[encoder_key] 
         if ema_nets is None:
-            encoder_handle = self.nets["obj_encoder"]
             feat_dict = encoder_handle(pc, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
         else: # in inference
-            feat_dict = ema_nets["obj_encoder"](pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
+            feat_dict = encoder_handle(pc, ret_perpoint_feat=False, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])
         
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
@@ -288,12 +296,12 @@ class DMGPolicy(nn.Module):
          ####### inverse diffusion step
         skill_scalar_id = self.skill_scalar_mapping[skill_name].repeat(batch_size, 1)
 
+        policy_key = f"{skill_name}_noise_pred_net" if self.separate_policy else "unitraj_noise_pred_net"
         for k in self.noise_scheduler.timesteps:
 
             new_action = {f"{skill_name}:eefpos": None, f"{skill_name}:gripper": None }
 
-            vec_noise_pred, gripper_noise_pred = ema_nets["unitraj_noise_pred_net"](\
-            # vec_noise_pred, gripper_noise_pred = ema_nets[f"{skill_name}_noise_pred_net"](\
+            vec_noise_pred, gripper_noise_pred = ema_nets[policy_key](\
                 sample=curr_action[f"{skill_name}:eefpos"],
                 timestep = k,
                 scalar_sample = curr_action[f"{skill_name}:gripper"], 

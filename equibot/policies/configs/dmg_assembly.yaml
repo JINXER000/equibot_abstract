@@ -26,6 +26,9 @@ model:
 
   obs_horizon: 1
   
+  separate_encoder: True
+  separate_policy: True
+
   encoder:
     backbone_type: VDGCNN
     backbone_args: 
@@ -45,7 +48,8 @@ data:
 
     is_obj_centric: True
     is_add_bottom: True
-
+    downsample_method: 'fps'
+    
 eval:
   history_bid: 10
 

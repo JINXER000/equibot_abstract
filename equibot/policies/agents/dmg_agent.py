@@ -158,8 +158,8 @@ class DMGAgent(object):
 
         ## /tilde{z}_t = prednet(x_t, Cond, t)
         skill_scalar_id = self.actor.skill_scalar_mapping[skill_name].repeat(batch_size,1)
-        eefpos_noise_pred, gripper_noise_pred = self.actor.nets["unitraj_noise_pred_net"](
-        # eefpos_noise_pred, gripper_noise_pred = self.actor.nets[f'{skill_name}_noise_pred_net'](
+        policy_key = f'{skill_name}_noise_pred_net' if self.actor.separate_policy else 'unitraj_noise_pred_net'
+        eefpos_noise_pred, gripper_noise_pred = self.actor.nets[policy_key](
             noisy_eefpos,
             timesteps,
             scalar_sample = noisy_gripper_action,

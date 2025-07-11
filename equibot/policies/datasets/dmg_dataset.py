@@ -37,6 +37,7 @@ class DMGDataset(Dataset):
 
         self.is_obj_centric = cfg.is_obj_centric
         self.is_add_bottom = cfg.is_add_bottom
+        self.downsample_method = cfg.downsample_method
 
         self.num_eef = cfg.num_eef
         self.dof = cfg.dof
@@ -227,7 +228,7 @@ class DMGDataset(Dataset):
                                     # raise NotImplementedError(f'Skill name {skill_name} not implemented!')
                                 
                                 
-                                obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = 'fps', debug_visualize=False)
+                                obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=True)
                                 obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
                                 
                                 rbt_name = skill_info['related_rbts'][0].decode('utf-8')

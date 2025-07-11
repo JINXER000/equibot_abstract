@@ -25,9 +25,10 @@ model:
   hidden_dim: 256
   obs_horizon: 1
 
+  separate_encoder: True
+  separate_policy: True
   # noise_scheduler:
   #   _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
-
   # num_diffusion_iters: 15 ## inference for DDIM
 
   encoder:
@@ -49,7 +50,7 @@ data:
 
     is_obj_centric: True
     is_add_bottom: True
-
+    downsample_method: 'fps'
 
 eval:
   history_bid: 10
