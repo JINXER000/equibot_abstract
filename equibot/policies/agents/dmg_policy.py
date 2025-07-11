@@ -83,12 +83,14 @@ class DMGPolicy(nn.Module):
 
                 if self.separate_policy:
                     policy_key = f'{skill_name}_noise_pred_net'
+                    scalar_cond_dim = 0
                 else:
                     policy_key = 'unitraj_noise_pred_net'
+                    scalar_cond_dim= self.obs_horizon
                 net_dict[policy_key] = VecConditionalUnet1D(
                 input_dim=self.eef_dims[skill_name],  ## vec dim, rot is 2, xyz is 1
                 cond_dim=self.obs_dim* self.obs_horizon,
-                scalar_cond_dim= self.obs_horizon,  ## if =1,  it is the skill_scalar_id
+                scalar_cond_dim= scalar_cond_dim,  ## if =1,  it is the skill_scalar_id
                 scalar_input_dim= 1,  ## output gripper val
                 diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
                 cond_predict_scale=False,
@@ -294,9 +296,13 @@ class DMGPolicy(nn.Module):
             f"{skill_name}:gripper": noisy_gripper}
         
          ####### inverse diffusion step
-        skill_scalar_id = self.skill_scalar_mapping[skill_name].repeat(batch_size, 1)
-
-        policy_key = f"{skill_name}_noise_pred_net" if self.separate_policy else "unitraj_noise_pred_net"
+        if self.separate_policy:
+            policy_key = f'{skill_name}_noise_pred_net'
+            skill_scalar_id = None
+        else:
+            policy_key = 'unitraj_noise_pred_net'
+            skill_scalar_id = self.skill_scalar_mapping[skill_name].repeat(batch_size,1)
+            
         for k in self.noise_scheduler.timesteps:
 
             new_action = {f"{skill_name}:eefpos": None, f"{skill_name}:gripper": None }

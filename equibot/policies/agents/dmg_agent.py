@@ -157,8 +157,13 @@ class DMGAgent(object):
         noisy_gripper_action = self.actor.noise_scheduler.add_noise(gt_gripper_action, gripper_action_noise, timesteps)
 
         ## /tilde{z}_t = prednet(x_t, Cond, t)
-        skill_scalar_id = self.actor.skill_scalar_mapping[skill_name].repeat(batch_size,1)
-        policy_key = f'{skill_name}_noise_pred_net' if self.actor.separate_policy else 'unitraj_noise_pred_net'
+        if self.actor.separate_policy:
+            policy_key = f'{skill_name}_noise_pred_net'
+            skill_scalar_id = None
+        else:
+            policy_key = 'unitraj_noise_pred_net'
+            skill_scalar_id = self.actor.skill_scalar_mapping[skill_name].repeat(batch_size,1)
+
         eefpos_noise_pred, gripper_noise_pred = self.actor.nets[policy_key](
             noisy_eefpos,
             timesteps,
@@ -301,7 +306,7 @@ class DMGAgent(object):
         gpu_obs = to_torch(cpu_obs, self.device)
 
         # gpu_obs = obs
-
-        action_dict, eval_metrics, denoise_history = self.actor(gpu_obs, skill_id=skill_id)
+        with torch.no_grad():
+            action_dict, eval_metrics, denoise_history = self.actor(gpu_obs, skill_id=skill_id)
 
         return denoise_history, eval_metrics
