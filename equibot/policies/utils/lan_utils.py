@@ -3,8 +3,9 @@ import os
 import numpy as np
 from transformers import AutoTokenizer, AutoModel
 from easydict import EasyDict
-import torch
 import torch.nn as nn
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 def get_skill_embs(cfg, descriptions, cache_dir):
     """
