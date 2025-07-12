@@ -26,8 +26,8 @@ model:
   hidden_dim: 256
   obs_horizon: 1
 
-  separate_encoder: True
-  separate_policy: True
+  separate_encoder: False
+  separate_policy: False
   # noise_scheduler:
   #   _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
   # num_diffusion_iters: 15 ## inference for DDIM
@@ -37,6 +37,14 @@ model:
     backbone_args: 
       num_layers: 7
       preload_path: "pretrained/chairs.pt"
+
+  embedding_cache_dir: "./data/bert"
+
+  language_encoder_cfg:
+    network_name: MLPEncoder
+    input_size: 768
+    hidden_size: 256
+    num_layers: 1
 
 data:
   dataset:

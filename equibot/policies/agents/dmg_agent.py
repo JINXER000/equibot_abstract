@@ -162,7 +162,7 @@ class DMGAgent(object):
             skill_scalar_id = None
         else:
             policy_key = 'unitraj_noise_pred_net'
-            skill_scalar_id = self.actor.skill_scalar_mapping[skill_name].repeat(batch_size,1)
+            skill_scalar_id = self.actor.get_skill_name_encoding(skill_name, batch_size)
 
         eefpos_noise_pred, gripper_noise_pred = self.actor.nets[policy_key](
             noisy_eefpos,

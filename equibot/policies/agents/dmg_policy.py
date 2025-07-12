@@ -8,13 +8,13 @@ from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
 from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
 from equibot.policies.utils.equivariant_diffusion.unconditional_mlp import UnconditionalMLP
-import numpy as np
+from equibot.policies.utils.lan_utils import get_skill_bert_embs, MLPEncoder
 
 from equibot.policies.utils.misc import to_torch, \
     convert_trans_to_vec, convert_vec_to_trans, ActionSlice,\
-    rotation_6d_to_matrix, geodestDist
+    rotation_6d_to_matrix, geodestDist, EQUIBOT_PATH, to_torch, to_tensor
 
-
+import os
     
 class DMGPolicy(nn.Module):
     def __init__(self, cfg, device="cpu"):
@@ -30,12 +30,7 @@ class DMGPolicy(nn.Module):
         self.pred_horizon = cfg.model.pred_horizon
         self.obs_horizon = cfg.model.obs_horizon
         self.action_horizon = cfg.model.ac_horizon
-        # self.symb_mask = cfg.data.dataset.symb_mask
-        # has_eff_list = cfg.data.dataset.has_eff_list
-        # self.has_eff_dict = {'left': False, 'right': False}
-        # hand_sides = ['left', 'right']
-        # for i in range(len(hand_sides)):
-        #     self.has_eff_dict[hand_sides[i]] = has_eff_list[i]
+
 
         if hasattr(cfg.model, "num_diffusion_iters"):
             self.num_diffusion_iters = cfg.model.num_diffusion_iters
@@ -62,11 +57,22 @@ class DMGPolicy(nn.Module):
         self.eef_dims = {}
         self.skill_names = cfg.data.dataset.skill_names
 
-        self.skill_obj_mapping = {}
-        self.skill_scalar_mapping = {}
-        for i, skill_name in enumerate(self.skill_names):
-            self.skill_obj_mapping[skill_name] = cfg.data.dataset.conditioned_objects[i]
-            self.skill_scalar_mapping[skill_name] = torch.tensor(i*100).to(self.device) # scalar cond for unimanual skills
+        self.skill_obj_mapping = {self.skill_names[i]: cfg.data.dataset.conditioned_objects[i] for i in range(len(self.skill_names))}
+
+        if 'language_encoder_cfg' in cfg.model:
+            language_encoder_cfg = cfg.model.language_encoder_cfg
+            output_size = language_encoder_cfg.hidden_size
+            assert output_size == self.encoder_out_dim
+            self.language_encoder = self._setup_language_encoder(output_size=output_size, **language_encoder_cfg)
+            skill_name_to_emb = get_skill_bert_embs(self.skill_names, cache_dir=os.path.join(EQUIBOT_PATH, cfg.model.embedding_cache_dir))
+            
+            # Convert skill embeddings to tensors once during initialization
+            self.skill_name_to_emb_tensor = to_torch(to_tensor(skill_name_to_emb), self.device)
+
+        else:
+            self.skill_scalar_mapping = {self.skill_names[i]: torch.tensor(i*100).to(self.device) for i in range(len(self.skill_names))}
+            self.language_encoder = None
+
 
         for skill_name in self.skill_names:
             self.eef_dims[skill_name] = 3
@@ -86,7 +92,11 @@ class DMGPolicy(nn.Module):
                     scalar_cond_dim = 0
                 else:
                     policy_key = 'unitraj_noise_pred_net'
-                    scalar_cond_dim= self.obs_horizon
+                    if self.language_encoder is None:
+                        scalar_cond_dim= self.obs_horizon
+                    else:
+                        scalar_cond_dim = self.encoder_out_dim * self.obs_horizon ## TODO: check size in policy network
+
                 net_dict[policy_key] = VecConditionalUnet1D(
                 input_dim=self.eef_dims[skill_name],  ## vec dim, rot is 2, xyz is 1
                 cond_dim=self.obs_dim* self.obs_horizon,
@@ -119,12 +129,20 @@ class DMGPolicy(nn.Module):
         self.nets = nets_handles
 
 
-    # def _convert_jpose_to_vec(self, jpose, batch=None):
-    #     # input: (B, 1, E , dof); output: (B, 1, ac_dim, 3) 
-    #     # jpose = jpose.reshape(jpose.shape[0], jpose.shape[1],  -1, 3)
-    #     jpose = jpose.reshape(jpose.shape[0], -1,  self.dof * self.num_eef)
-    #     return jpose
+
+    def _setup_language_encoder(self, network_name, **language_encoder_kwargs):
+        return eval(network_name)(**language_encoder_kwargs)
     
+
+    def get_skill_name_encoding(self, skill_name, batch_size):
+        if self.language_encoder is None:
+            skill_scalar_id = self.skill_scalar_mapping[skill_name].repeat(batch_size,1)
+        else:
+            skill_emb_tensor = self.skill_name_to_emb_tensor[skill_name]
+            skill_emb = self.language_encoder(skill_emb_tensor)
+            skill_scalar_id = skill_emb.expand(batch_size, -1)
+        return skill_scalar_id
+
     def step_ema(self):
         self.ema.step(self.nets)
 
@@ -301,7 +319,7 @@ class DMGPolicy(nn.Module):
             skill_scalar_id = None
         else:
             policy_key = 'unitraj_noise_pred_net'
-            skill_scalar_id = self.skill_scalar_mapping[skill_name].repeat(batch_size,1)
+            skill_scalar_id = self.get_skill_name_encoding(skill_name, batch_size)
             
         for k in self.noise_scheduler.timesteps:
 

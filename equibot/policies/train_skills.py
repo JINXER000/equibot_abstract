@@ -12,7 +12,7 @@ from glob import glob
 
 from equibot.policies.utils.misc import EQUIBOT_PATH, get_agent, get_dataset
 
-from .test_skills import run_eval
+from test_skills import run_eval
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):
