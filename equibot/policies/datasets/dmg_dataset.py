@@ -129,7 +129,7 @@ class DMGDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 64
+        traj_nums = 128
         interested_skills = cfg.uniskills
 
 

@@ -25,6 +25,7 @@ model:
   hidden_dim: 256
 
   obs_horizon: 1
+  pred_horizon: 8
   
   separate_encoder: False
   separate_policy: False
