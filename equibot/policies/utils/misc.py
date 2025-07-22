@@ -108,7 +108,7 @@ def get_dataset(cfg, mode="train"):
     elif dataset_type == "mj_insertion_pred":
         from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
         return DualAbsDataset(cfg.data.dataset, mode)
-    elif dataset_type == "dexmimicgen":
+    elif "dexmimicgen" in dataset_type:
         from equibot.policies.datasets.dmg_dataset import DMGDataset
         return DMGDataset(cfg.data.dataset, mode)
     elif dataset_type == "dmg_policy":
