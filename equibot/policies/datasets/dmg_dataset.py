@@ -21,7 +21,7 @@ def get_sg(hdf5_group, sg_name):
     sg = nx.node_link_graph(json.loads(sg_str))
     return sg
 
-def get_rbt_actions(obs_grp, robot_names):
+def get_rbt_states(obs_grp, robot_names):
     data_dict = {}
     for robot_name in robot_names:
         data_dict[f'{robot_name}_joint_pos'] = obs_grp[f'{robot_name}_joint_pos'][()]
@@ -30,6 +30,24 @@ def get_rbt_actions(obs_grp, robot_names):
         data_dict[f'{robot_name}_gripper_qpos'] = obs_grp[f'{robot_name}_gripper_qpos'][()]
 
     return data_dict
+
+def get_rbt_actions(action_arr, robot_names):
+    data_dict = {}
+    for robot_name in robot_names:
+        rbt_idx = robot_name[-1]
+        gripper_action = action_arr[:, 6+ int(rbt_idx)*7]
+        data_dict[robot_name] = gripper_action
+
+    return data_dict
+
+def get_pc_instances(obs_grp, obj_names):
+    obj_pcds = {}
+    for obj_name in obj_names:
+        pc_key = f'{obj_name}_point_cloud'
+        if pc_key in obs_grp:
+            obj_pcds[obj_name] = obs_grp[pc_key][()]
+
+    return obj_pcds
 
 def rotate_dataslice(data_slice):
     ## input: dataslice: dict of tensors
@@ -60,28 +78,48 @@ def choose_ids(traj_len, idx_list, essential_ids = None, skill_key = None):
         selected_ids = np.random.choice(essential_ids, size=traj_len, replace=True).astype(np.int32)
         return np.sort(selected_ids).tolist()
 
-    assert traj_len % 2 == 0, 'traj_len should be even!'
-    intermediate_len = (traj_len - 2) // 2
-
-    # Determine candidate transitional ids
-    remaining_ids = list(set(idx_list) - set([] if essential_ids is None else essential_ids)\
-                            - set([idx_list[0], idx_list[-1]]))
-
     if essential_ids is None:
-        selected_ids = np.random.choice(idx_list, size=traj_len - 2, replace=False)
-    elif len(essential_ids) < intermediate_len:
-        # Not enough essentials: use all of them and sample remaining
-        transitional_num = traj_len - 2 - len(essential_ids)
-        transitional_ids = np.random.choice(remaining_ids, size=transitional_num, replace=False)
-        selected_ids = np.concatenate([essential_ids, transitional_ids])
-    else:
-        # More than enough essentials: choose a subset as critical
-        critical_ids = np.random.choice(essential_ids, size=intermediate_len, replace=False)
-        transitional_ids = np.random.choice(remaining_ids, size=intermediate_len, replace=False)
-        selected_ids = np.concatenate([critical_ids, transitional_ids])
+        selected_ids = np.random.choice(idx_list, size=traj_len, replace=False)
+        selected_ids = list(np.sort(selected_ids.astype(np.int32)))
+        return selected_ids
+    
+    preselected_ids = set([idx_list[0], idx_list[-1], essential_ids[0], essential_ids[-1]]) 
+    remaining_ids = list(set(idx_list) - set(preselected_ids))
+    other_nums = (traj_len - len(preselected_ids))
+    selected_ids = np.random.choice(remaining_ids, size=other_nums, replace=False).astype(np.int32)
+    # gap = len(remaining_ids) // (other_nums+1)
 
-    # Sort and add endpoints
-    selected_ids = [idx_list[0]] + sorted(selected_ids.astype(np.int32).tolist()) + [idx_list[-1]]
+    # selected_ids = set([])
+    # for i in range(1, other_nums+1):
+    #     other_candidate = remaining_ids[i*gap]
+    #     while other_candidate in preselected_ids:
+    #         other_candidate += 1
+    #     selected_ids.add(other_candidate)
+
+    selected_ids =sorted( list(selected_ids) + list(preselected_ids))
+
+    # assert traj_len % 2 == 0, 'traj_len should be even!'
+    # intermediate_len = (traj_len - len(preselected_ids)) // 2
+
+    # # Determine candidate transitional ids
+    # remaining_ids = list(set(idx_list) - set(essential_ids)\
+    #                         - set(preselected_ids))
+
+    # if len(essential_ids) < intermediate_len:
+    #     # Not enough essentials: use all of them and sample remaining
+    #     transitional_num = traj_len - len(preselected_ids) - len(essential_ids)
+    #     transitional_ids = np.random.choice(remaining_ids, size=transitional_num, replace=False)
+    #     selected_ids = np.concatenate([essential_ids, transitional_ids])
+    # else:
+    #     # More than enough essentials: choose a subset as critical
+    #     critical_ids = np.random.choice(essential_ids, size=intermediate_len, replace=False)
+    #     transitional_num = traj_len - len(preselected_ids) -intermediate_len
+    #     transitional_ids = np.random.choice(remaining_ids, size=transitional_num, replace=False)
+    #     selected_ids = np.concatenate([critical_ids, transitional_ids])
+    # # Sort and add endpoints
+    # selected_ids = sorted(selected_ids.astype(np.int32).tolist() + list(preselected_ids)) 
+
+    assert len(selected_ids) == traj_len, f"Selected ids length {len(selected_ids)} does not match traj_len {traj_len}."
     return selected_ids
 
 
@@ -136,6 +174,12 @@ class DMGDataset(Dataset):
         sample = self.data[idx]
         if self.transform:
             sample = self.transform(sample)
+
+        # ## TODO: contact action name not right
+        # required_key = 'robot0_place_akita_black_bowl_1_plate_1:pc'
+        # if required_key not in sample:
+        #     print(f"[Warning] Missing key in sample {idx}: {required_key}")
+        #     return None  # or raise SkipSampleException
         return sample
     
     
@@ -145,6 +189,8 @@ class DMGDataset(Dataset):
             self.process_dexmimicgen_traj(cfg, **kwargs)
         elif self.dataset_type == 'dexmimicgen_grasp':
             self.process_dexmimicgen_grasp(cfg, **kwargs)
+        elif self.dataset_type == 'libero_traj':
+            self.process_libero_traj(cfg, **kwargs)
         else:
             raise NotImplementedError(f'Dataset type {self.dataset_type} not implemented!')
         
@@ -171,7 +217,7 @@ class DMGDataset(Dataset):
 
                 demo_id = file_name.split('_')[-2]
                 obs_grp = f[f'data/demo_{demo_id}/obs']
-                rbt_actions = get_rbt_actions(obs_grp, robot_names)
+                rbt_states = get_rbt_states(obs_grp, robot_names)
 
                 # ## NOTE: robot1 --> left, robot0 --> right
                 # left_gripper_actions = f[f'data/demo_{demo_id}/action_dict/left_gripper'][()]
@@ -207,15 +253,15 @@ class DMGDataset(Dataset):
                             if 'bimanual' in skill_name:
                                 pre_idx_list = pre_sg.graph['idx_list']
 
-                                pre_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][pre_idx_list], \
-                                    rbt_actions['robot1_joint_pos'][pre_idx_list]], axis=1)
+                                pre_dual_jpose_all = np.concatenate([rbt_states['robot0_joint_pos'][pre_idx_list], \
+                                    rbt_states['robot1_joint_pos'][pre_idx_list]], axis=1)
                                 qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1)
                                 data_slice[f'{skill_name}:jpose'] = pre_dual_jpose_all[qtraj_indice].astype(np.float32)
 
                                 if 'eff_sg' in skill_info:
                                     eff_idx_list = eff_sg.graph['idx_list']
-                                    eff_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][eff_idx_list], \
-                                        rbt_actions['robot1_joint_pos'][eff_idx_list]], axis=1)
+                                    eff_dual_jpose_all = np.concatenate([rbt_states['robot0_joint_pos'][eff_idx_list], \
+                                        rbt_states['robot1_joint_pos'][eff_idx_list]], axis=1)
                                     qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
                                     eff_dual_jpose= eff_dual_jpose_all[qtraj_indice].astype(np.float32)
                                     data_slice[f'{skill_name}:jpose'] = np.concatenate([data_slice[f'{skill_name}:jpose'], eff_dual_jpose], axis=0)
@@ -250,8 +296,8 @@ class DMGDataset(Dataset):
                                 delay = 7
                                 delayed_essential_ids = [(eid + delay) for eid in essential_ids]
                                 choiced_ids = np.random.choice(delayed_essential_ids, size=grasp_nums, replace=True).astype(np.int32) # unsorted
-                                eef_pos_list = rbt_actions[f'{rbt_name}_eef_pos'][choiced_ids]
-                                eef_quat_list = rbt_actions[f'{rbt_name}_eef_quat'][choiced_ids]
+                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
+                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
                                 eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
                                 normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*grasp_nums))
                                 normalized_eef_pos_tensor = torch.tensor(np.array(normalized_eef_pos_list)).to(torch.float32).reshape(grasp_nums, 4, 4) 
@@ -260,7 +306,7 @@ class DMGDataset(Dataset):
                                 # # open_num = len(gripper_list[gripper_list < 0])
                                 # # print(f"open num is: {open_num}, skill name: {skill_name}, obj name: {obj_name}")
 
-                                gripper_list = rbt_actions[f'{rbt_name}_gripper_qpos'][choiced_ids,0]
+                                gripper_list = rbt_states[f'{rbt_name}_gripper_qpos'][choiced_ids,0]
                                 
                                 data_slice[f'{skill_name}:pc'] = obj_pc_tensor
                                 data_slice[f'{skill_name}:eefpos'] = normalized_eef_pos_tensor
@@ -278,14 +324,12 @@ class DMGDataset(Dataset):
 
     def process_dexmimicgen_traj(self, cfg, **kwargs):
 
-
         print('Processing hdf5 dataset...')
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
         traj_nums = 128
         interested_skills = cfg.uniskills
-
 
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -302,7 +346,7 @@ class DMGDataset(Dataset):
 
                 demo_id = file_name.split('_')[-2]
                 obs_grp = f[f'data/demo_{demo_id}/obs']
-                rbt_actions = get_rbt_actions(obs_grp, robot_names)
+                rbt_states = get_rbt_states(obs_grp, robot_names)
 
                 ## NOTE: robot1 --> left, robot0 --> right
                 left_gripper_actions = f[f'data/demo_{demo_id}/action_dict/left_gripper'][()]
@@ -338,15 +382,15 @@ class DMGDataset(Dataset):
                             if 'bimanual' in skill_name:
                                 pre_idx_list = pre_sg.graph['idx_list']
 
-                                pre_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][pre_idx_list], \
-                                    rbt_actions['robot1_joint_pos'][pre_idx_list]], axis=1)
-                                qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1)
+                                pre_dual_jpose_all = np.concatenate([rbt_states['robot0_joint_pos'][pre_idx_list], \
+                                    rbt_states['robot1_joint_pos'][pre_idx_list]], axis=1)
+                                qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1) if len(pre_dual_jpose_all) > 1 else 0
                                 data_slice[f'{skill_name}:jpose'] = pre_dual_jpose_all[qtraj_indice].astype(np.float32)
 
                                 if 'eff_sg' in skill_info:
                                     eff_idx_list = eff_sg.graph['idx_list']
-                                    eff_dual_jpose_all = np.concatenate([rbt_actions['robot0_joint_pos'][eff_idx_list], \
-                                        rbt_actions['robot1_joint_pos'][eff_idx_list]], axis=1)
+                                    eff_dual_jpose_all = np.concatenate([rbt_states['robot0_joint_pos'][eff_idx_list], \
+                                        rbt_states['robot1_joint_pos'][eff_idx_list]], axis=1)
                                     qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
                                     eff_dual_jpose= eff_dual_jpose_all[qtraj_indice].astype(np.float32)
                                     data_slice[f'{skill_name}:jpose'] = np.concatenate([data_slice[f'{skill_name}:jpose'], eff_dual_jpose], axis=0)
@@ -385,9 +429,12 @@ class DMGDataset(Dataset):
 
                                 # idx_list = cur_sg.graph['idx_list']
                                 idx_list = skill_info['extended_ids'][()]
+
+                                # delay = 7
+                                # delayed_essential_ids = [(eid + delay) for eid in essential_ids]
                                 choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
-                                eef_pos_list = rbt_actions[f'{rbt_name}_eef_pos'][choiced_ids]
-                                eef_quat_list = rbt_actions[f'{rbt_name}_eef_quat'][choiced_ids]
+                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
+                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
                                 eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
                                 normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
                                 normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
@@ -408,6 +455,112 @@ class DMGDataset(Dataset):
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 file!')
+
+    def process_libero_traj(self, cfg, **kwargs):
+
+        print('Processing hdf5 dataset...')
+        data_list = []
+        raw_files = self.raw_file_names
+        traj_len = cfg.pred_horizon
+        traj_nums = 128
+        interested_skills = cfg.uniskills
+        self.involved_skill_names = set()
+
+        for file_id in range(len(raw_files)):
+            file_name = raw_files[file_id]
+            if 'hdf5' not in  file_name:
+                continue
+        
+            hdf5_path = os.path.join(self.root, 'raw', file_name)
+            with h5py.File(hdf5_path, 'r') as f:
+                ## read sg
+                sg_params_json = f['sg_params'][()]
+                sg_params = json.loads(sg_params_json.decode('utf-8'))
+                robot_names = sg_params['robots']  
+                interested_objs = list(sg_params['interested_objs'].keys() )
+
+                demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]
+                inds = np.argsort([int(elem[5:]) for elem in demos])
+                demos = [demos[i] for i in inds]
+
+                n_use = cfg.n_use if 'n_use' in cfg else len(demos)
+                demos = demos[:n_use]
+
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                
+                    obs_grp = f[f'data/demo_{demo_id}/obs']
+                    rbt_states = get_rbt_states(obs_grp, robot_names)
+                    obj_pcds = get_pc_instances(obs_grp, interested_objs)
+                    action_arr = f[f'data/demo_{demo_id}/actions'][()]
+                    rbt_action = get_rbt_actions(action_arr, robot_names)
+
+                    if len(sg_info) < 2:
+                        ## skip if place skills for libero
+                        print(f"Skip demo {demo_id} due to insufficient skills.")
+                        continue
+                    for _ in range(traj_nums):
+
+                        data_slice = {}
+                        for skill_name, skill_info in sg_info.items():
+
+                            self.involved_skill_names.add(skill_name)
+
+                            pre_sg = get_sg(skill_info, 'pre_sg')
+                            cur_sg = get_sg(skill_info, 'cur_sg')
+                            eff_sg = get_sg(skill_info, 'eff_sg')
+
+                            obj_name = skill_info['related_objs'][0].decode('utf-8')
+                            obj_pc_list = obj_pcds[obj_name] 
+                            
+                            if 'bimanual' in skill_name:
+                                raise NotImplementedError(f'Skill name {skill_name} not implemented!')
+                            else:
+                                for skill_key in interested_skills:
+                                    if skill_key in skill_name:
+                                        break
+                                else:
+                                    ## if no interested skill found, skip this skill
+                                    continue
+
+                                essential_ids = skill_info['essential_ids'][()]
+                                obj_pc = obj_pc_list[pre_sg.graph['idx_list'][0]][:, :3]
+                               
+                                obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=True)
+                                obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
+                                
+                                rbt_name = skill_info['related_rbts'][0].decode('utf-8')
+
+                                idx_list = skill_info['extended_ids'][()]
+
+                                choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
+                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
+                                eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
+                                normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
+                                normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
+
+                                gripper_list = rbt_action[rbt_name][choiced_ids]
+                                
+                                data_slice[f'{skill_name}:pc'] = obj_pc_tensor
+                                data_slice[f'{skill_name}:eefpos'] = normalized_eef_pos_tensor
+                                data_slice[f'{skill_name}:gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
+                                # data_slice[f'{skill_name}:obj_name'] = str_to_ascii_tensor(obj_name)
+
+                        ## TODO: make one slice only for one skill
+                        expected_slice_len = len(interested_skills)*  3
+                        if len(data_slice) != expected_slice_len:
+                            continue
+                        if cfg.rot_aug:
+                            data_slice = rotate_dataslice(data_slice)
+                        data_list.append(data_slice)
+        
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print('processed all hdf5 files!')
+
+        cfg.skill_names = list(self.involved_skill_names)
+        print(f'Involved skill names: {cfg.skill_names}')
 
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_threading")

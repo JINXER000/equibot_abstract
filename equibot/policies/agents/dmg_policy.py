@@ -49,15 +49,19 @@ class DMGPolicy(nn.Module):
         self.obs_dim = self.encoder_out_dim
 
         net_dict = {}
-        self.objects = set(cfg.data.dataset.conditioned_objects)
-        for obj in self.objects:
-            encoder_key = f'{obj}_encoder' if self.separate_encoder else 'obj_encoder'
-            net_dict[encoder_key] = SIM3Vec4Latent(**cfg.model.encoder)
+        if self.separate_encoder:
+            self.objects = set(cfg.data.dataset.conditioned_objects)
+            for obj in self.objects:
+                encoder_key = f'{obj}_encoder'
+                net_dict[encoder_key] = SIM3Vec4Latent(**cfg.model.encoder)
+        else:
+            net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
 
         self.eef_dims = {}
+        # TODO: load the skill names from statistics processed from hdf5
         self.skill_names = cfg.data.dataset.skill_names
 
-        self.skill_obj_mapping = {self.skill_names[i]: cfg.data.dataset.conditioned_objects[i] for i in range(len(self.skill_names))}
+        # self.skill_obj_mapping = {self.skill_names[i]: cfg.data.dataset.conditioned_objects[i] for i in range(len(self.skill_names))}
 
         if 'language_encoder_cfg' in cfg.model:
             language_encoder_cfg = cfg.model.language_encoder_cfg
@@ -204,13 +208,17 @@ class DMGPolicy(nn.Module):
         return unnormed_gripper
 
     def proc_pc(self, pc, skill_name, ema_nets = None):
-        obj_name = self.skill_obj_mapping[skill_name]
         pc_key = f'{skill_name}:pc'
         pc = self.normalize_from_key(pc_key, pc)
         batch_size = pc.shape[0]
 
         ## in training
-        encoder_key = f'{obj_name}_encoder' if self.separate_encoder else "obj_encoder"
+        if self.separate_encoder:
+            obj_name = self.skill_obj_mapping[skill_name]
+            encoder_key = f'{obj_name}_encoder'
+        else:
+            encoder_key = 'obj_encoder'
+
         encoder_handle = self.nets[encoder_key] 
         if ema_nets is None:
             feat_dict = encoder_handle(pc, target_norm=self.all_normalizers[f'{skill_name}:pc_scale'])

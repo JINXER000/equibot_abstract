@@ -15,8 +15,6 @@ env:
   max_episode_length: 50
 
 agent:
-  # agent_name: aloha
-  # agent_name: compaloha
   agent_name: dmg
 
 model:
@@ -47,13 +45,9 @@ model:
 data:
   dataset:
     num_points: 256
-    # uniskills: ['grasp', 'contact']
-    # skill_names: ['grasp_piece_1', 'grasp_piece_2', 'piece_2_contact_piece_1', 'piece_1_contact_base']
-    # conditioned_objects: ['piece_1', 'piece_2', 'piece_1', 'base']
-    uniskills: ['grasp']
-    skill_names: ['robot0_grasp_piece_1', 'robot1_grasp_piece_2', 'bimanual_0']
-    conditioned_objects: ['piece_1', 'piece_2', 'None']
-    dataset_type: 'dexmimicgen_traj'
+    uniskills: ['grasp', 'place']
+    skill_names: []
+    dataset_type: 'libero_traj'
 
     is_obj_centric: True
     is_add_bottom: True

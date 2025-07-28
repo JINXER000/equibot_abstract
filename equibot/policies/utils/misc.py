@@ -108,7 +108,7 @@ def get_dataset(cfg, mode="train"):
     elif dataset_type == "mj_insertion_pred":
         from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
         return DualAbsDataset(cfg.data.dataset, mode)
-    elif "dexmimicgen" in dataset_type:
+    elif "dexmimicgen" in dataset_type or 'libero' in dataset_type:
         from equibot.policies.datasets.dmg_dataset import DMGDataset
         return DMGDataset(cfg.data.dataset, mode)
     elif dataset_type == "dmg_policy":
@@ -358,29 +358,29 @@ def compose_transformation(xyz, quat):
     trans = np.concatenate([np.concatenate([rot_mat, np.array([xyz]).T], axis=1), np.array([[0, 0, 0, 1]])], axis=0)
     return trans
 
-## pointcloud preprocessing
-from pointnet2_ops.pointnet2_utils import furthest_point_sample, \
-    gather_operation
+# ## pointcloud preprocessing
+# from pointnet2_ops.pointnet2_utils import furthest_point_sample, \
+#     gather_operation
 
-def fps_subsample(pcd, n_points=2048):
-    """
-    Args
-        pcd: (b, 16384, 3)
+# def fps_subsample(pcd, n_points=2048):
+#     """
+#     Args
+#         pcd: (b, 16384, 3)
 
-    returns
-        new_pcd: (b, n_points, 3)
-    """
-    if pcd.shape[1] == n_points:
-        return pcd
-    elif pcd.shape[1] < n_points:
-        raise ValueError(
-            'FPS subsampling receives a larger n_points: {:d} > {:d}'.format(
-                n_points, pcd.shape[1]))
-    new_pcd = gather_operation(
-        pcd.permute(0, 2, 1).contiguous(),
-        furthest_point_sample(pcd, n_points))
-    new_pcd = new_pcd.permute(0, 2, 1).contiguous()
-    return new_pcd
+#     returns
+#         new_pcd: (b, n_points, 3)
+#     """
+#     if pcd.shape[1] == n_points:
+#         return pcd
+#     elif pcd.shape[1] < n_points:
+#         raise ValueError(
+#             'FPS subsampling receives a larger n_points: {:d} > {:d}'.format(
+#                 n_points, pcd.shape[1]))
+#     new_pcd = gather_operation(
+#         pcd.permute(0, 2, 1).contiguous(),
+#         furthest_point_sample(pcd, n_points))
+#     new_pcd = new_pcd.permute(0, 2, 1).contiguous()
+#     return new_pcd
 
 import open3d as o3d
 
@@ -391,6 +391,8 @@ def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
         random_repeated_indices = np.random.choice(pc.shape[0], num_points - pc.shape[0], replace=True)
         pc = np.concatenate([pc, pc[random_repeated_indices]], axis=0)
         return pc
+    elif pc.shape[0] == num_points:
+        return pc
 
     # Convert numpy array to Open3D point cloud
     pcd = o3d.geometry.PointCloud()
@@ -398,12 +400,13 @@ def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
     if method == 'random':
         pcd_down = pcd.random_down_sample(sampling_ratio=num_points / pc.shape[0])
     elif method == 'fps':
-        reshaped_points = pc.reshape(1, -1, 3)
-        pc_tensor = torch.from_numpy(reshaped_points).to(torch.float32).to(torch.device('cuda'))
-        downsampled_pc_tensor = fps_subsample(pc_tensor, num_points)
-        downsampled_pc = downsampled_pc_tensor.cpu().numpy().squeeze()
-        pcd_down = o3d.geometry.PointCloud()
-        pcd_down.points = o3d.utility.Vector3dVector(downsampled_pc)
+        # reshaped_points = pc.reshape(1, -1, 3)
+        # pc_tensor = torch.from_numpy(reshaped_points).to(torch.float32).to(torch.device('cuda'))
+        # downsampled_pc_tensor = fps_subsample(pc_tensor, num_points)
+        # downsampled_pc = downsampled_pc_tensor.cpu().numpy().squeeze()
+        # pcd_down = o3d.geometry.PointCloud()
+        # pcd_down.points = o3d.utility.Vector3dVector(downsampled_pc)
+        pcd_down = pcd.farthest_point_down_sample(num_points)
     elif method == 'uniform':
         every_k_points = max(1, pc.shape[0] // num_points)
         pcd_down = pcd.uniform_down_sample(every_k_points=every_k_points)
