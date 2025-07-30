@@ -463,7 +463,10 @@ class DMGDataset(Dataset):
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
         traj_nums = 128
-        interested_skills = cfg.uniskills
+        primitive_kws = cfg.uniskills
+        interested_objs = cfg.conditioned_objects
+        skill_names = cfg.skill_names
+        skill_condition_objs = {skill_names[i]: interested_objs[i] for i in range(len(skill_names))}
         self.involved_skill_names = set()
 
         for file_id in range(len(raw_files)):
@@ -477,7 +480,7 @@ class DMGDataset(Dataset):
                 sg_params_json = f['sg_params'][()]
                 sg_params = json.loads(sg_params_json.decode('utf-8'))
                 robot_names = sg_params['robots']  
-                interested_objs = list(sg_params['interested_objs'].keys() )
+
 
                 demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]
                 inds = np.argsort([int(elem[5:]) for elem in demos])
@@ -502,21 +505,22 @@ class DMGDataset(Dataset):
                     for _ in range(traj_nums):
 
                         data_slice = {}
-                        for skill_name, skill_info in sg_info.items():
-
+                        for skill_name in skill_names:
+                            skill_info = sg_info[skill_name]
                             self.involved_skill_names.add(skill_name)
 
                             pre_sg = get_sg(skill_info, 'pre_sg')
                             cur_sg = get_sg(skill_info, 'cur_sg')
                             eff_sg = get_sg(skill_info, 'eff_sg')
 
-                            obj_name = skill_info['related_objs'][0].decode('utf-8')
+                            # obj_name = skill_info['related_objs'][0].decode('utf-8')
+                            obj_name = skill_condition_objs[skill_name]
                             obj_pc_list = obj_pcds[obj_name] 
                             
                             if 'bimanual' in skill_name:
                                 raise NotImplementedError(f'Skill name {skill_name} not implemented!')
                             else:
-                                for skill_key in interested_skills:
+                                for skill_key in primitive_kws:
                                     if skill_key in skill_name:
                                         break
                                 else:
@@ -547,10 +551,10 @@ class DMGDataset(Dataset):
                                 data_slice[f'{skill_name}:gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
                                 # data_slice[f'{skill_name}:obj_name'] = str_to_ascii_tensor(obj_name)
 
-                        ## TODO: make one slice only for one skill
-                        expected_slice_len = len(interested_skills)*  3
-                        if len(data_slice) != expected_slice_len:
-                            continue
+                        # ## TODO: make one slice only for one skill
+                        # expected_slice_len = len(primitive_kws)*  3
+                        # if len(data_slice) != expected_slice_len:
+                        #     continue
                         if cfg.rot_aug:
                             data_slice = rotate_dataslice(data_slice)
                         data_list.append(data_slice)
@@ -563,7 +567,7 @@ class DMGDataset(Dataset):
         print(f'Involved skill names: {cfg.skill_names}')
 
 
-@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_threading")
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="libero_spatial")
 def main(cfg):
     import sys
     sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
@@ -610,8 +614,6 @@ def main(cfg):
                     ## vis prehensile skills
                     pc_vis_data = cpu_obs[skill_name+':pc'][0]
                     grasp_vis_data = cpu_obs[skill_name+':eefpos'][0]
-                    obj_name = ascii_tensor_to_str(cpu_obs[skill_name+':obj_name'][0])
-                    print(f'obj_name: {obj_name}, skill_name: {skill_name}')
 
                     history_list = []
                     tmp_pc = pc_vis_data[0].reshape(-1, 3).numpy()
@@ -624,10 +626,10 @@ def main(cfg):
                         action_slice = (vecrot_grasp.reshape(-1, 4), None)
                         history_list.append(action_slice)
 
+                    print(f"Rendering skill: {skill_name}")
                     render_pose(history_list, use_gui=True, \
                                 directory = None, obj_points = tmp_pc,
-                                robot_name = 'panda_dual')
-                
+                                robot_name = 'panda')
 
 
 
