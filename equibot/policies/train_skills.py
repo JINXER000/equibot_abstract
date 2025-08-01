@@ -12,7 +12,10 @@ from glob import glob
 
 from equibot.policies.utils.misc import EQUIBOT_PATH, get_agent, get_dataset
 
-from .test_skills import run_eval
+try:
+    from .test_skills import run_eval
+except ImportError:
+    from test_skills import run_eval
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
 def main(cfg):
@@ -93,7 +96,7 @@ def main(cfg):
                 epoch_ix % cfg.training.eval_interval == 0
                 or epoch_ix == cfg.training.num_epochs - 1
             )
-            and epoch_ix > 0
+            # and epoch_ix > 0
         ):
             _, eval_metrics = run_eval(agent = agent, vis= False, batch= batch, history_bid= -1 )
             if cfg.use_wandb:

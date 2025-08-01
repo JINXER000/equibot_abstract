@@ -56,7 +56,7 @@ data:
     uniskills: ['grasp']
     skill_names: ['robot0_grasp_tripod_obj', 'robot1_grasp_needle_obj', 'bimanual_0']
     conditioned_objects: ['tripod_obj', 'needle_obj', 'None']
-    dataset_type: 'dexmimicgen_traj'
+    dataset_type: 'robosuite_separate_hdf5_traj'
 
     is_obj_centric: True
     is_add_bottom: True
