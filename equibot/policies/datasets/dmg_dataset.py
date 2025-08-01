@@ -154,10 +154,10 @@ class RobosuiteDataset(Dataset):
             self.process_robosuite_separate_hdf5_traj(cfg, **kwargs)
         elif self.dataset_type == 'robosuite_separate_hdf5_grasp':
             self.process_robosuite_separate_hdf5_grasp(cfg, **kwargs)
-        elif self.dataset_type == 'robosuite_integrate_hdf5':
-            self.process_robosuite_integrate_hdf5(cfg, **kwargs)
-        elif self.dataset_type == 'robosuite_different_skills':
-            self.process_robosuite_different_skills(cfg, **kwargs)
+        elif self.dataset_type == 'robosuite_integrate_hdf5_traj':
+            self.process_robosuite_integrate_hdf5_traj(cfg, **kwargs)
+        elif self.dataset_type == 'robosuite_different_skills_traj':
+            self.process_robosuite_different_skills_traj(cfg, **kwargs)
         else:
             raise NotImplementedError(f'Dataset type {self.dataset_type} not implemented!')
         
@@ -423,7 +423,7 @@ class RobosuiteDataset(Dataset):
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 file!')
 
-    def process_robosuite_integrate_hdf5(self, cfg, **kwargs):
+    def process_robosuite_integrate_hdf5_traj(self, cfg, **kwargs):
 
         print('Processing hdf5 dataset...')
         data_list = []
@@ -549,7 +549,7 @@ class RobosuiteDataset(Dataset):
         cfg.skill_names = list(self.involved_skill_names)
         print(f'Involved skill names: {cfg.skill_names}')
 
-    def process_robosuite_different_skills(self, cfg, **kwargs):
+    def process_robosuite_different_skills_traj(self, cfg, **kwargs):
 
         print('Processing hdf5 dataset...')
         data_list = []

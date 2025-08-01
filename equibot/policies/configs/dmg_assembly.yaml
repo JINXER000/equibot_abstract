@@ -54,7 +54,7 @@ data:
     uniskills: ['grasp']
     skill_names: ['robot0_grasp_piece_1', 'robot1_grasp_piece_2', 'bimanual_0']
     conditioned_objects: ['piece_1', 'piece_2', 'None']
-    dataset_type: 'robosuite_integrate_hdf5'
+    dataset_type: 'robosuite_integrate_hdf5_traj'
 
     is_obj_centric: True
     is_add_bottom: True
