@@ -134,7 +134,7 @@ class DMGAgent(object):
         gripper = n_data_dict[f'{skill_name}:gripper']
 
         ## proc grasp
-        gt_eefpos_z = self.actor.proc_eef(eefpos, f'{skill_name}:eefpos', center, scale)
+        gt_eefpos_z = self.actor.eef_proc_fn(eefpos, f'{skill_name}:eefpos', center, scale)
 
         ## proc gripper
         gt_gripper_action = self.actor.proc_gripper(gripper, f'{skill_name}:gripper')
@@ -234,9 +234,6 @@ class DMGAgent(object):
         self.actor.step_ema()
 
         return metrics
-    
-
-
 
 
     def fix_checkpoint_keys(self, state_dict):
@@ -294,8 +291,6 @@ class DMGAgent(object):
         self.actor.ema.averaged_model.load_state_dict(
             self.fix_checkpoint_keys(state_dict["ema_model"])
         )
-
-        
 
     ## call this function during evaluation (only during training)
     def eval_with_rotation(self, obs, skill_id = -1):

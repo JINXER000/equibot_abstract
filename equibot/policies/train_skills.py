@@ -88,8 +88,6 @@ def main(cfg):
             global_step += 1
             batch_ix += 1
 
-
-
         # run eval 
         if ( # log_dir is not None and
             (
@@ -100,10 +98,25 @@ def main(cfg):
         ):
             _, eval_metrics = run_eval(agent = agent, vis= False, batch= batch, history_bid= -1 )
             if cfg.use_wandb:
+                # Log regular metrics
                 wandb.log(
-                    {"eval/" + k: v for k, v in eval_metrics.items()},
+                    {"eval/" + k: v for k, v in eval_metrics.items() if not k.endswith('image')},
                     step=global_step,
                 )
+                
+                # Log rendered images
+                for k, v in eval_metrics.items():
+                    if k.endswith('image') and v is not None:
+                        # Convert normalized image (0-1) to uint8 (0-255) for wandb
+                        if v.dtype == np.float32 and v.max() <= 1.0:
+                            v_uint8 = (v * 255).astype(np.uint8)
+                        else:
+                            v_uint8 = v.astype(np.uint8)
+                        
+                        wandb.log(
+                            {f"eval/{k}": wandb.Image(v_uint8)},
+                            step=global_step,
+                        )
 
             # agent.save_snapshot(os.path.join(log_dir, "ckpt_best.pth"))
 

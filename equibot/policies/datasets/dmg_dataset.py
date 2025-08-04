@@ -295,7 +295,7 @@ class RobosuiteDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 128
+        traj_nums = 64
         interested_skills = cfg.uniskills
 
         for file_id in range(len(raw_files)):
@@ -429,7 +429,7 @@ class RobosuiteDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 128
+        traj_nums = 64
         primitive_kws = cfg.uniskills
         interested_objs = cfg.conditioned_objects
         skill_names = cfg.skill_names
@@ -480,8 +480,6 @@ class RobosuiteDataset(Dataset):
                             cur_sg = get_sg(skill_info, 'cur_sg')
                             eff_sg = get_sg(skill_info, 'eff_sg')
 
-
-                            
                             if 'bimanual' in skill_name:
                                 pre_idx_list = pre_sg.graph['idx_list']
 
@@ -549,109 +547,7 @@ class RobosuiteDataset(Dataset):
         cfg.skill_names = list(self.involved_skill_names)
         print(f'Involved skill names: {cfg.skill_names}')
 
-    def process_robosuite_different_skills_traj(self, cfg, **kwargs):
 
-        print('Processing hdf5 dataset...')
-        data_list = []
-        raw_files = self.raw_file_names
-        traj_len = cfg.pred_horizon
-        traj_nums = 128
-        primitive_kws = cfg.uniskills
-        interested_objs = cfg.conditioned_objects
-        skill_names = cfg.skill_names
-        skill_condition_objs = {skill_names[i]: interested_objs[i] for i in range(len(skill_names))}
-        self.involved_skill_names = set()
-
-        for file_id in range(len(raw_files)):
-            file_name = raw_files[file_id]
-            if 'hdf5' not in  file_name:
-                continue
-        
-            hdf5_path = os.path.join(self.root, 'raw', file_name)
-            with h5py.File(hdf5_path, 'r') as f:
-                ## read sg
-                sg_params_json = f['sg_params'][()]
-                sg_params = json.loads(sg_params_json.decode('utf-8'))
-                robot_names = sg_params['robots']  
-
-                demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]
-                inds = np.argsort([int(elem[5:]) for elem in demos])
-                demos = [demos[i] for i in inds]
-
-                n_use = cfg.n_use if 'n_use' in cfg else len(demos)
-                demos = demos[:n_use]
-
-                for demo_id in range(len(demos)):
-                    sg_info = f[f'data/demo_{demo_id}/sg_info']
-                
-                    obs_grp = f[f'data/demo_{demo_id}/obs']
-                    rbt_states = get_rbt_states(obs_grp, robot_names)
-                    obj_pcds = get_pc_instances(obs_grp, interested_objs)
-                    action_arr = f[f'data/demo_{demo_id}/actions'][()]
-                    rbt_action = get_rbt_actions(action_arr, robot_names)
-
-                    if len(sg_info) < 2:
-                        ## skip if place skills for libero
-                        print(f"Skip demo {demo_id} due to insufficient skills.")
-                        continue
-                    for _ in range(traj_nums):
-
-                        data_slice = {}
-                        for skill_name in skill_names:
-                            skill_info = sg_info[skill_name]
-                            self.involved_skill_names.add(skill_name)
-
-                            pre_sg = get_sg(skill_info, 'pre_sg')
-                            cur_sg = get_sg(skill_info, 'cur_sg')
-                            eff_sg = get_sg(skill_info, 'eff_sg')
-
-                            # obj_name = skill_info['related_objs'][0].decode('utf-8')
-                            obj_name = skill_condition_objs[skill_name]
-                            obj_pc_list = obj_pcds[obj_name] 
-                            
-                            if 'bimanual' in skill_name:
-                                raise NotImplementedError(f'Skill name {skill_name} not implemented!')
-                            else:
-                                for skill_key in primitive_kws:
-                                    if skill_key in skill_name:
-                                        break
-                                else:
-                                    ## if no interested skill found, skip this skill
-                                    continue
-
-                                essential_ids = skill_info['essential_ids'][()]
-                                obj_pc = obj_pc_list[pre_sg.graph['idx_list'][0]][:, :3]
-                               
-                                obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=True)
-                                obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
-                                
-                                rbt_name = skill_info['related_rbts'][0].decode('utf-8')
-
-                                idx_list = skill_info['extended_ids'][()]
-
-                                choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
-                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
-                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
-                                eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
-                                normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
-                                normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
-
-                                gripper_list = rbt_action[rbt_name][choiced_ids]
-                                
-                                data_slice[f'{skill_name}:pc'] = obj_pc_tensor
-                                data_slice[f'{skill_name}:eefpos'] = normalized_eef_pos_tensor
-                                data_slice[f'{skill_name}:gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
-                                # data_slice[f'{skill_name}:obj_name'] = str_to_ascii_tensor(obj_name)
-                        if cfg.rot_aug:
-                            data_slice = rotate_dataslice(data_slice)
-                        data_list.append(data_slice)
-        
-        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
-        torch.save((data_list, None), self.processed_file_path)
-        print('processed all hdf5 files!')
-
-        cfg.skill_names = list(self.involved_skill_names)
-        print(f'Involved skill names: {cfg.skill_names}')
 
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="libero_spatial")
