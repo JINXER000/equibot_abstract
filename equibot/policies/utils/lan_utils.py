@@ -38,29 +38,7 @@ def get_skill_embs(cfg, descriptions, cache_dir):
         raise ValueError("Unsupported task embedding format")
     return skill_embeddings
 
-
-def get_skill_bert_embs(skill_names, cache_dir="./data/bert"):
-    """
-    Generate BERT embeddings for skill names.
-    
-    Args:
-        skill_names: List of skill names to generate embeddings for
-        cache_dir: Directory to cache BERT model and embeddings
-    
-    Returns:
-        Dictionary mapping skill names to their BERT embeddings
-    """
-    # Create cache directory if it doesn't exist
-    os.makedirs(cache_dir, exist_ok=True)
-    cache_file = os.path.join(cache_dir, "skill_emb_bert.npy")
-    
-    # Check if cached embeddings exist
-    if os.path.exists(cache_file):
-        skill_name_to_emb = np.load(cache_file, allow_pickle=True).item()
-        # Check if all skill names are in the cache
-        if all(skill_name in skill_name_to_emb for skill_name in skill_names):
-            return skill_name_to_emb
-    
+def get_embs_without_saving(skill_names, cache_dir="./data/bert"):
     # Generate embeddings for skill names
     cfg = EasyDict({
         "task_embedding_format": "bert",
@@ -74,9 +52,21 @@ def get_skill_bert_embs(skill_names, cache_dir="./data/bert"):
     
     # Create mapping from skill names to embeddings
     skill_name_to_emb = {skill_names[i]: skill_embs[i] for i in range(len(skill_names))}
-    
-    # Cache the embeddings
+    return skill_name_to_emb
+
+def save_embs(skill_name_to_emb, cache_dir, cache_name):
+    # Create cache directory if it doesn't exist
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, cache_name)
     np.save(cache_file, skill_name_to_emb)
+
+def get_and_save_skill_bert_embs(skill_names, cache_dir="./data/bert", cache_name=None):
+
+    # Create mapping from skill names to embeddings
+    skill_name_to_emb = get_embs_without_saving(skill_names, cache_dir)
+
+    if cache_name is not None:
+        save_embs(skill_name_to_emb, cache_dir, cache_name)
     
     return skill_name_to_emb
 

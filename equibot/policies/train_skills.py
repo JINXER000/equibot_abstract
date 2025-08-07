@@ -27,6 +27,10 @@ def main(cfg):
 
     train_dataset = get_dataset(cfg, "train")
     num_workers = cfg.data.dataset.num_workers
+    
+    # Import the collate_fn from the dataset module
+    from equibot.policies.datasets.per_skill_dataset import collate_fn
+    
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -34,6 +38,7 @@ def main(cfg):
         shuffle=True,
         drop_last=True,
         pin_memory=True,
+        collate_fn=collate_fn,
     )
     
     cfg.data.dataset.num_training_steps = (
@@ -47,6 +52,9 @@ def main(cfg):
         start_epoch_ix = int(cfg.training.ckpt.split("/")[-1].split(".")[0][4:]) ## format: ckptxxxxx.pth
     else:
         start_epoch_ix = 0
+
+    ## copy the normalizer from dataset
+    agent.set_normalizer_and_statistics(train_dataset)
 
     # wandb
     if cfg.use_wandb:

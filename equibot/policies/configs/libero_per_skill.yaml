@@ -9,15 +9,13 @@ training:
   num_epochs: 2000
 
 env:
-  env_class: 'dmg_assembly'
+  env_class: 'libero_per_skill'
   num_eef: 2
   dof: 7
   max_episode_length: 50
 
 agent:
-  # agent_name: aloha
-  # agent_name: compaloha
-  agent_name: dmg
+  agent_name: per_skill
 
 model:
   down_dims: [128, 256, 512]
@@ -36,6 +34,7 @@ model:
       num_layers: 7
       preload_path: "pretrained/chairs.pt"
 
+
   language_encoder_cfg:
     network_name: MLPEncoder
     input_size: 768
@@ -45,25 +44,20 @@ model:
 data:
   dataset:
     num_points: 128
-    n_use: 100
-    # uniskills: ['grasp', 'contact']
-    # skill_names: ['grasp_piece_1', 'grasp_piece_2', 'piece_2_contact_piece_1', 'piece_1_contact_base']
-    # conditioned_objects: ['piece_1', 'piece_2', 'piece_1', 'base']
-    uniskills: ['grasp']
-    skill_names: ['robot0_grasp_piece_1', 'robot1_grasp_piece_2', 'bimanual_0']
-    conditioned_objects: ['piece_1', 'piece_2', 'None']
-    # dataset_type: 'robosuite_integrate_hdf5_traj'
-    dataset_type: 'robosuite_separate_hdf5_traj'
+    uniskills: ['grasp', 'place']
+    # skill_names: ['robot0_grasp_akita_black_bowl_1', 'robot0_place_akita_black_bowl_1_plate_1']
+    # conditioned_objects: ['akita_black_bowl_1', 'plate_1']
+    dataset_type: 'per_skill_tarj'
 
     is_obj_centric: True
-    is_add_bottom: True
-    downsample_method: 'random'
+    is_add_bottom: False 
+    downsample_method: 'fps'
     rot_aug: True
-    
+
     embedding_cache_dir: "./data/bert"
 
-    eef_representation: "4pts"
-    # eef_representation: "3vec"
+    # eef_representation: "4pts"
+    eef_representation: "3vec"
 
     original_gripper_pcd: [[0.10, 0.01, 0], 
                             [0.03, -0.04, 0],

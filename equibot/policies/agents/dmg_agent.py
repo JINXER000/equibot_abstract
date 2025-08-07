@@ -177,6 +177,9 @@ class DMGAgent(object):
 
         return vec_loss, scalar_loss
 
+
+
+
     def update(self, batch):
         self.train()
 

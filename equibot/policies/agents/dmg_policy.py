@@ -8,7 +8,7 @@ from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
 from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
 from equibot.policies.utils.equivariant_diffusion.unconditional_mlp import UnconditionalMLP
-from equibot.policies.utils.lan_utils import get_skill_bert_embs, MLPEncoder
+from equibot.policies.utils.lan_utils import get_and_save_skill_bert_embs, MLPEncoder
 
 from equibot.policies.utils.misc import to_torch, \
     convert_trans_to_vec, convert_vec_to_trans, ActionSlice,\
@@ -70,7 +70,9 @@ class DMGPolicy(nn.Module):
             output_size = language_encoder_cfg.hidden_size
             assert output_size == self.encoder_out_dim
             self.language_encoder = self._setup_language_encoder(output_size=output_size, **language_encoder_cfg)
-            skill_name_to_emb = get_skill_bert_embs(self.skill_names, cache_dir=os.path.join(EQUIBOT_PATH, cfg.model.embedding_cache_dir))
+            net_dict['language_encoder'] = self.language_encoder 
+
+            skill_name_to_emb = get_and_save_skill_bert_embs(self.skill_names, cache_dir=os.path.join(EQUIBOT_PATH, cfg.data.dataset.embedding_cache_dir))
             
             # Convert skill embeddings to tensors once during initialization
             self.skill_name_to_emb_tensor = to_torch(to_tensor(skill_name_to_emb), self.device)
@@ -80,7 +82,7 @@ class DMGPolicy(nn.Module):
             self.language_encoder = None
 
         ## eef_representation can be vectors or points
-        self.eef_representation = cfg.model.eef_representation
+        self.eef_representation = cfg.data.dataset.eef_representation
         if self.eef_representation == "3vec":
             self.eef_proc_fn = self.proc_eef_3vec
             self.eef_recover_fn = self.recover_eef_3vec
@@ -89,10 +91,11 @@ class DMGPolicy(nn.Module):
             self.eef_proc_fn = self.proc_eef_4pts
             self.eef_recover_fn = self.recover_eef_4pts
             ## expand to B, H, 4, 3
-            self.original_gripper_pcd = np.array([[0.07, 0.01, 0], 
-                                                  [0.02, -0.04, 0],
-                                                  [0.02, 0.05, 0],
-                                                  [0,0,0]])
+            self.original_gripper_pcd = np.array(cfg.data.dataset.original_gripper_pcd)
+            # self.original_gripper_pcd = np.array([[0.10, 0.01, 0], 
+            #                                       [0.03, -0.04, 0],
+            #                                       [0.02, 0.05, 0],
+            #                                       [0,0,0]])
             
             self.eef_dims = {skill_name: 4 for skill_name in self.skill_names}
         else:
@@ -164,7 +167,7 @@ class DMGPolicy(nn.Module):
             skill_scalar_id = self.skill_scalar_mapping[skill_name].repeat(batch_size,1)
         else:
             skill_emb_tensor = self.skill_name_to_emb_tensor[skill_name]
-            skill_emb = self.language_encoder(skill_emb_tensor)
+            skill_emb = self.nets['language_encoder'](skill_emb_tensor)
             skill_scalar_id = skill_emb.expand(batch_size, -1)
         return skill_scalar_id
 
@@ -190,7 +193,7 @@ class DMGPolicy(nn.Module):
         ##### eefpos processing
         eefpos_xyz = eefpos_batch[:, :,0, :].reshape(batch_size, -1, 1, 3)
 
-        # add back the offset
+        # # add back the offset
         eefpos_xyz = eefpos_xyz *scale + center
 
         # un-normalize
@@ -203,7 +206,7 @@ class DMGPolicy(nn.Module):
 
         trans_batch = convert_vec_to_trans(rot6d_batch, unnormed_eefpos_xyz)
 
-        trans_batch = trans_batch.detach().cpu().numpy()
+        # trans_batch = trans_batch.detach().cpu().numpy()
 
         return trans_batch, unnormed_eefpos_xyz, rot6d_batch
     
@@ -212,8 +215,8 @@ class DMGPolicy(nn.Module):
         scale = torch.mean(scale, dim=2, keepdim=True)
         center = torch.mean(center, dim=2, keepdim=True)
         
-        eefpt_batch_uncano = eefpt_batch * scale + center
-        unnormed_eefpt_batch = self.unnormalize_from_key(key, eefpt_batch_uncano)
+        eefpt_batch = eefpt_batch * scale + center
+        unnormed_eefpt_batch = self.unnormalize_from_key(key, eefpt_batch)
 
         trans_batch = convert_4pts_to_trans(unnormed_eefpt_batch, self.original_gripper_pcd)
         
@@ -222,7 +225,7 @@ class DMGPolicy(nn.Module):
         eef_rot = trans_batch[:, :, :3, :3].reshape(-1, 3, 3)
         rot6d_batch = matrix_to_rotation_6d(eef_rot)
 
-        trans_batch = trans_batch.detach().cpu().numpy()
+        # trans_batch = trans_batch.detach().cpu().numpy()
         return trans_batch, unnormed_eefpos_xyz, rot6d_batch
 
     def recover_jpose(self, jpose_batch, key):
@@ -285,6 +288,14 @@ class DMGPolicy(nn.Module):
         eef_4pts_raw = convert_trans_to_4pts(eef_pose, self.original_gripper_pcd)
         eef_4pts = self.normalize_from_key(key, eef_4pts_raw)
         eef_4pts = (eef_4pts - center) / scale
+
+        # ## debug to check if the eef_4pts is correct
+        # trans_batch_recon, _, _ = self.recover_eef_4pts(eef_4pts, scale, center, key)
+        # trans_batch_recon_tensor = torch.tensor(trans_batch_recon).to(self.device)
+        # import torch.nn.functional as F
+        # error = F.mse_loss(trans_batch_recon_tensor, eef_pose)
+        # print(f"Error: {error}")
+        # assert torch.allclose(trans_batch_recon_tensor, eef_pose, atol=1e-4)
         return eef_4pts
 
     def proc_gripper(self, raw_gripper, key):
@@ -402,25 +413,42 @@ class DMGPolicy(nn.Module):
         action_dict = {}
         eval_metrics = {}
         if batch_size ==1:
-            action_dict[f"{skill_name}:eefpos"] = trans_batch[0]
+            action_dict[f"{skill_name}:eefpos"] = trans_batch[0].detach().cpu().numpy()
             action_dict[f"{skill_name}:gripper"] = gripper_batch[0]
         ## calc metrics if in training
         else:
-            gt_eefpos_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(gt_batch[f"{skill_name}:eefpos"])
+            if self.eef_representation == "4pts":
+                gt_4pts =  self.eef_proc_fn(gt_batch[f"{skill_name}:eefpos"], f'{skill_name}:eefpos', center, scale)
+                pred_4pts = curr_action[f"{skill_name}:eefpos"]
+                pts_error = torch.nn.functional.mse_loss(pred_4pts, gt_4pts)
+                eval_metrics[f"{skill_name}:pts_error"] = pts_error
 
-            xyz_l1 = torch.nn.functional.l1_loss(unnormed_eefpos_xyz, gt_eefpos_xyz)
+            pred_xyz = trans_batch[:, :, :3, 3]
+            gt_xyz = gt_batch[f"{skill_name}:eefpos"][:, :, :3, 3]
+            xyz_l1 = torch.nn.functional.l1_loss(pred_xyz, gt_xyz)
             eval_metrics[f"{skill_name}:xyz_l1"] = xyz_l1
 
-            gt_eefpos_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
-            gt_Rs = rotation_6d_to_matrix(gt_eefpos_rot6d)
-            pred_Rs = rotation_6d_to_matrix(rot6d_batch)
+            gt_Rs = gt_batch[f"{skill_name}:eefpos"][:, :, :3, :3]
+            pred_Rs = trans_batch[:, :, :3, :3]
             diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
             eval_metrics[f"{skill_name}:rot_diff"] = diff_theta * 180 / torch.pi
+
+            # elif self.eef_representation == "3vec":
+            #     gt_eefpos_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(gt_batch[f"{skill_name}:eefpos"])
+
+            #     xyz_l1 = torch.nn.functional.l1_loss(unnormed_eefpos_xyz, gt_eefpos_xyz)
+            #     eval_metrics[f"{skill_name}:xyz_l1"] = xyz_l1
+
+            #     gt_eefpos_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
+            #     gt_Rs = rotation_6d_to_matrix(gt_eefpos_rot6d)
+            #     pred_Rs = rotation_6d_to_matrix(rot6d_batch)
+            #     diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
+            #     eval_metrics[f"{skill_name}:rot_diff"] = diff_theta * 180 / torch.pi
 
             ## render the eefpos and pc
             # Get the point cloud data and trajectory
             pc_data = agent_obs[f'{skill_name}:pc'][0,0].detach().cpu().numpy()  # Shape: (N, 3)
-            trajectory = trans_batch[0]  # Shape: (T, 4, 4)
+            trajectory = trans_batch[0].detach().cpu().numpy()  # Shape: (T, 4, 4)
             gripper_values = gripper_batch[0]  # Shape: (T,)
             
             # Render trajectory and PC together

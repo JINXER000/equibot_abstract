@@ -2,6 +2,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import pathlib
+import numpy as np
+import json
+import networkx as nx
+
 EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 
 def to_torch(batch, device):    return {k: v.to(device) for k, v in batch.items()}
@@ -114,6 +118,9 @@ def get_dataset(cfg, mode="train"):
     elif dataset_type == "dmg_policy":
         from equibot.policies.datasets.robosuite_policy_dataset import RobosuitePolicyDataset
         return RobosuitePolicyDataset(cfg.data.dataset, mode)
+    elif "per_skill" in dataset_type:
+        from equibot.policies.datasets.per_skill_dataset import PerSkillDataset
+        return PerSkillDataset(cfg.data.dataset, mode)
     else:
         raise ValueError(f"Dataset type [{dataset_type}] not supported.")
 
@@ -141,6 +148,9 @@ def get_agent(agent_name):
     elif agent_name == "eefequibot":
         from equibot.policies.agents.eefequibot_agent import EefEquiBotAgent
         return EefEquiBotAgent
+    elif agent_name == "per_skill":
+        from equibot.policies.agents.per_skill_agent import EquiSkillAgent
+        return EquiSkillAgent
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
 
@@ -560,7 +570,28 @@ def ascii_tensor_to_str(tensor: torch.Tensor) -> str:
     """将 ASCII 值的 Tensor 还原为字符串"""
     if tensor.dim() == 0:  # 处理单个数字（标量）的情况
         return chr(int(tensor.item()))
-    return ''.join([chr(int(code)) for code in tensor.tolist()])
+    
+    # Remove padding (zeros) before converting to string
+    # Find the first zero or end of tensor
+    tensor_list = tensor.tolist()
+    # Find the first zero (padding) or use the full length
+    end_idx = len(tensor_list)
+    for i, val in enumerate(tensor_list):
+        if val == 0:  # Padding value
+            end_idx = i
+            break
+    
+    # Convert only the non-padded part to string
+    return ''.join([chr(int(code)) for code in tensor_list[:end_idx]])
+
+def ascii_tensor_batch_to_str(tensor_batch: torch.Tensor) -> list:
+    """将 ASCII 值的 Tensor batch 还原为字符串列表"""
+    if tensor_batch.dim() == 1:  # 单个样本的情况
+        return [ascii_tensor_to_str(tensor_batch)]
+    elif tensor_batch.dim() == 2:  # 批量样本的情况
+        return [ascii_tensor_to_str(tensor) for tensor in tensor_batch]
+    else:
+        raise ValueError(f"Unsupported tensor batch dimension: {tensor_batch.dim()}")
 
 def get_skill_names(cpu_obs):
     data_keys = list(cpu_obs.keys())
@@ -675,6 +706,88 @@ def decentralize_grasp(grasp, pc_offset, ref_grasp = None):
         grasp = np.squeeze(grasp, axis=0)
     return grasp
 
+def get_sg(hdf5_group, sg_name):
+    sg_json = hdf5_group[sg_name][()] if sg_name in hdf5_group else None
+    if sg_json is None:
+        return None
+    sg_str = sg_json.decode('utf-8')
+    sg = nx.node_link_graph(json.loads(sg_str))
+    return sg
+
+def get_rbt_states(obs_grp, robot_names):
+    data_dict = {}
+    for robot_name in robot_names:
+        data_dict[f'{robot_name}_joint_pos'] = obs_grp[f'{robot_name}_joint_pos'][()]
+        data_dict[f'{robot_name}_eef_pos'] = obs_grp[f'{robot_name}_eef_pos'][()]
+        data_dict[f'{robot_name}_eef_quat'] = obs_grp[f'{robot_name}_eef_quat'][()]
+        data_dict[f'{robot_name}_gripper_qpos'] = obs_grp[f'{robot_name}_gripper_qpos'][()]
+
+    return data_dict
+
+def get_rbt_actions(action_arr, robot_names):
+    data_dict = {}
+    for robot_name in robot_names:
+        rbt_idx = robot_name[-1]
+        gripper_action = action_arr[:, 6+ int(rbt_idx)*7]
+        data_dict[robot_name] = gripper_action
+
+    return data_dict
+
+def get_pc_instances(obs_grp, obj_names):
+    obj_pcds = {}
+    for obj_name in obj_names:
+        pc_key = f'{obj_name}_point_cloud'
+        if pc_key in obs_grp:
+            obj_pcds[obj_name] = obs_grp[pc_key][()]
+
+    return obj_pcds
+
+def rotate_dataslice(data_slice):
+    ## input: dataslice: dict of tensors
+
+    yaw_rotation =  np.random.uniform(-np.pi, np.pi)
+    from equibot.envs.sim_mobile.utils.transformations import euler2mat
+    rot_3x3 = euler2mat([0, 0, yaw_rotation]) 
+    trans_mat = np.eye(4)
+    trans_mat[:3, :3] = rot_3x3
+    
+    data_np = to_np(data_slice)
+    data_rotated = data_np.copy()
+    for k, v in data_np.items():
+        if k.endswith('pc'):
+            pc_np = v
+            rotated_pc = rotate_around_z(pc_np, yaw_rotation)
+            data_rotated[k] = rotated_pc    
+        elif k.endswith('eefpos'):
+            grasp_np = v  ## B, 4, 4
+            rotated_grasp = trans_mat[None] @ grasp_np
+            data_rotated[k] = rotated_grasp
+    data_tensor = to_tensor(data_rotated)
+    return data_tensor
+
+def choose_ids(traj_len, idx_list, essential_ids = None, skill_key = None):
+        ## for release, only use essential ids
+    if skill_key == 'release':
+        selected_ids = np.random.choice(essential_ids, size=traj_len, replace=True).astype(np.int32)
+        return np.sort(selected_ids).tolist()
+
+    if essential_ids is None:
+        selected_ids = np.random.choice(idx_list, size=traj_len, replace=False)
+        selected_ids = list(np.sort(selected_ids.astype(np.int32)))
+        return selected_ids
+    
+    preselected_ids = set([idx_list[0], idx_list[-1], essential_ids[0], essential_ids[-1]]) 
+    remaining_ids = list(set(essential_ids) - set(preselected_ids))
+    other_nums = (traj_len - len(preselected_ids))
+    selected_ids = np.random.choice(remaining_ids, size=other_nums, replace=False).astype(np.int32)
+
+    ## example: if traj_len ==4, then the traj will be idx_list[0], essential_ids[0], essential_ids[-1], idx_list[-1]
+    selected_ids =sorted( list(selected_ids) + list(preselected_ids))
+
+    assert len(selected_ids) == traj_len, f"Selected ids length {len(selected_ids)} does not match traj_len {traj_len}."
+    return selected_ids
+
+
 def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_window=True):
     """
     Render point cloud and full trajectory of end-effector poses using matplotlib.
@@ -762,8 +875,12 @@ def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_windo
     
     # Set equal aspect ratio
     ax.set_box_aspect([1, 1, 1])
-    
-    # Set equal scales for all dimensions
+
+    ## add eefpos for a broader range
+    for t, pose in enumerate(eef_poses):
+        pos = pose[:3, 3]
+        pc = np.concatenate([pc, pos[None]], axis=0)
+
     # Get the data ranges
     pc_x_range = pc[:, 0].max() - pc[:, 0].min()
     pc_y_range = pc[:, 1].max() - pc[:, 1].min()
@@ -820,3 +937,65 @@ def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_windo
     plt.close(fig)
     
     return rendered_image
+
+
+# def decode_skill_name_emb_to_str(cur_emb, name_to_emb_dict):
+#     """
+#     Decode a task embedding back to its original task name by finding the closest matching embedding.
+    
+#     Args:
+#         cur_emb: numpy array or torch tensor of shape (embedding_dim,)
+#         name_to_emb_dict: dictionary mapping task names to their embeddings
+        
+#     Returns:
+#         str: The task name that most closely matches the given embedding
+#     """
+#     if isinstance(cur_emb, torch.Tensor):
+#         cur_emb = cur_emb.cpu().numpy()
+
+#     skill_name_to_emb_dict_np = to_np(name_to_emb_dict)
+    
+#     # Convert dictionary to numpy arrays for comparison
+#     skill_names = list(skill_name_to_emb_dict_np.keys())
+#     skill_name_embs = np.stack([skill_name_to_emb_dict_np[name] for name in skill_names]).reshape(len(skill_names), -1)
+    
+#     # Calculate cosine similarity between the given embedding and all stored embeddings
+#     skill_name_emb_normalized = cur_emb / (np.linalg.norm(cur_emb) + 1e-8)
+#     skill_name_embs_normalized = skill_name_embs / (np.linalg.norm(skill_name_embs, axis=1, keepdims=True) + 1e-8)
+    
+#     similarities = np.dot(skill_name_embs_normalized, skill_name_emb_normalized)
+    
+#     # Find the task name with the highest similarity
+#     best_match_idx = np.argmax(similarities)
+#     best_match_name = skill_names[best_match_idx]
+#     best_match_similarity = similarities[best_match_idx]
+    
+#     return best_match_name, best_match_similarity
+
+
+# def decode_skill_name_emb_batch_to_str(skill_name_embs, name_to_emb_dict):
+#     """
+#     Decode a batch of task embeddings back to their original task names.
+    
+#     Args:
+#         skill_name_embs: numpy array or torch tensor of shape (batch_size, embedding_dim) or (batch_size, 1, embedding_dim) or (batch_size, 1, 1, embedding_dim)
+#         name_to_emb_dict: dictionary mapping task names to their embeddings
+        
+#     Returns:
+#         list: List of tuples (skill_name, similarity_score) for each embedding in the batch
+#     """
+#     if isinstance(skill_name_embs, torch.Tensor):
+#         skill_name_embs = skill_name_embs.cpu().numpy()
+    
+#     # Handle cases where skill_name_embs might have extra dimensions
+#     if skill_name_embs.ndim > 2:
+#         # Reshape to (batch_size, embedding_dim) by flattening extra dimensions
+#         original_shape = skill_name_embs.shape
+#         skill_name_embs = skill_name_embs.reshape(original_shape[0], -1)
+    
+#     results = []
+#     for i in range(skill_name_embs.shape[0]):
+#         skill_name, similarity = decode_skill_name_emb_to_str(skill_name_embs[i], name_to_emb_dict)
+#         results.append((skill_name, similarity))
+    
+#     return results

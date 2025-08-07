@@ -8,90 +8,10 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, str_to_ascii_tensor, ascii_tensor_to_str, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp
+from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, str_to_ascii_tensor, ascii_tensor_to_str, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp, choose_ids, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg
 
 import hydra
 
-
-def get_sg(hdf5_group, sg_name):
-    sg_json = hdf5_group[sg_name][()] if sg_name in hdf5_group else None
-    if sg_json is None:
-        return None
-    sg_str = sg_json.decode('utf-8')
-    sg = nx.node_link_graph(json.loads(sg_str))
-    return sg
-
-def get_rbt_states(obs_grp, robot_names):
-    data_dict = {}
-    for robot_name in robot_names:
-        data_dict[f'{robot_name}_joint_pos'] = obs_grp[f'{robot_name}_joint_pos'][()]
-        data_dict[f'{robot_name}_eef_pos'] = obs_grp[f'{robot_name}_eef_pos'][()]
-        data_dict[f'{robot_name}_eef_quat'] = obs_grp[f'{robot_name}_eef_quat'][()]
-        data_dict[f'{robot_name}_gripper_qpos'] = obs_grp[f'{robot_name}_gripper_qpos'][()]
-
-    return data_dict
-
-def get_rbt_actions(action_arr, robot_names):
-    data_dict = {}
-    for robot_name in robot_names:
-        rbt_idx = robot_name[-1]
-        gripper_action = action_arr[:, 6+ int(rbt_idx)*7]
-        data_dict[robot_name] = gripper_action
-
-    return data_dict
-
-def get_pc_instances(obs_grp, obj_names):
-    obj_pcds = {}
-    for obj_name in obj_names:
-        pc_key = f'{obj_name}_point_cloud'
-        if pc_key in obs_grp:
-            obj_pcds[obj_name] = obs_grp[pc_key][()]
-
-    return obj_pcds
-
-def rotate_dataslice(data_slice):
-    ## input: dataslice: dict of tensors
-
-    yaw_rotation =  np.random.uniform(-np.pi, np.pi)
-    from equibot.envs.sim_mobile.utils.transformations import euler2mat
-    rot_3x3 = euler2mat([0, 0, yaw_rotation]) 
-    trans_mat = np.eye(4)
-    trans_mat[:3, :3] = rot_3x3
-    
-    data_np = to_np(data_slice)
-    data_rotated = data_np.copy()
-    for k, v in data_np.items():
-        if k.endswith('pc'):
-            pc_np = v
-            rotated_pc = rotate_around_z(pc_np, yaw_rotation)
-            data_rotated[k] = rotated_pc    
-        elif k.endswith('eefpos'):
-            grasp_np = v  ## B, 4, 4
-            rotated_grasp = trans_mat[None] @ grasp_np
-            data_rotated[k] = rotated_grasp
-    data_tensor = to_tensor(data_rotated)
-    return data_tensor
-
-def choose_ids(traj_len, idx_list, essential_ids = None, skill_key = None):
-        ## for release, only use essential ids
-    if skill_key == 'release':
-        selected_ids = np.random.choice(essential_ids, size=traj_len, replace=True).astype(np.int32)
-        return np.sort(selected_ids).tolist()
-
-    if essential_ids is None:
-        selected_ids = np.random.choice(idx_list, size=traj_len, replace=False)
-        selected_ids = list(np.sort(selected_ids.astype(np.int32)))
-        return selected_ids
-    
-    preselected_ids = set([idx_list[0], idx_list[-1], essential_ids[0], essential_ids[-1]]) 
-    remaining_ids = list(set(idx_list) - set(preselected_ids))
-    other_nums = (traj_len - len(preselected_ids))
-    selected_ids = np.random.choice(remaining_ids, size=other_nums, replace=False).astype(np.int32)
-
-    selected_ids =sorted( list(selected_ids) + list(preselected_ids))
-
-    assert len(selected_ids) == traj_len, f"Selected ids length {len(selected_ids)} does not match traj_len {traj_len}."
-    return selected_ids
 
 
 class RobosuiteDataset(Dataset):

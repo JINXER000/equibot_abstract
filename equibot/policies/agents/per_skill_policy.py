@@ -1,0 +1,418 @@
+import copy
+import hydra
+import torch
+from torch import nn
+import numpy as np
+
+from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
+from equibot.policies.utils.diffusion.ema_model import EMAModel
+from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
+from equibot.policies.utils.equivariant_diffusion.unconditional_mlp import UnconditionalMLP
+from equibot.policies.utils.normalizer import LinearNormalizer
+
+from equibot.policies.utils.lan_utils import get_and_save_skill_bert_embs, MLPEncoder
+
+from equibot.policies.utils.misc import to_torch, \
+    convert_trans_to_vec, convert_vec_to_trans, ActionSlice,\
+    rotation_6d_to_matrix, geodestDist, EQUIBOT_PATH, to_torch, to_tensor,\
+    convert_trans_to_4pts, convert_4pts_to_trans, matrix_to_rotation_6d, render_trajectory, ascii_tensor_batch_to_str
+
+import os
+    
+class EquiSkillPolicy(nn.Module):
+    def __init__(self, cfg,  device="cpu"):
+        nn.Module.__init__(self)
+        self.cfg = cfg
+        self.obs_mode = cfg.model.obs_mode
+        self.ac_mode = cfg.model.ac_mode
+        self.use_torch_compile = cfg.model.use_torch_compile
+        self.device = device
+
+        # |o|o|                             observations: 2
+        # | |a|a|a|a|a|a|a|a|               actions executed: 8
+        # | |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
+        self.pred_horizon = cfg.model.pred_horizon
+        self.obs_horizon = cfg.model.obs_horizon
+        self.action_horizon = cfg.model.ac_horizon
+
+        self.normalizer = LinearNormalizer()
+
+        if hasattr(cfg.model, "num_diffusion_iters"):
+            self.num_diffusion_iters = cfg.model.num_diffusion_iters
+        else:
+            self.num_diffusion_iters = cfg.model.noise_scheduler.num_train_timesteps
+
+
+        self.encoder_out_dim = cfg.model.encoder.c_dim
+
+        self.separate_policy = cfg.model.separate_policy
+
+        self.dof = cfg.env.dof # 6
+        self.num_eef = cfg.env.num_eef
+
+        self.obs_dim = self.encoder_out_dim
+
+        net_dict = {}
+        net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
+
+        # self.eef_dims = {}
+
+        ##  set up language encoder TODO: check if it is saved in ckpt
+        language_encoder_cfg = cfg.model.language_encoder_cfg
+        output_size = language_encoder_cfg.hidden_size
+        assert output_size == self.encoder_out_dim
+        self.language_encoder = self._setup_language_encoder(output_size=output_size, **language_encoder_cfg)
+        ## will be included into ema_model further
+        net_dict['language_encoder'] = self.language_encoder 
+
+        self.skill_names = None ## to be loaded
+
+        ## eef_representation can be vectors or points
+        self.eef_representation = cfg.data.dataset.eef_representation
+        if self.eef_representation == "3vec":
+            self.eef_proc_fn = self.proc_eef_3vec
+            self.eef_recover_fn = self.recover_eef_3vec
+            self.eef_dims = 3
+        elif self.eef_representation == "4pts":
+            self.eef_proc_fn = self.proc_eef_4pts
+            self.eef_recover_fn = self.recover_eef_4pts
+            ## expand to B, H, 4, 3
+            self.original_gripper_pcd = np.array(cfg.data.dataset.original_gripper_pcd)
+            # self.original_gripper_pcd = np.array([[0.10, 0.01, 0], 
+            #                                       [0.03, -0.04, 0],
+            #                                       [0.02, 0.05, 0],
+            #                                       [0,0,0]])
+            self.eef_dims = 4
+        else:
+            raise ValueError(f"Unsupported eef_representation: {self.eef_representation}")
+
+        policy_key = 'unitraj_noise_pred_net'
+
+        scalar_cond_dim = self.encoder_out_dim * self.obs_horizon ## TODO: check size in policy network
+
+        net_dict[policy_key] = VecConditionalUnet1D(
+            input_dim=self.eef_dims,  ## vec dim, rot is 2, xyz is 1
+            cond_dim=self.obs_dim* self.obs_horizon,
+            scalar_cond_dim= scalar_cond_dim,  ## if =1,  it is the skill_emb_batch
+            scalar_input_dim= 1,  ## output gripper val
+            diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
+            cond_predict_scale=False,
+            down_dims=cfg.model.down_dims,
+            )
+        
+        self.nets = nn.ModuleDict(net_dict)
+
+        self.ema = EMAModel(model=copy.deepcopy(self.nets), power=0.75)
+
+        self._init_torch_compile()
+
+        self.noise_scheduler = hydra.utils.instantiate(cfg.model.noise_scheduler)
+        
+        num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        print(f"Initialized DMG Policy with {num_parameters} parameters")
+
+    def load_skill_name_to_emb(self):
+        if self.skill_names is None:
+            self._load_emb_from_npy()
+
+
+    def _load_emb_from_npy(self):
+        ## load from cache. Remember to save me to ckpt!!
+        cache_dir=os.path.join(EQUIBOT_PATH, self.cfg.data.dataset.embedding_cache_dir)
+        cache_name = f'{self.cfg.data.dataset.dataset_type}_skill_name_to_emb.npy'
+        skill_name_to_emb = np.load(os.path.join(cache_dir, cache_name), allow_pickle=True).item()
+        
+        # Convert skill embeddings to tensors once during initialization
+        self.skill_name_to_emb_tensor = to_torch(to_tensor(skill_name_to_emb), self.device)
+        self.skill_names = self.skill_name_to_emb_tensor.keys()
+
+
+    def _init_torch_compile(self):
+        nets_handles = {}
+        if self.use_torch_compile:
+            for key, net in self.nets.items():
+                nets_handles[key] = torch.compile(net)
+        else:
+            nets_handles = self.nets
+
+        self.nets = nets_handles
+
+
+
+    def _setup_language_encoder(self, network_name, **language_encoder_kwargs):
+        return eval(network_name)(**language_encoder_kwargs)
+    
+    def get_encoding_from_skill_name_batch(self, skill_name_batch, batch_size):
+
+        if batch_size == 1:
+            skill_emb_tensor = self.skill_name_to_emb_tensor[skill_name_batch]
+            skill_emb_batch = self.encode_bert_emb(skill_emb_tensor, batch_size)
+        else:
+            skill_emb_tensor_batch = []
+            for skill_name in skill_name_batch:
+                skill_emb_tensor = self.skill_name_to_emb_tensor[skill_name]
+                skill_emb_tensor_batch.append(skill_emb_tensor)
+            skill_emb_tensor_batch = torch.stack(skill_emb_tensor_batch, dim=0)
+            skill_emb_batch = self.encode_bert_emb(skill_emb_tensor_batch, batch_size)
+        return skill_emb_batch
+
+    def encode_bert_emb(self, bert_emb, batch_size):
+        skill_emb = self.nets['language_encoder'](bert_emb)
+        skill_emb_batch = skill_emb.reshape(batch_size, -1)       
+        return skill_emb_batch
+
+    def step_ema(self):
+        self.ema.step(self.nets)
+
+    def normalize_from_key(self, key, data):
+        return self.normalizer[key].normalize(data)
+    
+    def unnormalize_from_key(self, key, data):
+        return self.normalizer[key].unnormalize(data)
+
+    def recover_eef_3vec(self, eefpos_batch, scale, center, key):
+        side = key.split('_')[0]
+
+        # reshape dim to B,  (3 or 6) , 3
+        # eefpos_batch = torch.mean(eefpos_batch, dim=1, keepdim=True)
+        scale = torch.mean(scale, dim=2, keepdim=True)
+        center = torch.mean(center, dim=2, keepdim=True)
+
+        batch_size = eefpos_batch.shape[0]
+
+        ##### eefpos processing
+        eefpos_xyz = eefpos_batch[:, :,0, :].reshape(batch_size, -1, 1, 3)
+
+        # add back the offset
+        eefpos_xyz = eefpos_xyz *scale + center
+
+        # un-normalize
+        unnormed_eefpos_xyz = (
+                    self.unnormalize_from_key(key, eefpos_xyz)
+                )
+        
+        ##### rotation processing 
+        rot6d_batch = eefpos_batch[:, :, 1: , :].reshape(batch_size, -1, 1, 6)
+
+        trans_batch = convert_vec_to_trans(rot6d_batch, unnormed_eefpos_xyz)
+
+        # trans_batch = trans_batch.detach().cpu().numpy()
+
+        return trans_batch, unnormed_eefpos_xyz, rot6d_batch
+    
+    ## eefpt_batch is B, H, 4, 3
+    def recover_eef_4pts(self, eefpt_batch, scale, center, key):
+        scale = torch.mean(scale, dim=2, keepdim=True)
+        center = torch.mean(center, dim=2, keepdim=True)
+        
+        eefpt_batch_uncano = eefpt_batch * scale + center
+        unnormed_eefpt_batch = self.unnormalize_from_key(key, eefpt_batch_uncano)
+
+        trans_batch = convert_4pts_to_trans(unnormed_eefpt_batch, self.original_gripper_pcd)
+        
+        ## only for eval
+        unnormed_eefpos_xyz = trans_batch[:, :, :3, 3:].transpose(-2, -1)
+        eef_rot = trans_batch[:, :, :3, :3].reshape(-1, 3, 3)
+        rot6d_batch = matrix_to_rotation_6d(eef_rot)
+
+        # trans_batch = trans_batch.detach().cpu().numpy()
+        return trans_batch, unnormed_eefpos_xyz, rot6d_batch
+
+    # def recover_jpose(self, jpose_batch, key):
+    #     # squeeze the pred horizon to 1
+    #     jpose_action = jpose_batch.reshape(-1,  self.num_eef, self.dof)
+    #     unnormed_joint = (
+    #                 self.unnormalize_from_key(key, jpose_action)
+    #                 .detach()
+    #                 .cpu()
+    #                 .numpy()
+    #             )
+        
+    #     return unnormed_joint
+
+    def recover_gripper(self, gripper_batch, key):
+        unnormed_gripper = (
+                    self.unnormalize_from_key(key, gripper_batch)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
+        return unnormed_gripper
+
+    def proc_pc(self, pc,  ema_nets = None):
+        pc_key = 'pc'
+        pc = self.normalize_from_key(pc_key, pc)
+        batch_size = pc.shape[0]
+
+        ## in training
+        encoder_key = 'obj_encoder'
+        encoder_handle = self.nets[encoder_key] 
+        pc_scale = self.statistics['pc_scale']
+        feat_dict = encoder_handle(pc, target_norm=pc_scale)
+
+        center = (
+            feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
+        )
+        scale = feat_dict["scale"].reshape(batch_size, self.obs_horizon, 1, 1)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
+        equiv_feat = feat_dict["so3"]  
+        obs_cond_vec = equiv_feat.reshape(batch_size, -1, 3)
+        return obs_cond_vec, center, scale
+
+    # in dataset, first pc is converted using min(). Then, in pc_normalizer, pc.max is mapped to 1. in eef normalizer, eef_xyz = traj = (traj-pc.min)/pc.max.  Here center should be 0.5, and scale be 1. finally, eef_xyz mean shoule be near 0. 
+    def proc_eef_3vec(self, eef_pose, key, center, scale):
+        eef_xyz_raw, eef_dir1, eef_dir2 = convert_trans_to_vec(eef_pose)
+        eef_xyz = self.normalize_from_key(key, eef_xyz_raw)
+        eef_xyz = (eef_xyz - center)/scale
+        gt_eef_z = torch.cat([eef_xyz, eef_dir1, eef_dir2], dim=-2)
+
+        return gt_eef_z
+    
+    ## TODO: check if the output ranges from -1 to 1
+    def proc_eef_4pts(self, eef_pose, key, center, scale):
+        eef_4pts_raw = convert_trans_to_4pts(eef_pose, self.original_gripper_pcd)
+        eef_4pts = self.normalize_from_key(key, eef_4pts_raw)
+        eef_4pts = (eef_4pts - center) / scale
+
+
+        return eef_4pts
+
+    def proc_gripper(self, raw_gripper, key):
+        gripper_action = self.normalize_from_key(key, raw_gripper)
+        gripper_action = gripper_action.reshape(gripper_action.shape[0], -1, 1)
+        return gripper_action
+
+
+
+
+    def pred_unimaual_traj(self, skill_name_batch, agent_obs, gt_batch = None):
+        pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
+        batch_size =  pc_data.shape[0]
+
+        ema_nets = self.ema.averaged_model
+
+        obs_vec, center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
+
+        ##### start denoising #####
+        initial_noise_scale = 1
+        noisy_eef_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims, 3)).to(self.device)\
+        * initial_noise_scale
+
+        noisy_gripper = torch.randn((batch_size, self.pred_horizon, 1)).to(self.device) * initial_noise_scale
+
+        self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
+
+        curr_action = { "eefpos": noisy_eef_xt, 
+            "gripper": noisy_gripper}
+        
+         ####### inverse diffusion step
+        policy_key = 'unitraj_noise_pred_net'
+        skill_emb_batch = self.get_encoding_from_skill_name_batch(skill_name_batch, batch_size)
+            
+        for k in self.noise_scheduler.timesteps:
+
+            new_action = { "eefpos": None, "gripper": None }
+
+            vec_noise_pred, gripper_noise_pred = ema_nets[policy_key](\
+                sample=curr_action["eefpos"],
+                timestep = k,
+                scalar_sample = curr_action["gripper"], 
+                cond= obs_vec,
+                scalar_cond=skill_emb_batch,
+            )
+            new_action["eefpos"] = self.noise_scheduler.step(
+                model_output=vec_noise_pred, timestep=k, sample=curr_action["eefpos"]
+            ).prev_sample
+
+            new_action["gripper"] = self.noise_scheduler.step(
+                model_output=gripper_noise_pred, timestep=k, sample=curr_action["gripper"]
+            ).prev_sample
+
+            curr_action = new_action
+
+        ### recover the eefpos eef pose
+        ## predicted values
+        trans_batch, unnormed_eefpos_xyz, rot6d_batch = self.eef_recover_fn(\
+            curr_action["eefpos"], scale, center, key="eefpos")
+        assert trans_batch.shape[3] == 4
+
+        ## recover gripper
+        gripper_batch = self.recover_gripper(curr_action["gripper"], key="gripper")
+
+        ## update action dict 
+        action_dict = {}
+        eval_metrics = {}
+        if batch_size ==1:
+            action_dict["eefpos"] = trans_batch[0]
+            action_dict["gripper"] = gripper_batch[0]
+        ## calc metrics if in training
+        else:
+            if self.eef_representation == "4pts":
+                gt_4pts =  self.eef_proc_fn(gt_batch["eefpos"], 'eefpos', center, scale)
+                pred_4pts = curr_action["eefpos"]
+                pts_error = torch.nn.functional.mse_loss(pred_4pts, gt_4pts)
+                eval_metrics["pts_error"] = pts_error
+
+            pred_xyz = trans_batch[:, :, :3, 3]
+            gt_xyz = gt_batch["eefpos"][:, :, :3, 3]
+            xyz_l1 = torch.nn.functional.l1_loss(pred_xyz, gt_xyz)
+            eval_metrics["xyz_l1"] = xyz_l1
+
+            gt_Rs = gt_batch["eefpos"][:, :, :3, :3]
+            pred_Rs = trans_batch[:, :, :3, :3]
+            diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
+            eval_metrics["rot_diff"] = diff_theta * 180 / torch.pi
+
+            # Render trajectory and PC together
+            for skill_name in self.skill_names:
+                ## find the skill_name in skill_name_batch(list) and get the index
+                try:
+                    skill_name_index = skill_name_batch.index(skill_name)
+                except ValueError:
+                    print(f"Skill name {skill_name} not found in skill_name_batch")
+                    continue
+                pc_data = agent_obs['pc'][skill_name_index,0].detach().cpu().numpy()  # Shape: (N, 3)
+                trajectory = trans_batch[skill_name_index].detach().cpu().numpy()  # Shape: (T, 4, 4)
+                gripper_values = gripper_batch[skill_name_index]  # Shape: (T,)
+                rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values)
+            
+                # Store the rendered image in eval_metrics
+                eval_metrics[f"{skill_name}:image"] = rendered_img
+
+        return action_dict, eval_metrics
+
+
+
+
+    def forward(self, batch, skill_id=-1):
+        ###### preprocess data from dataset #######
+        batch = to_torch(batch, self.device)
+
+        action_dict_all = {}
+        eval_metrics_all = {}
+
+        self.load_skill_name_to_emb()
+
+        # skill_name_batch = decode_skill_name_emb_batch_to_str(batch['skill_name_emb'], self.skill_name_to_emb_tensor)
+        skill_name_batch = ascii_tensor_batch_to_str(batch['skill_name'])
+
+        pc_data = batch['pc']
+        agent_obs = {'pc': pc_data}
+        action_dict, eval_metrics = self.pred_unimaual_traj(skill_name_batch, agent_obs, gt_batch=batch)
+        action_dict_all.update(action_dict)
+        eval_metrics_all.update(eval_metrics)
+
+        denoise_history = []
+        if skill_id >= 0 and len(action_dict_all) > 0:
+            ## in traj mode, we do not visulize the history. Instead, we visualize the final action
+            skill_name = self.skill_names[skill_id]
+            traj_len = self.pred_horizon
+            for i in range(traj_len):
+                action_slice = ActionSlice(mode="separated")
+
+                action_slice.update(f"{skill_name}:eefpos", action_dict_all[f"{skill_name}:eefpos"][i])
+                action_slice.update(f"{skill_name}:gripper", action_dict_all[f"{skill_name}:gripper"][i])
+
+                denoise_history.append(action_slice)
+        return action_dict_all, eval_metrics_all, denoise_history
+
+ 
