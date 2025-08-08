@@ -671,7 +671,7 @@ def centralize_downsample(pc, pc_shape, obj_centric = True, add_bottom = False, 
     input_pc= downsample_pc(input_pc, pc_shape[0], method=method, debug_visualize=debug_visualize)
 
     if obj_centric:
-        pc_offset = np.min(input_pc, axis=0)
+        pc_offset = np.mean(input_pc, axis=0)
         input_pc = input_pc - pc_offset
     else:
         pc_offset = np.zeros(3)

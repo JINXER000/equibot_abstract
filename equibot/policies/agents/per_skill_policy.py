@@ -36,6 +36,7 @@ class EquiSkillPolicy(nn.Module):
         self.action_horizon = cfg.model.ac_horizon
 
         self.normalizer = LinearNormalizer()
+        self.statistics = {}
 
         if hasattr(cfg.model, "num_diffusion_iters"):
             self.num_diffusion_iters = cfg.model.num_diffusion_iters
@@ -165,10 +166,16 @@ class EquiSkillPolicy(nn.Module):
         self.ema.step(self.nets)
 
     def normalize_from_key(self, key, data):
-        return self.normalizer[key].normalize(data)
+        if self.cfg.data.dataset.normalization_method == "batch":
+            return self.all_normalizers[key].normalize(data)
+        else:
+            return self.normalizer[key].normalize(data)
     
     def unnormalize_from_key(self, key, data):
-        return self.normalizer[key].unnormalize(data)
+        if self.cfg.data.dataset.normalization_method == "batch":
+            return self.all_normalizers[key].unnormalize(data)
+        else:
+            return self.normalizer[key].unnormalize(data)
 
     def recover_eef_3vec(self, eefpos_batch, scale, center, key):
         side = key.split('_')[0]

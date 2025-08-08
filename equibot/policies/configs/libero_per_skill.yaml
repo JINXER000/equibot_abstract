@@ -56,8 +56,10 @@ data:
 
     embedding_cache_dir: "./data/bert"
 
-    # eef_representation: "4pts"
-    eef_representation: "3vec"
+    eef_representation: "4pts"
+    # eef_representation: "3vec"
+
+    normalization_method: "all"
 
     original_gripper_pcd: [[0.10, 0.01, 0], 
                             [0.03, -0.04, 0],

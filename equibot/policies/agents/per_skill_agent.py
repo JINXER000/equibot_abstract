@@ -51,45 +51,42 @@ class EquiSkillAgent(object):
     
 
     
-    # def get_pc_scale(self, pc_data, ac_scale):
-    #     pc = pc_data.reshape(-1, self.num_points, 3)
-    #     centroid = pc.mean(1, keepdim=True)
-    #     centered_pc = pc - centroid
-    #     pc_scale = centered_pc.norm(dim=-1).mean()
-    #     # ac_scale = pc_normalizer.stats["max"].max()
-    #     normed_pc_scale = pc_scale / ac_scale
-    #     return normed_pc_scale
+    def get_pc_scale(self, pc_data, ac_scale):
+        pc = pc_data.reshape(-1, self.num_points, 3)
+        centroid = pc.mean(1, keepdim=True)
+        centered_pc = pc - centroid
+        pc_scale = centered_pc.norm(dim=-1).mean()
+        normed_pc_scale = pc_scale / ac_scale
+        return normed_pc_scale
 
-    # def get_xyz_normalizer(self, xyz_data):
-    #     flattend_xyz = xyz_data.view(-1, 3)
-    #     indices = [[0,1,2]]
-    #     xyz_normalizer = Normalizer(flattend_xyz, symmetric=True, indices=indices)
-    #     return xyz_normalizer
+    def get_xyz_normalizer(self, xyz_data):
+        flattend_xyz = xyz_data.view(-1, 3)
+        indices = [[0,1,2]]
+        xyz_normalizer = Normalizer(flattend_xyz, symmetric=True, indices=indices)
+        return xyz_normalizer
 
-    # def _init_multi_normalizers(self, n_data_dict):
-    #     all_normalizers = {}
-    #     for skill_name in self.actor.skill_names:
+    def _init_multi_normalizers(self, n_data_dict):
+        all_normalizers = {}
 
-    #         ## pc normalizer
-    #         pc_normalizer = self.get_xyz_normalizer(n_data_dict[f'{skill_name}:pc'])
-    #         all_normalizers[f'{skill_name}:pc'] = pc_normalizer
-    #         all_normalizers[f'{skill_name}:pc_scale'] = self.get_pc_scale(n_data_dict[f'{skill_name}:pc'], pc_normalizer.stats["max"].max())
+            ## pc normalizer
+        pc_normalizer = self.get_xyz_normalizer(n_data_dict['pc'])
+        all_normalizers['pc'] = pc_normalizer
+        self.actor.statistics['pc_scale'] = self.get_pc_scale(n_data_dict['pc'], pc_normalizer.stats["max"].max())
 
-    #         ## skill normalizer
-    #         grasp_normalizer = Normalizer(
-    #             {
-    #                 "min": pc_normalizer.stats["min"],
-    #                 "max": pc_normalizer.stats["max"],
-    #             }
-    #         )
-    #         all_normalizers[f'{skill_name}:eefpos'] = grasp_normalizer
+        ## skill normalizer
+        grasp_normalizer = Normalizer(
+            {
+                "min": pc_normalizer.stats["min"],
+                "max": pc_normalizer.stats["max"],
+            }
+        )
+        all_normalizers['eefpos'] = grasp_normalizer
 
-    #         gripper_normalizer = Normalizer(n_data_dict[f'{skill_name}:gripper'], symmetric=True, indices=[[0]])
-    #         all_normalizers[f'{skill_name}:gripper'] = gripper_normalizer
+        gripper_normalizer = Normalizer(n_data_dict['gripper'], symmetric=True, indices=[[0]])
+        all_normalizers['gripper'] = gripper_normalizer
 
-
-    #     return all_normalizers
-    
+        return all_normalizers
+    ## max: 0.1598; min: 0
     
     def train(self, training=True):
         self.actor.nets.train(training)
@@ -162,9 +159,9 @@ class EquiSkillAgent(object):
 
 
         ## assume the data is already normalized
-        # if self.all_normalizers is None:
-        #     self.all_normalizers = self._init_multi_normalizers(n_data_dict)
-        #     self.actor.all_normalizers = self.all_normalizers
+        if self.all_normalizers is None and self.cfg.data.dataset.normalization_method == "batch":
+            self.all_normalizers = self._init_multi_normalizers(n_data_dict)
+            self.actor.all_normalizers = self.all_normalizers
 
 
     ######## train the pred net ########
@@ -196,8 +193,9 @@ class EquiSkillAgent(object):
         return metrics
 
     def set_normalizer_and_statistics(self, dataset):
-        self.set_normalizer(dataset.normalizer.state_dict())
-        self.actor.statistics = dataset.statistics
+        if self.cfg.data.dataset.normalization_method == "all":
+            self.set_normalizer(dataset.normalizer.state_dict())
+            self.actor.statistics = dataset.statistics
 
     def set_normalizer(self, normalizer_state_dict):
         self.actor.normalizer.load_state_dict(normalizer_state_dict)
@@ -220,17 +218,15 @@ class EquiSkillAgent(object):
             actor=self.actor.state_dict(),
             ema_model=self.actor.ema.averaged_model.state_dict(),
         )
+        if self.cfg.data.dataset.normalization_method == "all":
+            state_dict["normalizer"] = self.actor.normalizer.state_dict()
+            state_dict["statistics"] = self.actor.statistics
+        else:
 
-        state_dict["normalizer"] = self.actor.normalizer.state_dict()
-
-        # for skill_name in self.actor.skill_names:
-        #     if 'bimanual' in skill_name:
-        #         state_dict[f"{skill_name}:jpose_normalizer"] = self.all_normalizers[f"{skill_name}:jpose"].state_dict()
-        #     else:
-        #         state_dict[f"{skill_name}:eefpos_normalizer"] = self.all_normalizers[f"{skill_name}:eefpos"].state_dict()
-        #         state_dict[f"{skill_name}:gripper_normalizer"] = self.all_normalizers[f"{skill_name}:gripper"].state_dict()
-        #         state_dict[f"{skill_name}:pc_scale"] = self.all_normalizers[f"{skill_name}:pc_scale"]
-        #         state_dict[f"{skill_name}:pc_normalizer"] = self.all_normalizers[f"{skill_name}:pc"].state_dict()
+            state_dict["eefpos_normalizer"] = self.all_normalizers["eefpos"].state_dict()
+            state_dict["gripper_normalizer"] = self.all_normalizers["gripper"].state_dict()
+            state_dict["pc_scale"] = self.actor.statistics["pc_scale"]
+            state_dict["pc_normalizer"] = self.all_normalizers["pc"].state_dict()
 
         torch.save(state_dict, save_path)
 
@@ -239,29 +235,27 @@ class EquiSkillAgent(object):
         import os
         load_path_full = os.path.join(EQUIBOT_PATH, load_path)
         state_dict = torch.load(load_path_full)
-        
-        self.set_normalizer(state_dict["normalizer"])
-
-
-        # self.all_normalizers = {}
-
-        # for skill_name in self.actor.skill_names:
-        #     if 'bimanual' in skill_name:
-        #         self.all_normalizers[f"{skill_name}:jpose"] = Normalizer(state_dict[f"{skill_name}:jpose_normalizer"])
-        #     else:
-        #         self.all_normalizers[f"{skill_name}:eefpos"] =Normalizer(state_dict[f"{skill_name}:eefpos_normalizer"])
-        #         self.all_normalizers[f"{skill_name}:gripper"] = Normalizer(state_dict[f"{skill_name}:gripper_normalizer"])
-        #         self.all_normalizers[f"{skill_name}:pc_scale"] = state_dict[f"{skill_name}:pc_scale"]
-        #         self.all_normalizers[f"{skill_name}:pc"] = Normalizer(state_dict[f"{skill_name}:pc_normalizer"])
-        # self.actor.all_normalizers = self.all_normalizers
-
-
+    
         self.actor.load_state_dict(self.fix_checkpoint_keys(state_dict["actor"]))
         self.actor._init_torch_compile()
 
         self.actor.ema.averaged_model.load_state_dict(
             self.fix_checkpoint_keys(state_dict["ema_model"])
         )
+
+        if self.cfg.data.dataset.normalization_method == "all":
+            self.set_normalizer(state_dict["normalizer"])
+            self.actor.statistics = state_dict["statistics"]
+        else:
+
+            self.all_normalizers = {}
+            self.all_normalizers["eefpos"] =Normalizer(state_dict["eefpos_normalizer"])
+            self.all_normalizers["gripper"] = Normalizer(state_dict["gripper_normalizer"])
+            self.all_normalizers["pc"] = Normalizer(state_dict["pc_normalizer"])
+            self.actor.all_normalizers = self.all_normalizers
+
+            self.actor.statistics["pc_scale"] = state_dict["pc_scale"]
+
 
     ## call this function during evaluation (only during training)
     def eval_with_rotation(self, obs, skill_id = -1):

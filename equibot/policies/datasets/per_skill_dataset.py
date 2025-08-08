@@ -203,7 +203,7 @@ class PerSkillDataset(Dataset):
                             data_slice['eefpos'] = normalized_eef_pos_tensor
                             data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
                             data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
-                            
+                            ## note: if rotation, then the min xy and max xy will be same. So we need mean instead of min/max
                             if cfg.rot_aug:
                                 data_slice = rotate_dataslice(data_slice)
                             data_list.append(data_slice)
@@ -228,9 +228,9 @@ class PerSkillDataset(Dataset):
         # pc_torch = torch.tensor(pc_arr).to(torch.float32).to("cuda")
         ## normalize pc
         pcd_stats = to_torch_stats(pc_arr.reshape(-1, pc_arr.shape[-1]))
-        xyz_h_range = (pcd_stats['max'][:3] - pcd_stats['min'][:3]).max()/2
-        pcd_stats['max'][:3] = pcd_stats['min'][:3] + xyz_h_range
-        pcd_stats['min'][:3] = pcd_stats['min'][:3] - xyz_h_range
+        # xyz_h_range = (pcd_stats['max'][:3] - pcd_stats['min'][:3]).max()/2
+        # pcd_stats['max'][:3] = pcd_stats['mean'][:3] + xyz_h_range
+        # pcd_stats['min'][:3] = pcd_stats['mean'][:3] - xyz_h_range
 
         normalizer['pc'] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
 
@@ -244,7 +244,7 @@ class PerSkillDataset(Dataset):
             eef_stats = to_torch_stats(eef_xyz_np.reshape(-1, eef_xyz_np.shape[-1]))
         elif self.eef_representation == '4pts':
             original_gripper_pcd = np.array(self.original_gripper_pcd)
-            eef_4pts_raw = convert_trans_to_4pts(eef_pos_torch, original_gripper_pcd)
+            eef_4pts_raw = convert_trans_to_4pts(eef_pos_torch.reshape(-1, 1, 4, 4), original_gripper_pcd)
             eef_4pts_np = eef_4pts_raw.detach().cpu().numpy()
             eef_stats = to_torch_stats(eef_4pts_np.reshape(-1, eef_4pts_np.shape[-1]))
         ## actually not symmetric. confusing name.
