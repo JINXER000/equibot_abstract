@@ -787,6 +787,161 @@ def choose_ids(traj_len, idx_list, essential_ids = None, skill_key = None):
     assert len(selected_ids) == traj_len, f"Selected ids length {len(selected_ids)} does not match traj_len {traj_len}."
     return selected_ids
 
+## TODO: test this method
+def choose_ids_rdp(traj, target_len, idx_list, essential_ids=None):
+    """
+    Use Ramer-Douglas-Peucker algorithm to perform trajectory simplification on traj[idx_list].
+    
+    Args:
+        traj: Full trajectory data
+        target_len: Target number of points to select
+        idx_list: List of indices to consider for selection
+        essential_ids: List of essential indices that must be included
+        
+    Returns:
+        List of selected indices that represent the simplified trajectory
+    """
+    import numpy as np
+    from rdp import rdp
+    
+    if len(idx_list) <= target_len:
+        return idx_list
+    
+    # Extract the trajectory segment we want to simplify
+    traj_segment = traj[idx_list]
+    
+    # Ensure essential_ids has at least 2 elements for first and last
+    if essential_ids is None or len(essential_ids) < 2:
+        essential_ids = [idx_list[0], idx_list[-1]]
+    
+    # Always include first and last essential_ids
+    first_essential = essential_ids[0]
+    last_essential = essential_ids[-1]
+    
+    # Create mask for points that must be preserved (first and last essential)
+    preserve_mask = np.zeros(len(idx_list), dtype=bool)
+    first_idx = np.where(idx_list == first_essential)[0]
+    last_idx = np.where(idx_list == last_essential)[0]
+    
+    if len(first_idx) > 0:
+        preserve_mask[first_idx[0]] = True
+    if len(last_idx) > 0:
+        preserve_mask[last_idx[0]] = True
+    
+    # Apply RDP algorithm with adaptive epsilon to get close to target_len
+    epsilon_range = np.logspace(-3, 2, 50)
+    
+    best_indices = None
+    best_count = 0
+    
+    for epsilon in epsilon_range:
+        # Apply RDP
+        simplified_points = rdp(traj_segment, epsilon=epsilon)
+        
+        # Find which original indices correspond to the simplified points
+        simplified_indices = []
+        for point in simplified_points:
+            # Find the closest original point
+            distances = [np.linalg.norm(point - orig_point) for orig_point in traj_segment]
+            closest_idx = np.argmin(distances)
+            simplified_indices.append(closest_idx)
+        
+        # Ensure first and last essential points are included
+        simplified_indices = list(set(simplified_indices))  # Remove duplicates
+        if len(first_idx) > 0 and first_idx[0] not in simplified_indices:
+            simplified_indices.append(first_idx[0])
+        if len(last_idx) > 0 and last_idx[-1] not in simplified_indices:
+            simplified_indices.append(last_idx[-1])
+        
+        simplified_indices = sorted(simplified_indices)
+        count = len(simplified_indices)
+        
+        # Update best if we get closer to target_len
+        if count <= target_len and count > best_count:
+            best_indices = simplified_indices
+            best_count = count
+        
+        # If we get exactly target_len, we're done
+        if count == target_len:
+            break
+    
+    # If RDP didn't work well or we still don't have target_len, start with essential points
+    if best_indices is None or best_count < target_len:
+        # Start with first and last essential points
+        best_indices = []
+        if len(first_idx) > 0:
+            best_indices.append(first_idx[0])
+        if len(last_idx) > 0 and last_idx[-1] not in best_indices:
+            best_indices.append(last_idx[-1])
+        best_count = len(best_indices)
+        
+        # If we still have fewer points than target_len, sample from essential_ids
+        if best_count < target_len:
+            remaining_slots = target_len - best_count
+            
+            # Get available essential_ids that are not already selected
+            available_essential = []
+            for essential_id in essential_ids:
+                essential_idx = np.where(idx_list == essential_id)[0]
+                if len(essential_idx) > 0 and essential_idx[0] not in best_indices:
+                    available_essential.append(essential_idx[0])
+            
+            # Sample from available essential_ids
+            if len(available_essential) >= remaining_slots:
+                additional_indices = np.random.choice(available_essential, size=remaining_slots, replace=False)
+                best_indices.extend(additional_indices.tolist())
+            else:
+                # If not enough essential_ids, add all available and fill remaining with random
+                best_indices.extend(available_essential)
+                remaining_after_essential = target_len - len(best_indices)
+                
+                if remaining_after_essential > 0:
+                    # Sample from remaining idx_list
+                    available_others = [i for i in range(len(idx_list)) if i not in best_indices]
+                    if len(available_others) >= remaining_after_essential:
+                        additional_indices = np.random.choice(available_others, size=remaining_after_essential, replace=False)
+                        best_indices.extend(additional_indices.tolist())
+    
+    # If we have more points than target_len, truncate to target_len
+    if len(best_indices) > target_len:
+        # Ensure first and last essential are kept
+        if len(first_idx) > 0 and len(last_idx) > 0:
+            # Keep first and last essential, then sample the rest
+            best_indices = [first_idx[0], last_idx[-1]]
+            remaining_slots = target_len - 2
+            if remaining_slots > 0:
+                other_indices = [i for i in best_indices if i not in [first_idx[0], last_idx[-1]]]
+                if len(other_indices) >= remaining_slots:
+                    additional = np.random.choice(other_indices, size=remaining_slots, replace=False)
+                    best_indices.extend(additional.tolist())
+                else:
+                    best_indices.extend(other_indices)
+        else:
+            best_indices = best_indices[:target_len]
+    
+    # Convert back to original indices
+    selected_indices = [idx_list[i] for i in sorted(best_indices)]
+    
+    # Ensure we have exactly target_len points
+    if len(selected_indices) < target_len:
+        # Add more points if needed
+        remaining = target_len - len(selected_indices)
+        available = [idx for idx in idx_list if idx not in selected_indices]
+        if len(available) >= remaining:
+            additional = np.random.choice(available, size=remaining, replace=False)
+            selected_indices.extend(additional.tolist())
+    
+    # Sort the indices to maintain trajectory order
+    selected_indices = sorted(selected_indices)
+    
+    # Ensure we don't exceed target_len
+    if len(selected_indices) > target_len:
+        selected_indices = selected_indices[:target_len]
+    
+    assert len(selected_indices) == target_len, f"Selected indices length {len(selected_indices)} does not match target_len {target_len}"
+    
+    return selected_indices
+
 
 def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_window=True):
     """
@@ -939,63 +1094,3 @@ def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_windo
     return rendered_image
 
 
-# def decode_skill_name_emb_to_str(cur_emb, name_to_emb_dict):
-#     """
-#     Decode a task embedding back to its original task name by finding the closest matching embedding.
-    
-#     Args:
-#         cur_emb: numpy array or torch tensor of shape (embedding_dim,)
-#         name_to_emb_dict: dictionary mapping task names to their embeddings
-        
-#     Returns:
-#         str: The task name that most closely matches the given embedding
-#     """
-#     if isinstance(cur_emb, torch.Tensor):
-#         cur_emb = cur_emb.cpu().numpy()
-
-#     skill_name_to_emb_dict_np = to_np(name_to_emb_dict)
-    
-#     # Convert dictionary to numpy arrays for comparison
-#     skill_names = list(skill_name_to_emb_dict_np.keys())
-#     skill_name_embs = np.stack([skill_name_to_emb_dict_np[name] for name in skill_names]).reshape(len(skill_names), -1)
-    
-#     # Calculate cosine similarity between the given embedding and all stored embeddings
-#     skill_name_emb_normalized = cur_emb / (np.linalg.norm(cur_emb) + 1e-8)
-#     skill_name_embs_normalized = skill_name_embs / (np.linalg.norm(skill_name_embs, axis=1, keepdims=True) + 1e-8)
-    
-#     similarities = np.dot(skill_name_embs_normalized, skill_name_emb_normalized)
-    
-#     # Find the task name with the highest similarity
-#     best_match_idx = np.argmax(similarities)
-#     best_match_name = skill_names[best_match_idx]
-#     best_match_similarity = similarities[best_match_idx]
-    
-#     return best_match_name, best_match_similarity
-
-
-# def decode_skill_name_emb_batch_to_str(skill_name_embs, name_to_emb_dict):
-#     """
-#     Decode a batch of task embeddings back to their original task names.
-    
-#     Args:
-#         skill_name_embs: numpy array or torch tensor of shape (batch_size, embedding_dim) or (batch_size, 1, embedding_dim) or (batch_size, 1, 1, embedding_dim)
-#         name_to_emb_dict: dictionary mapping task names to their embeddings
-        
-#     Returns:
-#         list: List of tuples (skill_name, similarity_score) for each embedding in the batch
-#     """
-#     if isinstance(skill_name_embs, torch.Tensor):
-#         skill_name_embs = skill_name_embs.cpu().numpy()
-    
-#     # Handle cases where skill_name_embs might have extra dimensions
-#     if skill_name_embs.ndim > 2:
-#         # Reshape to (batch_size, embedding_dim) by flattening extra dimensions
-#         original_shape = skill_name_embs.shape
-#         skill_name_embs = skill_name_embs.reshape(original_shape[0], -1)
-    
-#     results = []
-#     for i in range(skill_name_embs.shape[0]):
-#         skill_name, similarity = decode_skill_name_emb_to_str(skill_name_embs[i], name_to_emb_dict)
-#         results.append((skill_name, similarity))
-    
-#     return results

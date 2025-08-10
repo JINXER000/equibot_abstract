@@ -9,6 +9,7 @@ import numpy as np
 import getpass as gt
 from tqdm import tqdm
 from glob import glob
+from torch.utils.data import random_split
 
 from equibot.policies.utils.misc import EQUIBOT_PATH, get_agent, get_dataset
 
@@ -25,7 +26,22 @@ def main(cfg):
     # initialize parameters
     batch_size = cfg.training.batch_size
 
-    train_dataset = get_dataset(cfg, "train")
+    # Load the full dataset
+    full_dataset = get_dataset(cfg, "train")
+    
+    # Split dataset into train and validation (90% train, 10% validation)
+    total_size = len(full_dataset)
+    train_size = int(0.9 * total_size)
+    val_size = total_size - train_size
+    
+    train_dataset, val_dataset = random_split(
+        full_dataset, 
+        [train_size, val_size],
+        generator=torch.Generator().manual_seed(cfg.seed)
+    )
+    
+    print(f"Dataset split: {train_size} training samples, {val_size} validation samples")
+    
     num_workers = cfg.data.dataset.num_workers
     
     # Import the collate_fn from the dataset module
@@ -37,6 +53,17 @@ def main(cfg):
         num_workers=num_workers,
         shuffle=True,
         drop_last=True,
+        pin_memory=True,
+        collate_fn=collate_fn,
+    )
+    
+    # Create validation dataloader
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=False,  # No shuffling for validation
+        drop_last=False,  # Keep all validation samples
         pin_memory=True,
         collate_fn=collate_fn,
     )
@@ -54,7 +81,7 @@ def main(cfg):
         start_epoch_ix = 0
 
     ## copy the normalizer from dataset
-    agent.set_normalizer_and_statistics(train_dataset)
+    agent.set_normalizer_and_statistics(full_dataset)
 
     # wandb
     if cfg.use_wandb:
@@ -96,7 +123,7 @@ def main(cfg):
             global_step += 1
             batch_ix += 1
 
-        # run eval 
+        # run eval on validation dataset
         if ( # log_dir is not None and
             (
                 epoch_ix % cfg.training.eval_interval == 0
@@ -104,15 +131,32 @@ def main(cfg):
             )
             # and epoch_ix > 0
         ):
-            _, eval_metrics = run_eval(agent = agent, vis= False, batch= batch, history_bid= -1 )
+            # print(f"Running validation evaluation at epoch {epoch_ix}")
+            
+            # Run evaluation on single validation batch
+            agent.train(False)  # Set to evaluation mode
+            
+            with torch.no_grad():
+                # Get one validation batch
+                val_batch = next(iter(val_loader))
+                _, eval_metrics = run_eval(agent=agent, vis=False, batch=val_batch, history_bid=-1)
+            
+            # print(f"Validation completed. Metrics: {eval_metrics}")
+            
+            # Log validation metrics
             if cfg.use_wandb:
                 # Log regular metrics
                 wandb.log(
-                    {"eval/" + k: v for k, v in eval_metrics.items() if not k.endswith('image')},
+                    {"val/" + k: v for k, v in eval_metrics.items() if not k.endswith('image')},
                     step=global_step,
                 )
                 
-                # Log rendered images
+                # Log validation metadata
+                wandb.log({
+                    "val/epoch": epoch_ix
+                }, step=global_step)
+                
+                # Log rendered images from validation batch (if any)
                 for k, v in eval_metrics.items():
                     if k.endswith('image') and v is not None:
                         # Convert normalized image (0-1) to uint8 (0-255) for wandb
@@ -122,9 +166,11 @@ def main(cfg):
                             v_uint8 = v.astype(np.uint8)
                         
                         wandb.log(
-                            {f"eval/{k}": wandb.Image(v_uint8)},
+                            {f"val/{k}": wandb.Image(v_uint8)},
                             step=global_step,
                         )
+            
+            agent.train(True)  # Set back to training mode
 
             # agent.save_snapshot(os.path.join(log_dir, "ckpt_best.pth"))
 

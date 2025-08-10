@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp, choose_ids, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg, convert_trans_to_vec, convert_trans_to_4pts, str_to_ascii_tensor
+from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp, choose_ids, choose_ids_rdp, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg, convert_trans_to_vec, convert_trans_to_4pts, str_to_ascii_tensor
 
 from equibot.policies.utils.lan_utils import get_embs_without_saving, save_embs
 
@@ -186,8 +186,10 @@ class PerSkillDataset(Dataset):
                             obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=True)
                             obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
                             
-
-                            choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+                            if cfg.choose_id_method == "rdp":   
+                                choiced_ids = choose_ids_rdp(rbt_states[f'{rbt_name}_eef_pos'], traj_len, idx_list, essential_ids = essential_ids)
+                            else:
+                                choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
                             eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
                             eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
                             eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))

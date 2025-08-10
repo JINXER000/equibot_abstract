@@ -218,6 +218,7 @@ class EquiSkillAgent(object):
             actor=self.actor.state_dict(),
             ema_model=self.actor.ema.averaged_model.state_dict(),
         )
+        state_dict['skill_name_to_emb_tensor'] = self.actor.skill_name_to_emb_tensor
         if self.cfg.data.dataset.normalization_method == "all":
             state_dict["normalizer"] = self.actor.normalizer.state_dict()
             state_dict["statistics"] = self.actor.statistics
@@ -242,6 +243,8 @@ class EquiSkillAgent(object):
         self.actor.ema.averaged_model.load_state_dict(
             self.fix_checkpoint_keys(state_dict["ema_model"])
         )
+
+        self.actor.skill_name_to_emb_tensor = state_dict['skill_name_to_emb_tensor']
 
         if self.cfg.data.dataset.normalization_method == "all":
             self.set_normalizer(state_dict["normalizer"])
