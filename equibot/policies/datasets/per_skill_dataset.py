@@ -96,7 +96,7 @@ class PerSkillDataset(Dataset):
     
     def process_select(self, cfg, **kwargs):
 
-        if self.dataset_type == 'per_skill_tarj':
+        if self.dataset_type == 'per_skill_traj':
             self.data = self.process_per_skill_traj(cfg, **kwargs)
         else:
             raise NotImplementedError(f'Dataset type {self.dataset_type} not implemented!')
