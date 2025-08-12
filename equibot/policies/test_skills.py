@@ -12,27 +12,9 @@ from tqdm import tqdm
 
 
 
-# sys.path.append('/home/user/yzchen_ws/TAMP-ubuntu22/pddlstream_aloha')
-# sys.path.append('/mnt/TAMP/interbotix_ws/src/pddlstream_aloha')
-# from examples.pybullet.aloha_real.openworld_aloha.simple_worlds import render_pose
 
-# import pathlib
-# EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()
-from equibot.policies.utils.misc import  EQUIBOT_PATH, get_agent, get_dataset
+from equibot.policies.utils.misc import  EQUIBOT_PATH, get_agent, get_dataset, vis_metric_imgs
 
-
-# def get_obs(batch):
-
-#     right_pc = batch["right_pc"].cpu().numpy()
-#     right_grasp = batch["right_grasp"].cpu().numpy()
-#     left_jpose = batch["left_jpose"].cpu().numpy()
-#     right_jpose = batch["right_jpose"].cpu().numpy()
-
-#     # # perform transformation
-#     # pc = rotate_points(pc)
-    
-#     agent_obs = {"right_pc": right_pc, "right_grasp": right_grasp, 'left_jpose': left_jpose, 'right_jpose': right_jpose}
-#     return agent_obs
 
 
 def run_eval(
@@ -63,6 +45,7 @@ def run_eval(
                     obj_points = points_batch[history_bid,0])
 
 
+
     return unnormed_history, metrics
 
 
@@ -86,8 +69,9 @@ def main(cfg):
 
 
     # get eval datase
-    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/mj_peg_hole/')
-    eval_dataset = get_dataset(cfg.data.dataset, "test")
+    # cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/mj_peg_hole/')
+    from equibot.policies.datasets.per_skill_dataset import collate_fn
+    eval_dataset = get_dataset(cfg, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(
         eval_dataset,
@@ -96,6 +80,7 @@ def main(cfg):
         shuffle=True,
         drop_last=True,
         pin_memory=True,
+        collate_fn=collate_fn,
     )
 
     data_iter = iter(test_loader)

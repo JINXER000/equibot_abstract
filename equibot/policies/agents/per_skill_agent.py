@@ -259,7 +259,8 @@ class EquiSkillAgent(object):
 
             self.actor.statistics["pc_scale"] = state_dict["pc_scale"]
 
-
+        self.actor.skill_names = list(self.actor.skill_name_to_emb_tensor.keys()
+)
     ## call this function during evaluation (only during training)
     def eval_with_rotation(self, obs, skill_id = -1):
         self.train(False)

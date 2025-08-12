@@ -65,15 +65,15 @@ class PerSkillDataset(Dataset):
         self.eef_representation = cfg.eef_representation
         self.original_gripper_pcd = np.array(cfg.original_gripper_pcd)
 
-        # self.process_select(cfg,**kwargs)
-        if mode == 'train':
-            # Process the data
-            print('Processing dataset...')
-            self.process_select(cfg,**kwargs)
-            self.normalizer, self.statistics = self.get_normalizer_and_statistics(self.data)
-        else:
-            self.data = None
-            self.normalizer = None
+        self.process_select(cfg,**kwargs)
+        # if mode == 'train':
+        #     # Process the data
+        #     print('Processing dataset...')
+        #     self.process_select(cfg,**kwargs)
+        #     self.normalizer, self.statistics = self.get_normalizer_and_statistics(self.data)
+        # else:
+        #     self.data = None
+        #     self.normalizer = None
 
 
     @property

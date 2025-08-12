@@ -36,6 +36,8 @@ class pddl_wrapper(object):
                 pin_memory=True,
             )
 
+    def get_skill_names(self):
+        return list(self.agent.actor.skill_names)
 
     def get_obs_from_datset(self,**kwargs):
         assert self.cfg.mode != 'inference'
@@ -151,7 +153,7 @@ class pddl_wrapper(object):
             action_w = action_c
         return action_w
 
-    def gen_objcentric_traj(self, obs_key, agent_obs):
+    def gen_objcentric_traj(self, obs_key, agent_obs, skill_name = None):
 
         # def revise_key(action_output, key_mapping):
 
@@ -178,7 +180,9 @@ class pddl_wrapper(object):
         obs_c = to_tensor(obs_c)
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
-        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(obs_key, obs_gpu)
+        skill_key = skill_name if skill_name is not None else obs_key
+        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(skill_key, obs_gpu)
+        action_c = to_np(action_c)
 
         # key_mapping = [('robot0_grasp_piece_1:','left_'),('eefpos','grasp'),\
                     #    ('robot1_grasp_piece_2:','right_'), ('robot0_piece_1_contact_base:','left_')]

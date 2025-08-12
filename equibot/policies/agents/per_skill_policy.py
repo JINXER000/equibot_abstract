@@ -15,7 +15,7 @@ from equibot.policies.utils.lan_utils import get_and_save_skill_bert_embs, MLPEn
 from equibot.policies.utils.misc import to_torch, \
     convert_trans_to_vec, convert_vec_to_trans, ActionSlice,\
     rotation_6d_to_matrix, geodestDist, EQUIBOT_PATH, to_torch, to_tensor,\
-    convert_trans_to_4pts, convert_4pts_to_trans, matrix_to_rotation_6d, render_trajectory, ascii_tensor_batch_to_str
+    convert_trans_to_4pts, convert_4pts_to_trans, matrix_to_rotation_6d, render_trajectory, ascii_tensor_batch_to_str, vis_metric_imgs
 
 import os
     
@@ -369,21 +369,24 @@ class EquiSkillPolicy(nn.Module):
             diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
             eval_metrics["rot_diff"] = diff_theta * 180 / torch.pi
 
-            # Render trajectory and PC together
-            for skill_name in self.skill_names:
-                ## find the skill_name in skill_name_batch(list) and get the index
-                try:
-                    skill_name_index = skill_name_batch.index(skill_name)
-                except ValueError:
-                    print(f"Skill name {skill_name} not found in skill_name_batch")
-                    continue
-                pc_data = agent_obs['pc'][skill_name_index,0].detach().cpu().numpy()  # Shape: (N, 3)
-                trajectory = trans_batch[skill_name_index].detach().cpu().numpy()  # Shape: (T, 4, 4)
-                gripper_values = gripper_batch[skill_name_index]  # Shape: (T,)
-                rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values)
-            
-                # Store the rendered image in eval_metrics
-                eval_metrics[f"{skill_name}:image"] = rendered_img
+        # Render trajectory and PC together
+        for skill_name in self.skill_names:
+            ## find the skill_name in skill_name_batch(list) and get the index
+            try:
+                skill_name_index = skill_name_batch.index(skill_name)
+            except ValueError:
+                print(f"Skill name {skill_name} not found in skill_name_batch")
+                continue
+            pc_data = agent_obs['pc'][skill_name_index,0].detach().cpu().numpy()  # Shape: (N, 3)
+            # trajectory = trans_batch[skill_name_index].detach().cpu().numpy()  # Shape: (T, 4, 4)
+            trajectory = gt_batch["eefpos"][skill_name_index].detach().cpu().numpy() 
+            gripper_values = gripper_batch[skill_name_index]  # Shape: (T,)
+            rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values)
+        
+            # Store the rendered image in eval_metrics
+            eval_metrics[f"{skill_name}:image"] = rendered_img
+
+        vis_metric_imgs(eval_metrics, save_name = "inference_debug_libero.png") 
 
         return action_dict, eval_metrics
 

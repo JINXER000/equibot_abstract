@@ -1094,3 +1094,23 @@ def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_windo
     return rendered_image
 
 
+def vis_metric_imgs(metrics, save_name = "eval_debug.png"):
+    img_keys = [k for k in metrics.keys() if k.endswith("image")]
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(4 * len(img_keys), 4))
+    for i, img_key in enumerate(img_keys, start=1):
+        img = metrics[img_key]
+
+        # If the image is a tensor, convert to numpy
+        if hasattr(img, "detach"):
+            img = img.detach().cpu().numpy()
+        if img.ndim == 3 and img.shape[0] in (1, 3):  # C,H,W -> H,W,C
+            img = img.transpose(1, 2, 0)
+
+        plt.subplot(1, len(img_keys), i)
+        plt.imshow(img)
+        plt.title(img_key)
+        plt.axis("off")
+
+    plt.tight_layout()
+    plt.savefig(save_name)
