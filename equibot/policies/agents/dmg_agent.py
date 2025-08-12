@@ -43,6 +43,8 @@ class DMGAgent(object):
 
         # self.symb_mask = cfg.data.dataset.symb_mask
 
+    def set_normalizer_and_statistics(self, full_dataset):
+        print("dummy function")
 
     def _init_actor(self):
         self.actor = DMGPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)

@@ -1017,7 +1017,7 @@ def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_windo
     if len(trajectory_points) > 1:
         trajectory_points = np.array(trajectory_points)
         ax.plot(trajectory_points[:, 0], trajectory_points[:, 1], trajectory_points[:, 2], 
-               'g-', linewidth=2, alpha=0.7, label='Trajectory')
+               'y-', linewidth=2, alpha=0.7, label='Trajectory')
     
     # Set labels and title
     ax.set_xlabel('X')

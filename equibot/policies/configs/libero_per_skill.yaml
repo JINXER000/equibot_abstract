@@ -5,7 +5,7 @@ use_wandb: true
 wandb_note: null
 
 training:
-  # ckpt: "logs/train/mj_peg_hole/ckpt_mj_traj.pth" 
+  # ckpt: "logs/train/libero_per_skill/2025-08-10_11-32-49/checkpoints/ckpt_3vec.pth" 
   eval_interval: 10
   num_epochs: 2000
 
@@ -51,7 +51,7 @@ data:
     dataset_type: 'per_skill_traj'
 
     is_obj_centric: True
-    is_add_bottom: False 
+    is_add_bottom: True 
     downsample_method: 'fps'
     rot_aug: True
 
