@@ -23,6 +23,9 @@ def collate_fn(batch):
     Custom collate function to handle variable-length skill name tensors.
     Pads skill_name tensors to the same length for batching.
     """
+    if "skill_name" not in batch[0]:
+        return torch.utils.data.dataloader.default_collate(batch)
+    
     # Find the maximum length of skill_name tensors in the batch
     max_skill_name_len = max(len(item['skill_name']) for item in batch)
     

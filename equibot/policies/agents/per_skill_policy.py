@@ -378,8 +378,8 @@ class EquiSkillPolicy(nn.Module):
                 print(f"Skill name {skill_name} not found in skill_name_batch")
                 continue
             pc_data = agent_obs['pc'][skill_name_index,0].detach().cpu().numpy()  # Shape: (N, 3)
-            # trajectory = trans_batch[skill_name_index].detach().cpu().numpy()  # Shape: (T, 4, 4)
-            trajectory = gt_batch["eefpos"][skill_name_index].detach().cpu().numpy() 
+            trajectory = trans_batch[skill_name_index].detach().cpu().numpy()  # Shape: (T, 4, 4)
+            # trajectory = gt_batch["eefpos"][skill_name_index].detach().cpu().numpy() 
             gripper_values = gripper_batch[skill_name_index]  # Shape: (T,)
             rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values)
         

@@ -189,6 +189,7 @@ def main(cfg):
                 ]:
                     os.remove(fn)
             agent.save_snapshot(save_path)
+        # agent.save_snapshot(None)
 
 
 if __name__ == "__main__":
