@@ -28,7 +28,7 @@ model:
   pred_horizon: 4
 
   separate_encoder: False
-  separate_policy: False
+  separate_policy: True
   # noise_scheduler:
   #   _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
   # num_diffusion_iters: 15 ## inference for DDIM
@@ -47,8 +47,6 @@ model:
     hidden_size: 256
     num_layers: 1
     
-  eef_representation: "3vec"
-
 data:
   dataset:
     num_points: 128
@@ -61,8 +59,13 @@ data:
     conditioned_objects: ['tripod_obj', 'needle_obj', 'None']
     dataset_type: 'robosuite_integrate_hdf5_traj'
 
+    embedding_cache_dir: "./data/bert"
+
+    # eef_representation: "4pts"
+    eef_representation: "3vec"
+
     is_obj_centric: True
-    is_add_bottom: True
+    is_add_bottom: False
     downsample_method: 'random'
     rot_aug: True
 
