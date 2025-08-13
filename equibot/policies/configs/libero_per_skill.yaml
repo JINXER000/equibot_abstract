@@ -24,7 +24,7 @@ model:
   hidden_dim: 256
 
   obs_horizon: 1
-  pred_horizon: 4
+  pred_horizon: 8
   
   separate_encoder: False
   separate_policy: False
@@ -33,7 +33,7 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "pretrained/chairs.pt"
+      preload_path: "pretrained/mugs.pt"
 
 
   language_encoder_cfg:

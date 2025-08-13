@@ -25,7 +25,7 @@ model:
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
   obs_horizon: 1
-  pred_horizon: 4
+  pred_horizon: 8
 
   separate_encoder: False
   separate_policy: True
@@ -39,7 +39,6 @@ model:
       num_layers: 7
       preload_path: "pretrained/chairs.pt"
 
-  embedding_cache_dir: "./data/bert"
 
   language_encoder_cfg:
     network_name: MLPEncoder
@@ -65,8 +64,8 @@ data:
     eef_representation: "3vec"
 
     is_obj_centric: True
-    is_add_bottom: False
-    downsample_method: 'random'
+    is_add_bottom: True
+    downsample_method: 'fps'
     rot_aug: True
 
 eval:

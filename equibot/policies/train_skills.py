@@ -86,6 +86,7 @@ def main(cfg):
     # wandb
     if cfg.use_wandb:
         log_dir = os.getcwd()
+        print(f"log_dir: {log_dir}")
         cur_date = os.popen("date +'%Y-%m-%d_%H-%M-%S'").read().strip()
         log_dir = os.path.join(log_dir, f"{cur_date}", 'checkpoints')
         if not os.path.exists(log_dir):
@@ -190,6 +191,7 @@ def main(cfg):
                     os.remove(fn)
             agent.save_snapshot(save_path)
         # agent.save_snapshot(None)
+        # print(f"save ckpt at {save_path}")
 
 
 if __name__ == "__main__":
