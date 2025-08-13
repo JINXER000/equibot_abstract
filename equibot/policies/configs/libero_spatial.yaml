@@ -24,7 +24,7 @@ model:
   hidden_dim: 256
 
   obs_horizon: 1
-  pred_horizon: 4
+  pred_horizon: 8
   
   separate_encoder: False
   separate_policy: True
@@ -33,7 +33,7 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "pretrained/chairs.pt"
+      preload_path: "pretrained/mugs.pt"
 
   embedding_cache_dir: "./data/bert"
 
@@ -55,9 +55,10 @@ data:
     eef_representation: "3vec"
 
     is_obj_centric: True
-    is_add_bottom: False 
+    is_add_bottom: True 
     downsample_method: 'fps'
     rot_aug: True
+    n_use: 20
 
 eval:
   history_bid: 10

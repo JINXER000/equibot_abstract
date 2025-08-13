@@ -777,7 +777,7 @@ def choose_ids(traj_len, idx_list, essential_ids = None, skill_key = None):
         return selected_ids
     
     preselected_ids = set([idx_list[0], idx_list[-1], essential_ids[0], essential_ids[-1]]) 
-    remaining_ids = list(set(essential_ids) - set(preselected_ids))
+    remaining_ids = list(set(idx_list) - set(preselected_ids))
     other_nums = (traj_len - len(preselected_ids))
     selected_ids = np.random.choice(remaining_ids, size=other_nums, replace=False).astype(np.int32)
 
@@ -943,7 +943,7 @@ def choose_ids_rdp(traj, target_len, idx_list, essential_ids=None):
     return selected_indices
 
 
-def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_window=True):
+def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, vis_type = 'prediction'):
     """
     Render point cloud and full trajectory of end-effector poses using matplotlib.
     
@@ -1023,7 +1023,7 @@ def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, show_windo
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
-    title = f'{skill_name} - Point Cloud and Trajectory'
+    title = f'{skill_name} - {vis_type}'
     if gripper_values is not None:
         title += ' (Red=Closed, Blue=Open)'
     ax.set_title(title)

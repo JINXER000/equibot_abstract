@@ -433,26 +433,18 @@ class DMGPolicy(nn.Module):
             diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
             eval_metrics[f"{skill_name}:rot_diff"] = diff_theta * 180 / torch.pi
 
-            # elif self.eef_representation == "3vec":
-            #     gt_eefpos_xyz, gt_dir1, gt_dir2 = convert_trans_to_vec(gt_batch[f"{skill_name}:eefpos"])
-
-            #     xyz_l1 = torch.nn.functional.l1_loss(unnormed_eefpos_xyz, gt_eefpos_xyz)
-            #     eval_metrics[f"{skill_name}:xyz_l1"] = xyz_l1
-
-            #     gt_eefpos_rot6d = torch.cat([gt_dir1, gt_dir2], dim=-1)
-            #     gt_Rs = rotation_6d_to_matrix(gt_eefpos_rot6d)
-            #     pred_Rs = rotation_6d_to_matrix(rot6d_batch)
-            #     diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
-            #     eval_metrics[f"{skill_name}:rot_diff"] = diff_theta * 180 / torch.pi
-
             ## render the eefpos and pc
             # Get the point cloud data and trajectory
             pc_data = agent_obs[f'{skill_name}:pc'][0,0].detach().cpu().numpy()  # Shape: (N, 3)
             trajectory = trans_batch[0].detach().cpu().numpy()  # Shape: (T, 4, 4)
             gripper_values = gripper_batch[0]  # Shape: (T,)
-            
             # Render trajectory and PC together
-            rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values)
+            rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values, vis_type = 'prediction')
+
+            ## render the gt trajectory also
+            gt_trajectory = gt_batch[f"{skill_name}:eefpos"][0].detach().cpu().numpy()
+            gt_gripper = gt_batch[f"{skill_name}:gripper"][0].detach().cpu().numpy()
+            gt_rendered_img = render_trajectory(pc_data, gt_trajectory, skill_name, gt_gripper, vis_type = 'ground_truth')
             
             # Store the rendered image in eval_metrics
             eval_metrics[f"{skill_name}:image"] = rendered_img
