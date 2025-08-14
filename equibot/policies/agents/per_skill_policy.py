@@ -66,7 +66,7 @@ class EquiSkillPolicy(nn.Module):
         ## will be included into ema_model further
         net_dict['language_encoder'] = self.language_encoder 
 
-        self.skill_names = None ## to be loaded
+        # self.skill_names = None ## to be loaded
 
         ## eef_representation can be vectors or points
         self.eef_representation = cfg.data.dataset.eef_representation
@@ -89,7 +89,9 @@ class EquiSkillPolicy(nn.Module):
 
         policy_key = 'unitraj_noise_pred_net'
 
-        scalar_cond_dim = self.encoder_out_dim * self.obs_horizon ## TODO: check size in policy network
+        # scalar_cond_dim = self.encoder_out_dim * self.obs_horizon
+        # skill_names + task_names
+        scalar_cond_dim = self.encoder_out_dim * self.obs_horizon*2
 
         net_dict[policy_key] = VecConditionalUnet1D(
             input_dim=self.eef_dims,  ## vec dim, rot is 2, xyz is 1
@@ -112,20 +114,20 @@ class EquiSkillPolicy(nn.Module):
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized DMG Policy with {num_parameters} parameters")
 
-    def load_skill_name_to_emb(self):
-        if self.skill_names is None:
-            self._load_emb_from_npy()
+    # def load_skill_name_to_emb(self):
+    #     if self.skill_names is None:
+    #         self._load_emb_from_npy()
 
 
-    def _load_emb_from_npy(self):
-        ## load from cache. Remember to save me to ckpt!!
-        cache_dir=os.path.join(EQUIBOT_PATH, self.cfg.data.dataset.embedding_cache_dir)
-        cache_name = f'{self.cfg.data.dataset.dataset_type}_skill_name_to_emb.npy'
-        skill_name_to_emb = np.load(os.path.join(cache_dir, cache_name), allow_pickle=True).item()
+    # def _load_emb_from_npy(self):
+    #     ## load from cache. Remember to save me to ckpt!!
+    #     cache_dir=os.path.join(EQUIBOT_PATH, self.cfg.data.dataset.embedding_cache_dir)
+    #     cache_name = f'{self.cfg.data.dataset.dataset_type}_skill_name_to_emb.npy'
+    #     skill_name_to_emb = np.load(os.path.join(cache_dir, cache_name), allow_pickle=True).item()
         
-        # Convert skill embeddings to tensors once during initialization
-        self.skill_name_to_emb_tensor = to_torch(to_tensor(skill_name_to_emb), self.device)
-        self.skill_names = self.skill_name_to_emb_tensor.keys()
+    #     # Convert skill embeddings to tensors once during initialization
+    #     self.skill_name_to_emb_tensor = to_torch(to_tensor(skill_name_to_emb), self.device)
+    #     self.skill_names = self.skill_name_to_emb_tensor.keys()
 
 
     def _init_torch_compile(self):
@@ -143,19 +145,21 @@ class EquiSkillPolicy(nn.Module):
     def _setup_language_encoder(self, network_name, **language_encoder_kwargs):
         return eval(network_name)(**language_encoder_kwargs)
     
-    def get_encoding_from_skill_name_batch(self, skill_name_batch, batch_size):
+    def get_encoding_from_name_batch(self, name_batch, batch_size, mapping_dict):
 
         if batch_size == 1:
-            skill_emb_tensor = self.skill_name_to_emb_tensor[skill_name_batch]
-            skill_emb_batch = self.encode_bert_emb(skill_emb_tensor, batch_size)
+            emb_tensor = mapping_dict[name_batch]
+            emb_batch = self.encode_bert_emb(emb_tensor, batch_size)
         else:
-            skill_emb_tensor_batch = []
-            for skill_name in skill_name_batch:
-                skill_emb_tensor = self.skill_name_to_emb_tensor[skill_name]
-                skill_emb_tensor_batch.append(skill_emb_tensor)
-            skill_emb_tensor_batch = torch.stack(skill_emb_tensor_batch, dim=0)
-            skill_emb_batch = self.encode_bert_emb(skill_emb_tensor_batch, batch_size)
-        return skill_emb_batch
+            emb_tensor_batch = []
+            for skill_name in name_batch:
+                emb_tensor = mapping_dict[skill_name]
+                if isinstance(emb_tensor, np.ndarray):
+                    emb_tensor = torch.tensor(emb_tensor).to(self.device)
+                emb_tensor_batch.append(emb_tensor)
+            emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
+            emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
+        return emb_batch
 
     def encode_bert_emb(self, bert_emb, batch_size):
         skill_emb = self.nets['language_encoder'](bert_emb)
@@ -289,9 +293,15 @@ class EquiSkillPolicy(nn.Module):
         return gripper_action
 
 
+    def get_all_embs(self, skill_name_batch, batch_size, task_name_batch = None):
+        skill_emb_batch = self.get_encoding_from_name_batch(skill_name_batch, batch_size, self.statistics['skill_embs_all_tasks'])
 
+        if task_name_batch is not None:
+            task_emb_batch = self.get_encoding_from_name_batch(task_name_batch, batch_size, self.statistics['task_emb_dict'])
+            skill_emb_batch = torch.cat([skill_emb_batch, task_emb_batch], dim=-1)
+        return skill_emb_batch
 
-    def pred_unimaual_traj(self, skill_name_batch, agent_obs, gt_batch = None):
+    def pred_unimaual_traj(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
         pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
 
@@ -313,8 +323,9 @@ class EquiSkillPolicy(nn.Module):
         
          ####### inverse diffusion step
         policy_key = 'unitraj_noise_pred_net'
-        skill_emb_batch = self.get_encoding_from_skill_name_batch(skill_name_batch, batch_size)
-            
+        emb_batch = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
+        
+
         for k in self.noise_scheduler.timesteps:
 
             new_action = { "eefpos": None, "gripper": None }
@@ -324,7 +335,7 @@ class EquiSkillPolicy(nn.Module):
                 timestep = k,
                 scalar_sample = curr_action["gripper"], 
                 cond= obs_vec,
-                scalar_cond=skill_emb_batch,
+                scalar_cond=emb_batch,
             )
             new_action["eefpos"] = self.noise_scheduler.step(
                 model_output=vec_noise_pred, timestep=k, sample=curr_action["eefpos"]
@@ -377,10 +388,15 @@ class EquiSkillPolicy(nn.Module):
                 except ValueError:
                     print(f"Skill name {skill_name} not found in skill_name_batch")
                     continue
+
+                if task_name_batch is not None:
+                    task_name = task_name_batch[skill_name_index]
+                else:
+                    task_name = ''
                 pc_data = agent_obs['pc'][skill_name_index,0].detach().cpu().numpy()  # Shape: (N, 3)
                 trajectory = trans_batch[skill_name_index].detach().cpu().numpy()  # Shape: (T, 4, 4)
                 gripper_values = gripper_batch[skill_name_index]  # Shape: (T,)
-                rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values)
+                rendered_img = render_trajectory(pc_data, trajectory, gripper_values, title = f'{skill_name}-{task_name}-prediction')
             
                 # Store the rendered image in eval_metrics
                 eval_metrics[f"{skill_name}:image"] = rendered_img
@@ -388,7 +404,10 @@ class EquiSkillPolicy(nn.Module):
         return action_dict, eval_metrics
 
 
-
+    def skill_task_ascii_to_str(self, batch):
+        skill_name_batch = ascii_tensor_batch_to_str(batch['skill_name'])
+        task_name_batch = ascii_tensor_batch_to_str(batch['task_name'])
+        return skill_name_batch, task_name_batch
 
     def forward(self, batch, skill_id=-1):
         ###### preprocess data from dataset #######
@@ -397,14 +416,15 @@ class EquiSkillPolicy(nn.Module):
         action_dict_all = {}
         eval_metrics_all = {}
 
-        self.load_skill_name_to_emb()
+        # self.load_skill_name_to_emb()
+        assert self.skill_names is not None
+        assert self.task_names is not None
 
-        # skill_name_batch = decode_skill_name_emb_batch_to_str(batch['skill_name_emb'], self.skill_name_to_emb_tensor)
-        skill_name_batch = ascii_tensor_batch_to_str(batch['skill_name'])
+        skill_name_batch, task_name_batch = self.skill_task_ascii_to_str(batch)
 
         pc_data = batch['pc']
         agent_obs = {'pc': pc_data}
-        action_dict, eval_metrics = self.pred_unimaual_traj(skill_name_batch, agent_obs, gt_batch=batch)
+        action_dict, eval_metrics = self.pred_unimaual_traj(skill_name_batch, agent_obs, gt_batch=batch, task_name_batch=task_name_batch)
         action_dict_all.update(action_dict)
         eval_metrics_all.update(eval_metrics)
 

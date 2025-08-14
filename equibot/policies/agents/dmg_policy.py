@@ -439,12 +439,12 @@ class DMGPolicy(nn.Module):
             trajectory = trans_batch[0].detach().cpu().numpy()  # Shape: (T, 4, 4)
             gripper_values = gripper_batch[0]  # Shape: (T,)
             # Render trajectory and PC together
-            rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values, vis_type = 'prediction')
+            rendered_img = render_trajectory(pc_data, trajectory,  gripper_values, title = f'{skill_name}-prediction')
 
             ## render the gt trajectory also
             gt_trajectory = gt_batch[f"{skill_name}:eefpos"][0].detach().cpu().numpy()
             gt_gripper = gt_batch[f"{skill_name}:gripper"][0].detach().cpu().numpy()
-            gt_rendered_img = render_trajectory(pc_data, gt_trajectory, skill_name, gt_gripper, vis_type = 'ground_truth')
+            gt_rendered_img = render_trajectory(pc_data, gt_trajectory, gt_gripper, title = f'{skill_name}-ground_truth')
             
             # Store the rendered image in eval_metrics
             eval_metrics[f"{skill_name}:image"] = rendered_img

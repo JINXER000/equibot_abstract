@@ -943,16 +943,14 @@ def choose_ids_rdp(traj, target_len, idx_list, essential_ids=None):
     return selected_indices
 
 
-def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, vis_type = 'prediction'):
+def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction'):
     """
     Render point cloud and full trajectory of end-effector poses using matplotlib.
     
     Args:
         pc: Point cloud data (N, 3)
         eef_poses: End-effector poses for all timesteps (T, 4, 4)
-        skill_name: Name of the skill for visualization
         gripper_values: Gripper values for each timestep (T,) - if provided, colors trajectory based on gripper state
-        show_window: Whether to show the visualization window (ignored for headless rendering)
         
     Returns:
         rendered_image: RGB image as numpy array
@@ -1023,9 +1021,9 @@ def render_trajectory(pc, eef_poses, skill_name, gripper_values=None, vis_type =
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
-    title = f'{skill_name} - {vis_type}'
-    if gripper_values is not None:
-        title += ' (Red=Closed, Blue=Open)'
+    # title = f'{skill_name} - {vis_type}'
+    # if gripper_values is not None:
+    #     title += ' (Red=Closed, Blue=Open)'
     ax.set_title(title)
     
     # Set equal aspect ratio

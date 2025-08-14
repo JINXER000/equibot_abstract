@@ -56,6 +56,8 @@ data:
     rot_aug: True
 
     embedding_cache_dir: "./data/bert"
+    task_suite_name: "libero_spatial"
+    n_use: 50
 
     # eef_representation: "4pts"
     eef_representation: "3vec"

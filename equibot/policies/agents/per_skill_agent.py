@@ -99,7 +99,9 @@ class EquiSkillAgent(object):
 
         eefpos = n_data_dict['eefpos']
         gripper = n_data_dict['gripper']
-        bert_emb = n_data_dict['skill_name_emb']
+        # bert_emb = n_data_dict['skill_name_emb']
+ 
+        skill_name_batch, task_name_batch = self.actor.skill_task_ascii_to_str(n_data_dict)
 
         ## proc grasp
         gt_eefpos_z = self.actor.eef_proc_fn(eefpos, 'eefpos', center, scale)
@@ -126,14 +128,16 @@ class EquiSkillAgent(object):
 
         ## /tilde{z}_t = prednet(x_t, Cond, t)
         policy_key = 'unitraj_noise_pred_net'
-        skill_scalar_id = self.actor.encode_bert_emb(bert_emb, batch_size)
+        
+        # skill_scalar_id = self.actor.encode_bert_emb(bert_emb, batch_size)
+        emb_batch = self.actor.get_all_embs(skill_name_batch, batch_size, task_name_batch)
 
         eefpos_noise_pred, gripper_noise_pred = self.actor.nets[policy_key](
             noisy_eefpos,
             timesteps,
             scalar_sample = noisy_gripper_action,
             cond = obs_vec,
-            scalar_cond = skill_scalar_id,
+            scalar_cond = emb_batch,
         )
         
         vec_loss = nn.functional.mse_loss(eefpos_noise_pred, eefpos_noise)
@@ -149,7 +153,9 @@ class EquiSkillAgent(object):
         ###### Load data, preprocessing using mask ######
         batch = to_torch(batch, self.device)
         n_data_dict = {}
-        n_data_dict['skill_name_emb'] = batch['skill_name_emb']
+        # n_data_dict['skill_name_emb'] = batch['skill_name_emb']
+        n_data_dict['skill_name'] = batch['skill_name']
+        n_data_dict['task_name'] = batch['task_name']
         n_data_dict['pc'] = batch['pc']
         n_data_dict['eefpos'] = batch['eefpos']
         n_data_dict['gripper'] = batch['gripper']
@@ -193,9 +199,12 @@ class EquiSkillAgent(object):
         return metrics
 
     def set_normalizer_and_statistics(self, dataset):
+        self.actor.statistics = dataset.statistics
+        self.actor.skill_names = dataset.skill_names
+        self.actor.task_names = dataset.task_names
+
         if self.cfg.data.dataset.normalization_method == "all":
             self.set_normalizer(dataset.normalizer.state_dict())
-            self.actor.statistics = dataset.statistics
 
     def set_normalizer(self, normalizer_state_dict):
         self.actor.normalizer.load_state_dict(normalizer_state_dict)
@@ -218,20 +227,21 @@ class EquiSkillAgent(object):
             actor=self.actor.state_dict(),
             ema_model=self.actor.ema.averaged_model.state_dict(),
         )
-        state_dict['skill_name_to_emb_tensor'] = self.actor.skill_name_to_emb_tensor
+        # state_dict['skill_name_to_emb_tensor'] = self.actor.skill_name_to_emb_tensor
+        
+        state_dict["statistics"] = self.actor.statistics
+
         if self.cfg.data.dataset.normalization_method == "all":
             state_dict["normalizer"] = self.actor.normalizer.state_dict()
-            state_dict["statistics"] = self.actor.statistics
+            # state_dict["statistics"] = self.actor.statistics
         else:
-
             state_dict["eefpos_normalizer"] = self.all_normalizers["eefpos"].state_dict()
             state_dict["gripper_normalizer"] = self.all_normalizers["gripper"].state_dict()
-            state_dict["pc_scale"] = self.actor.statistics["pc_scale"]
+            # state_dict["pc_scale"] = self.actor.statistics["pc_scale"]
             state_dict["pc_normalizer"] = self.all_normalizers["pc"].state_dict()
 
         torch.save(state_dict, save_path)
 
-    ## TODO: check if the normalizer is loaded correctly
     def load_snapshot(self, load_path):
         import os
         load_path_full = os.path.join(EQUIBOT_PATH, load_path)
@@ -244,11 +254,13 @@ class EquiSkillAgent(object):
             self.fix_checkpoint_keys(state_dict["ema_model"])
         )
 
-        self.actor.skill_name_to_emb_tensor = state_dict['skill_name_to_emb_tensor']
+        self.actor.statistics = state_dict["statistics"]
+
+        # self.actor.skill_name_to_emb_tensor = state_dict['skill_name_to_emb_tensor']
 
         if self.cfg.data.dataset.normalization_method == "all":
             self.set_normalizer(state_dict["normalizer"])
-            self.actor.statistics = state_dict["statistics"]
+            # self.actor.statistics = state_dict["statistics"]
         else:
 
             self.all_normalizers = {}
@@ -257,7 +269,7 @@ class EquiSkillAgent(object):
             self.all_normalizers["pc"] = Normalizer(state_dict["pc_normalizer"])
             self.actor.all_normalizers = self.all_normalizers
 
-            self.actor.statistics["pc_scale"] = state_dict["pc_scale"]
+            # self.actor.statistics["pc_scale"] = state_dict["pc_scale"]
 
 
     ## call this function during evaluation (only during training)
