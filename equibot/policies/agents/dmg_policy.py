@@ -350,7 +350,7 @@ class DMGPolicy(nn.Module):
 
         return action_dict, eval_metrics
     
-    def pred_unimaual_traj(self, skill_name, agent_obs, gt_batch = None):
+    def pred_unimaual_traj(self, skill_name, agent_obs, gt_batch = None, task_name_batch = None):
         pc_data = agent_obs[f'{skill_name}:pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
 
@@ -439,12 +439,12 @@ class DMGPolicy(nn.Module):
             trajectory = trans_batch[0].detach().cpu().numpy()  # Shape: (T, 4, 4)
             gripper_values = gripper_batch[0]  # Shape: (T,)
             # Render trajectory and PC together
-            rendered_img = render_trajectory(pc_data, trajectory, skill_name, gripper_values, vis_type = 'prediction')
+            rendered_img = render_trajectory(pc_data, trajectory,  gripper_values, title = f'{skill_name}-prediction')
 
             ## render the gt trajectory also
             gt_trajectory = gt_batch[f"{skill_name}:eefpos"][0].detach().cpu().numpy()
             gt_gripper = gt_batch[f"{skill_name}:gripper"][0].detach().cpu().numpy()
-            gt_rendered_img = render_trajectory(pc_data, gt_trajectory, skill_name, gt_gripper, vis_type = 'ground_truth')
+            gt_rendered_img = render_trajectory(pc_data, gt_trajectory, gt_gripper, title = f'{skill_name}-ground_truth')
             
             # Store the rendered image in eval_metrics
             eval_metrics[f"{skill_name}:image"] = rendered_img

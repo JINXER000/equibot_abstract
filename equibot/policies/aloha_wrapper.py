@@ -153,15 +153,8 @@ class pddl_wrapper(object):
             action_w = action_c
         return action_w
 
-    def gen_objcentric_traj(self, obs_key, agent_obs, skill_name = None):
+    def gen_objcentric_traj(self, obs_key, agent_obs, skill_name = None, task_name = None):
 
-        # def revise_key(action_output, key_mapping):
-
-        #     for origin_k, revised_k in key_mapping:
-        #         action_output = {
-        #             key.replace(origin_k, revised_k): value for key, value in action_output.items()
-        #         }
-        #     return action_output
         import re
         def revise_key(action_output, key_mapping):
             new_action_output = {}
@@ -181,7 +174,7 @@ class pddl_wrapper(object):
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
         skill_key = skill_name if skill_name is not None else obs_key
-        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(skill_key, obs_gpu)
+        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(skill_key, obs_gpu, task_name_batch=task_name)
         action_c = to_np(action_c)
 
         # key_mapping = [('robot0_grasp_piece_1:','left_'),('eefpos','grasp'),\

@@ -28,7 +28,7 @@ def collate_fn(batch):
     
     # Find the maximum length of skill_name tensors in the batch
     max_skill_name_len = max(len(item['skill_name']) for item in batch)
-    
+    max_task_name_len = max(len(item['task_name']) for item in batch)
     # Pad all skill_name tensors to the same length
     for item in batch:
         skill_name_len = len(item['skill_name'])
@@ -36,10 +36,36 @@ def collate_fn(batch):
             # Pad with zeros (or any other padding value)
             padding = torch.zeros(max_skill_name_len - skill_name_len, dtype=item['skill_name'].dtype)
             item['skill_name'] = torch.cat([item['skill_name'], padding])
+
+        task_name_len = len(item['task_name'])
+        if task_name_len < max_task_name_len:
+            # Pad with zeros (or any other padding value)
+            padding = torch.zeros(max_task_name_len - task_name_len, dtype=item['task_name'].dtype)
+            item['task_name'] = torch.cat([item['task_name'], padding])
     
     # Use default collate for the rest
     return torch.utils.data.dataloader.default_collate(batch)
 
+def get_libero_task_emb(task_suite_name, cache_dir):
+    from libero.libero import benchmark
+    
+    benchmark_dict = benchmark.get_benchmark_dict()
+    task_suite = benchmark_dict[task_suite_name]()
+
+    descriptions = []
+    for task_id in range(task_suite.n_tasks):
+        task = task_suite.get_task(task_id)
+        descriptions.append(task.name)
+
+    task_emb_dict = get_embs_without_saving(descriptions, cache_dir=cache_dir)
+    # task_emb_dict = {descriptions[i]: task_embs_list[i] for i in range(len(descriptions))}
+    return task_emb_dict
+
+def find_correct_task_name(task_name_list, hdf5_name):
+    for task_name in task_name_list:
+        if task_name in hdf5_name:
+            return task_name
+    return None
 
 class PerSkillDataset(Dataset):
     def __init__(self, cfg, mode, transform=None, pre_transform=None, pre_filter=None,  **kwargs):
@@ -68,15 +94,22 @@ class PerSkillDataset(Dataset):
         self.eef_representation = cfg.eef_representation
         self.original_gripper_pcd = np.array(cfg.original_gripper_pcd)
 
-        self.process_select(cfg,**kwargs)
-        # if mode == 'train':
-        #     # Process the data
-        #     print('Processing dataset...')
-        #     self.process_select(cfg,**kwargs)
-        #     self.normalizer, self.statistics = self.get_normalizer_and_statistics(self.data)
-        # else:
-        #     self.data = None
-        #     self.normalizer = None
+        self.statistics = {}
+        # self.skill_names = None
+        # self.task_names = None
+
+        # self.process_select(cfg,**kwargs)
+        if mode == 'train':
+            # Process the data
+            print('Processing dataset...')
+            self.process_select(cfg,**kwargs)
+            self.normalizer = self.get_normalizer_and_statistics(self.data)
+            self.skill_names = list(self.statistics['skill_embs_all_tasks'].keys())
+            self.task_names = list(self.statistics['task_emb_dict'].keys())
+
+        else:
+            self.data = None
+            self.normalizer = None
 
 
     @property
@@ -113,11 +146,14 @@ class PerSkillDataset(Dataset):
         traj_len = cfg.pred_horizon
         traj_nums = 64
         primitive_kws = cfg.uniskills
+        task_suite_name = cfg.task_suite_name
+        cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
+        task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
         # interested_objs = cfg.conditioned_objects
         # skill_names = cfg.skill_names
         # skill_condition_objs = {skill_names[i]: interested_objs[i] for i in range(len(skill_names))}
         self.involved_skill_names = set()
-        self.skill_embs_all_tasks = {}
+        skill_embs_all_tasks = {}
 
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -131,7 +167,13 @@ class PerSkillDataset(Dataset):
                 sg_params = json.loads(sg_params_json.decode('utf-8'))
                 robot_names = sg_params['robots']  
 
-                demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]
+                ## get task name and emb for libero
+                # task_name = sg_params['task_name']
+                task_name = find_correct_task_name(task_emb_dict.keys(), file_name)
+                # task_desc = task_name.replace('_', ' ')
+                # task_emb = task_emb_dict[task_name]
+
+                demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]   
                 inds = np.argsort([int(elem[5:]) for elem in demos])
                 demos = [demos[i] for i in inds]
 
@@ -155,8 +197,8 @@ class PerSkillDataset(Dataset):
                             ## if no interested skill found, skip this skill
                             continue
 
-                skill_name_to_emb = get_embs_without_saving(list(interested_skills), cache_dir=os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir))
-                self.skill_embs_all_tasks.update(skill_name_to_emb)
+                skill_name_to_emb = get_embs_without_saving(list(interested_skills), cache_dir=cache_dir)
+                skill_embs_all_tasks.update(skill_name_to_emb)
                 self.involved_skill_names = self.involved_skill_names.union(interested_skills)
 
                 for demo_id in range(len(demos)):
@@ -203,11 +245,12 @@ class PerSkillDataset(Dataset):
                             
                             ## input
                             data_slice['pc'] = obj_pc_tensor
-                            data_slice['skill_name_emb'] = skill_name_to_emb[skill_name]
+                            # data_slice['skill_name_emb'] = skill_name_to_emb[skill_name]
                             ## output
                             data_slice['eefpos'] = normalized_eef_pos_tensor
                             data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
                             data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
+                            data_slice['task_name'] = str_to_ascii_tensor(task_name)
                             ## note: if rotation, then the min xy and max xy will be same. So we need mean instead of min/max
                             if cfg.rot_aug:
                                 data_slice = rotate_dataslice(data_slice)
@@ -221,13 +264,15 @@ class PerSkillDataset(Dataset):
         # print(f'Involved skill names: {cfg.skill_names}')
         ## obtain skill name embedding
         cache_name = f'{cfg.dataset_type}_skill_name_to_emb.npy'
-        save_embs(self.skill_embs_all_tasks, cache_dir=os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir), cache_name=cache_name)
+        save_embs(skill_embs_all_tasks, cache_dir=cache_dir, cache_name=cache_name)
+
+        self.statistics['task_emb_dict'] = task_emb_dict
+        self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
 
         return data_list
 
     def get_normalizer_and_statistics(self, data_list):
         normalizer = LinearNormalizer()
-        statistics = {}
         ### normalize pc
         pc_arr = np.concatenate([data['pc'] for data in data_list], axis=0)
         # pc_torch = torch.tensor(pc_arr).to(torch.float32).to("cuda")
@@ -262,9 +307,9 @@ class PerSkillDataset(Dataset):
 
         ## set_scale. 
         pc_scale = self.get_pc_scale(pc_arr, eef_stats["max"].max())
-        statistics['pc_scale'] = pc_scale
+        self.statistics['pc_scale'] = pc_scale
 
-        return normalizer, statistics
+        return normalizer
 
     
     def get_pc_scale(self, pc_data, ac_scale):
