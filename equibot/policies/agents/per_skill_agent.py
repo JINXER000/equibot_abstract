@@ -224,6 +224,7 @@ class EquiSkillAgent(object):
     
     def save_snapshot(self, save_path):
         state_dict = dict(
+            cfg = self.cfg,
             actor=self.actor.state_dict(),
             ema_model=self.actor.ema.averaged_model.state_dict(),
         )
@@ -246,6 +247,10 @@ class EquiSkillAgent(object):
         import os
         load_path_full = os.path.join(EQUIBOT_PATH, load_path)
         state_dict = torch.load(load_path_full)
+
+        ## TODO: add cfg to actor
+        self.actor.cfg = state_dict["cfg"]
+        self.cfg = state_dict["cfg"]
     
         self.actor.load_state_dict(self.fix_checkpoint_keys(state_dict["actor"]))
         self.actor._init_torch_compile()

@@ -5,7 +5,7 @@ use_wandb: true
 wandb_note: null
 
 training:
-  ckpt: "logs/train/libero_per_skill/ckpt_3view_static.pth" 
+  # ckpt: "logs/train/libero_per_skill/ckpt_3view_static.pth" 
 
   eval_interval: 10
   num_epochs: 2000
@@ -74,6 +74,26 @@ data:
     #                         [ 3.48747446e-04,  4.88699045e-02, -2.86211470e-02],
     #                         [ 8.89648299e-05, -5.10463244e-02, -2.45325339e-02],
     #                         [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00]]
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    agentview_image:
+      shape: [3, 128, 128]
+      type: rgb
+    robot0_eye_in_hand_image:
+      shape: [3, 128, 128]
+      type: rgb
+    robot0_eef_pos:
+      shape: [3]
+      # type default: low_dim
+    robot0_eef_quat:
+      shape: [4]
+    robot0_gripper_qpos:
+      shape: [2]
+
+  action: 
+    shape: [14]
+
 
 eval:
   history_bid: 10

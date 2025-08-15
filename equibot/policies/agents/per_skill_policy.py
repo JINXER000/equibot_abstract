@@ -382,23 +382,22 @@ class EquiSkillPolicy(nn.Module):
             diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
             eval_metrics["rot_diff"] = diff_theta * 180 / torch.pi
 
-            # Render trajectory and PC together
-            for skill_name in self.skill_names:
-                ## find the skill_name in skill_name_batch(list) and get the index
-                try:
-                    skill_name_index = skill_name_batch.index(skill_name)
-                except ValueError:
-                    print(f"Skill name {skill_name} not found in skill_name_batch")
-                    continue
-
+            plotted_titles = []
+            for i in range(batch_size):
+                skill_name = skill_name_batch[i]
                 if task_name_batch is not None:
-                    task_name = task_name_batch[skill_name_index]
+                    task_name = task_name_batch[i]
                 else:
                     task_name = ''
-                pc_data = agent_obs['pc'][skill_name_index,0].detach().cpu().numpy()  # Shape: (N, 3)
-                trajectory = trans_batch[skill_name_index].detach().cpu().numpy()  # Shape: (T, 4, 4)
-                gripper_values = gripper_batch[skill_name_index]  # Shape: (T,)
                 title = f'{skill_name}-{task_name}-prediction'
+                if title not in plotted_titles:
+                    plotted_titles.append(title)
+                else:
+                    continue
+
+                pc_data = agent_obs['pc'][i,0].detach().cpu().numpy()  # Shape: (N, 3)
+                trajectory = trans_batch[i].detach().cpu().numpy()  # Shape: (T, 4, 4)
+                gripper_values = gripper_batch[i]  # Shape: (T,)
                 rendered_img = render_trajectory(pc_data, trajectory, gripper_values, title = title)
             
                 # Store the rendered image in eval_metrics

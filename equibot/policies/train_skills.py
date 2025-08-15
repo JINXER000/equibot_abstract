@@ -29,9 +29,9 @@ def main(cfg):
     # Load the full dataset
     full_dataset = get_dataset(cfg, "train")
     
-    # Split dataset into train and validation (90% train, 10% validation)
+    # Split dataset into train and validation
     total_size = len(full_dataset)
-    train_size = int(0.9 * total_size)
+    train_size = int(0.98 * total_size)
     val_size = total_size - train_size
     
     train_dataset, val_dataset = random_split(

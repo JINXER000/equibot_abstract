@@ -154,7 +154,11 @@ def get_agent(agent_name):
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
 
-
+def get_agent_from_ckpt(ckpt_path):
+    state_dict = torch.load(ckpt_path)
+    cfg = state_dict["cfg"]
+    agent_name = cfg.model.agent_name
+    return get_agent(agent_name)(cfg)
 
 # impl from: https://pytorch3d.readthedocs.io/en/latest/_modules/pytorch3d/transforms/rotation_conversions.html#rotation_6d_to_matrix
 def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
