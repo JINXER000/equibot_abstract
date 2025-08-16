@@ -154,6 +154,7 @@ class PerSkillDataset(Dataset):
         # skill_condition_objs = {skill_names[i]: interested_objs[i] for i in range(len(skill_names))}
         self.involved_skill_names = set()
         skill_embs_all_tasks = {}
+        skillwise_sgs = {}
 
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -213,6 +214,10 @@ class PerSkillDataset(Dataset):
                     for _ in range(traj_nums):
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
+                            ## record the sg first
+                            if skill_name not in skillwise_sgs:
+                                skillwise_sgs[skill_name] = skill_info
+
                             data_slice = {}
                             
                             pre_sg = get_sg(skill_info, 'pre_sg')
@@ -268,6 +273,7 @@ class PerSkillDataset(Dataset):
 
         self.statistics['task_emb_dict'] = task_emb_dict
         self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
+        self.statistics['skillwise_sgs'] = skillwise_sgs
 
         return data_list
 

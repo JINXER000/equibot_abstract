@@ -4,7 +4,7 @@ import torch
 import hydra
 import numpy as np
 
-from equibot.policies.utils.misc import get_agent, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, decentralize_cond_pc, decentralize_grasp, centralize_downsample
+from equibot.policies.utils.misc import get_agent, get_agent_from_ckpt, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, decentralize_cond_pc, decentralize_grasp, centralize_downsample
 
 
 TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
@@ -12,17 +12,48 @@ TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
 
 
 class pddl_wrapper(object):
-    def __init__(self, cfg, dataset_path):
+    # def __init__(self, cfg, dataset_path):
+    #      # load the network
+    #     cfg.data.dataset.path = dataset_path
+    #     ckpt_path_full = os.path.join(EQUIBOT_PATH, cfg.training.ckpt)
+    #     self.cfg = cfg
+    #     self.agent = get_agent(cfg.agent.agent_name)(cfg)
+    #     self.agent.train(False)
+    #     self.agent.load_snapshot(ckpt_path_full)
+
+    #     self.dataset = get_dataset(cfg, cfg.mode)
+    #     # self.dataset = DualAbsDataset(cfg.data.dataset , cfg.mode)
+
+    #     if cfg.mode != 'inference':
+    #         # num_workers = cfg.data.dataset.num_workers
+    #         num_workers = 0
+    #         self.test_loader = torch.utils.data.DataLoader(
+    #             self.dataset,
+    #             batch_size=1,
+    #             num_workers=num_workers,
+    #             shuffle=False,
+    #             drop_last=True,
+    #             pin_memory=True,
+    #         )
+
+    def __init__(self, dataset_path, cfg = None, ckpt_path = None, exe_mode = "inference"):
          # load the network
+        if cfg is not None and ckpt_path is None:
+            ckpt_path_full = os.path.join(EQUIBOT_PATH, cfg.training.ckpt)
+            self.agent = get_agent(cfg.agent.agent_name)(cfg)
+            self.agent.train(False)
+            self.agent.load_snapshot(ckpt_path_full)
+        elif ckpt_path is not None and cfg is None:
+            ckpt_path_full = os.path.join(EQUIBOT_PATH, ckpt_path)
+            self.agent = get_agent_from_ckpt(ckpt_path_full)
+            cfg = self.agent.cfg
+
+        cfg.mode = exe_mode
         cfg.data.dataset.path = dataset_path
-        ckpt_path_full = os.path.join(EQUIBOT_PATH, cfg.training.ckpt)
         self.cfg = cfg
-        self.agent = get_agent(cfg.agent.agent_name)(cfg)
         self.agent.train(False)
-        self.agent.load_snapshot(ckpt_path_full)
 
         self.dataset = get_dataset(cfg, cfg.mode)
-        # self.dataset = DualAbsDataset(cfg.data.dataset , cfg.mode)
 
         if cfg.mode != 'inference':
             # num_workers = cfg.data.dataset.num_workers

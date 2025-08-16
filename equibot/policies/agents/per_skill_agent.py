@@ -243,11 +243,7 @@ class EquiSkillAgent(object):
 
         torch.save(state_dict, save_path)
 
-    def load_snapshot(self, load_path):
-        import os
-        load_path_full = os.path.join(EQUIBOT_PATH, load_path)
-        state_dict = torch.load(load_path_full)
-
+    def load_state_dict_to_actor(self, state_dict):
         ## TODO: add cfg to actor
         self.actor.cfg = state_dict["cfg"]
         self.cfg = state_dict["cfg"]
@@ -261,12 +257,10 @@ class EquiSkillAgent(object):
 
         self.actor.statistics = state_dict["statistics"]
         self.actor.skill_names = list(state_dict["statistics"]["skill_embs_all_tasks"].keys())
-        # self.actor.skill_name_to_emb_tensor = state_dict['skill_name_to_emb_tensor']
-        # self.actor.skill_names = list(self.actor.skill_name_to_emb_tensor.keys()
+
 
         if self.cfg.data.dataset.normalization_method == "all":
             self.set_normalizer(state_dict["normalizer"])
-            # self.actor.statistics = state_dict["statistics"]
         else:
 
             self.all_normalizers = {}
@@ -275,7 +269,14 @@ class EquiSkillAgent(object):
             self.all_normalizers["pc"] = Normalizer(state_dict["pc_normalizer"])
             self.actor.all_normalizers = self.all_normalizers
 
-            # self.actor.statistics["pc_scale"] = state_dict["pc_scale"]
+
+
+
+    def load_snapshot(self, load_path):
+        import os
+        load_path_full = os.path.join(EQUIBOT_PATH, load_path)
+        state_dict = torch.load(load_path_full)
+        self.load_state_dict_to_actor(state_dict)
 
             
     ## call this function during evaluation (only during training)
