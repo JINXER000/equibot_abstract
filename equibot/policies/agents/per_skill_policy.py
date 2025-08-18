@@ -17,7 +17,6 @@ from equibot.policies.utils.misc import to_torch, \
     rotation_6d_to_matrix, geodestDist, EQUIBOT_PATH, to_torch, to_tensor,\
     convert_trans_to_4pts, convert_4pts_to_trans, matrix_to_rotation_6d, render_trajectory, ascii_tensor_batch_to_str, vis_metric_imgs
 
-import os
     
 class EquiSkillPolicy(nn.Module):
     def __init__(self, cfg,  device="cpu"):
@@ -113,21 +112,6 @@ class EquiSkillPolicy(nn.Module):
         
         num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
         print(f"Initialized DMG Policy with {num_parameters} parameters")
-
-    # def load_skill_name_to_emb(self):
-    #     if self.skill_names is None:
-    #         self._load_emb_from_npy()
-
-
-    # def _load_emb_from_npy(self):
-    #     ## load from cache. Remember to save me to ckpt!!
-    #     cache_dir=os.path.join(EQUIBOT_PATH, self.cfg.data.dataset.embedding_cache_dir)
-    #     cache_name = f'{self.cfg.data.dataset.dataset_type}_skill_name_to_emb.npy'
-    #     skill_name_to_emb = np.load(os.path.join(cache_dir, cache_name), allow_pickle=True).item()
-        
-    #     # Convert skill embeddings to tensors once during initialization
-    #     self.skill_name_to_emb_tensor = to_torch(to_tensor(skill_name_to_emb), self.device)
-    #     self.skill_names = self.skill_name_to_emb_tensor.keys()
 
 
     def _init_torch_compile(self):
@@ -303,6 +287,7 @@ class EquiSkillPolicy(nn.Module):
             skill_emb_batch = torch.cat([skill_emb_batch, task_emb_batch], dim=-1)
         return skill_emb_batch
 
+    
     def pred_unimaual_traj(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
         pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]

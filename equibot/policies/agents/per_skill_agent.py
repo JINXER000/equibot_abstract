@@ -244,7 +244,6 @@ class EquiSkillAgent(object):
         torch.save(state_dict, save_path)
 
     def load_state_dict_to_actor(self, state_dict):
-        ## TODO: add cfg to actor
         self.actor.cfg = state_dict["cfg"]
         self.cfg = state_dict["cfg"]
     

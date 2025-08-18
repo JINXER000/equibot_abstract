@@ -12,29 +12,7 @@ TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
 
 
 class pddl_wrapper(object):
-    # def __init__(self, cfg, dataset_path):
-    #      # load the network
-    #     cfg.data.dataset.path = dataset_path
-    #     ckpt_path_full = os.path.join(EQUIBOT_PATH, cfg.training.ckpt)
-    #     self.cfg = cfg
-    #     self.agent = get_agent(cfg.agent.agent_name)(cfg)
-    #     self.agent.train(False)
-    #     self.agent.load_snapshot(ckpt_path_full)
 
-    #     self.dataset = get_dataset(cfg, cfg.mode)
-    #     # self.dataset = DualAbsDataset(cfg.data.dataset , cfg.mode)
-
-    #     if cfg.mode != 'inference':
-    #         # num_workers = cfg.data.dataset.num_workers
-    #         num_workers = 0
-    #         self.test_loader = torch.utils.data.DataLoader(
-    #             self.dataset,
-    #             batch_size=1,
-    #             num_workers=num_workers,
-    #             shuffle=False,
-    #             drop_last=True,
-    #             pin_memory=True,
-    #         )
 
     def __init__(self, dataset_path, cfg = None, ckpt_path = None, exe_mode = "inference"):
          # load the network
@@ -221,6 +199,27 @@ class pddl_wrapper(object):
 
         return action_w
     
+    # def gen_bimanual_kp(self, skill_name, agent_obs, task_name = None):
+    #     obs_tensor = to_tensor(agent_obs)
+    #     obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method)
+    #     obs_c = to_tensor(obs_c)
+    #     obs_gpu = to_torch(obs_c, self.cfg.device)
+        
+    #     skill_key = skill_name
+    #     action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(skill_key, obs_gpu, task_name_batch=task_name)
+    #     action_c = to_np(action_c)
+
+    #     ## TODO: decode for bimanual
+
+    #     ## decentralize the final action
+    #     if offset_dict is not None:
+    #         action_w = self.decentralize_action(action_c, offset_dict)
+    #     else:
+    #         action_w = action_c
+
+    #     return action_w
+    
+
     def gen_uncond_jposes(self, arm1, arm2, sk):
         action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, batch_size = 1)
         jpose_out = to_np(action_dict)[f'{sk}:jpose']

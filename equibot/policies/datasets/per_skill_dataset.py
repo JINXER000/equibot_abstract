@@ -26,21 +26,31 @@ def collate_fn(batch):
     if "skill_name" not in batch[0]:
         return torch.utils.data.dataloader.default_collate(batch)
     
-    # Find the maximum length of skill_name tensors in the batch
+    # Ensure both name tensors are 1-D integer tensors with a consistent dtype
+    for item in batch:
+        if not torch.is_tensor(item['skill_name']):
+            item['skill_name'] = torch.tensor(item['skill_name'], dtype=torch.long)
+        else:
+            item['skill_name'] = item['skill_name'].to(dtype=torch.long)
+        if not torch.is_tensor(item['task_name']):
+            item['task_name'] = torch.tensor(item['task_name'], dtype=torch.long)
+        else:
+            item['task_name'] = item['task_name'].to(dtype=torch.long)
+    
+    # Find the maximum length of skill_name/task_name tensors in the batch
     max_skill_name_len = max(len(item['skill_name']) for item in batch)
     max_task_name_len = max(len(item['task_name']) for item in batch)
-    # Pad all skill_name tensors to the same length
+    
+    # Pad all skill_name/task_name tensors to the same length
     for item in batch:
         skill_name_len = len(item['skill_name'])
         if skill_name_len < max_skill_name_len:
-            # Pad with zeros (or any other padding value)
-            padding = torch.zeros(max_skill_name_len - skill_name_len, dtype=item['skill_name'].dtype)
+            padding = torch.zeros(max_skill_name_len - skill_name_len, dtype=torch.long)
             item['skill_name'] = torch.cat([item['skill_name'], padding])
 
         task_name_len = len(item['task_name'])
         if task_name_len < max_task_name_len:
-            # Pad with zeros (or any other padding value)
-            padding = torch.zeros(max_task_name_len - task_name_len, dtype=item['task_name'].dtype)
+            padding = torch.zeros(max_task_name_len - task_name_len, dtype=torch.long)
             item['task_name'] = torch.cat([item['task_name'], padding])
     
     # Use default collate for the rest
@@ -133,7 +143,11 @@ class PerSkillDataset(Dataset):
     def process_select(self, cfg, **kwargs):
 
         if self.dataset_type == 'per_skill_traj':
+            ## libero
             self.data = self.process_per_skill_traj(cfg, **kwargs)
+        elif self.dataset_type == 'per_skill_bikp_traj':
+            ## dexmimicgen
+            self.data = self.process_per_skill_bikp_traj(cfg, **kwargs)
         else:
             raise NotImplementedError(f'Dataset type {self.dataset_type} not implemented!')
         
@@ -218,47 +232,11 @@ class PerSkillDataset(Dataset):
                             if skill_name not in skillwise_sgs:
                                 skillwise_sgs[skill_name] = skill_info
 
-                            data_slice = {}
-                            
-                            pre_sg = get_sg(skill_info, 'pre_sg')
-                            cur_sg = get_sg(skill_info, 'cur_sg')
-                            eff_sg = get_sg(skill_info, 'eff_sg')
+                            ## only use interested unimanual skills
+                            if skill_name not in interested_skills:
+                                continue
 
-                            # obj_name = skill_condition_objs[skill_name]
-                            obj_name = skill_info['related_objs'][0].decode('utf-8')
-                            rbt_name = skill_info['related_rbts'][0].decode('utf-8')
-                            idx_list = skill_info['extended_ids'][()]
-                            essential_ids = skill_info['essential_ids'][()]
-
-                            obj_pc_list = obj_pcds[obj_name] 
-                            obj_pc = obj_pc_list[pre_sg.graph['idx_list'][0]][:, :3]
-                            
-                            obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=True)
-                            obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
-                            
-                            if cfg.choose_id_method == "rdp":   
-                                choiced_ids = choose_ids_rdp(rbt_states[f'{rbt_name}_eef_pos'], traj_len, idx_list, essential_ids = essential_ids)
-                            else:
-                                choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
-                            eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
-                            eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
-                            eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
-                            normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
-                            normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
-
-                            gripper_list = rbt_action[rbt_name][choiced_ids]
-                            
-                            ## input
-                            data_slice['pc'] = obj_pc_tensor
-                            # data_slice['skill_name_emb'] = skill_name_to_emb[skill_name]
-                            ## output
-                            data_slice['eefpos'] = normalized_eef_pos_tensor
-                            data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
-                            data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
-                            data_slice['task_name'] = str_to_ascii_tensor(task_name)
-                            ## note: if rotation, then the min xy and max xy will be same. So we need mean instead of min/max
-                            if cfg.rot_aug:
-                                data_slice = rotate_dataslice(data_slice)
+                            data_slice  = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, rbt_states, rbt_action, task_name)
                             data_list.append(data_slice)
         
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
@@ -273,9 +251,215 @@ class PerSkillDataset(Dataset):
 
         self.statistics['task_emb_dict'] = task_emb_dict
         self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
-        self.statistics['skillwise_sgs'] = skillwise_sgs
+        # self.statistics['skillwise_sgs'] = skillwise_sgs
 
         return data_list
+
+    def process_per_skill_bikp_traj(self, cfg, **kwargs):
+
+        print('Processing hdf5 dataset...')
+        data_list = []
+        raw_files = self.raw_file_names
+        traj_len = cfg.pred_horizon
+        traj_nums = 32
+        primitive_kws = cfg.uniskills
+        # task_suite_name = cfg.task_suite_name
+        cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
+        # task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
+        self.involved_skill_names = set()
+        skill_embs_all_tasks = {}
+        skillwise_sgs = {}
+
+        involved_tasks = set()
+
+        for file_id in range(len(raw_files)):
+            file_name = raw_files[file_id]
+            if 'hdf5' not in  file_name:
+                continue
+        
+            hdf5_path = os.path.join(self.root, 'raw', file_name)
+            with h5py.File(hdf5_path, 'r') as f:
+                ## read sg
+                sg_params_json = f['sg_params'][()]
+                sg_params = json.loads(sg_params_json.decode('utf-8'))
+                robot_names = sg_params['robots']  
+
+                ## get task name and emb for libero
+                task_name = sg_params['task_name']
+                involved_tasks.add(task_name)
+                # task_name = find_correct_task_name(task_emb_dict.keys(), file_name)
+
+
+                demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]   
+                inds = np.argsort([int(elem[5:]) for elem in demos])
+                demos = [demos[i] for i in inds]
+
+                n_use = cfg.n_use if 'n_use' in cfg else len(demos)
+                demos = demos[:n_use]
+
+                ## interested objs and skills for each task
+                interested_objs = set()
+                interested_skills = set()
+                ## get all skill names
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                    for skill_name in sg_info.keys():
+                        for skill_key in primitive_kws:
+                            if skill_key in skill_name:
+                                interested_skills.add(skill_name)
+                                skill_info = sg_info[skill_name]
+                                interested_objs.add(skill_info['related_objs'][0].decode('utf-8'))
+                                break
+                        else:
+                            ## if no interested skill found, skip this skill
+                            continue
+
+                skill_name_to_emb = get_embs_without_saving(list(interested_skills), cache_dir=cache_dir)
+                skill_embs_all_tasks.update(skill_name_to_emb)
+                self.involved_skill_names = self.involved_skill_names.union(interested_skills)
+
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                
+                    obs_grp = f[f'data/demo_{demo_id}/obs']
+                    rbt_states = get_rbt_states(obs_grp, robot_names)
+                    obj_pcds = get_pc_instances(obs_grp, interested_objs)
+                    action_arr = f[f'data/demo_{demo_id}/actions'][()]
+                    rbt_action = get_rbt_actions(action_arr, robot_names)
+
+                    for _ in range(traj_nums):
+                        # Create separate data slices for each skill name
+                        for skill_name, skill_info in sg_info.items():
+                            ## record the sg first
+                            if skill_name not in skillwise_sgs:
+                                skillwise_sgs[skill_name] = skill_info
+
+                            ## only use bimanual skills
+                            if 'bimanual' in skill_name:
+                                data_slice = self.get_dataslice_bimanual(skill_info, skill_name, obj_pcds, traj_len, rbt_states, rbt_action, task_name)
+                            elif skill_name in interested_skills:
+                                data_slice = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, rbt_states, rbt_action, task_name)
+                            else:
+                                continue
+                            
+                            data_list.append(data_slice)
+        
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print('processed all hdf5 files!')
+
+        # cfg.skill_names = list(self.involved_skill_names)
+        # print(f'Involved skill names: {cfg.skill_names}')
+        ## obtain skill name embedding
+        cache_name = f'{cfg.dataset_type}_skill_name_to_emb.npy'
+        save_embs(skill_embs_all_tasks, cache_dir=cache_dir, cache_name=cache_name)
+
+        task_emb_dict = get_embs_without_saving(list(involved_tasks), cache_dir=cache_dir)
+        self.statistics['task_emb_dict'] = task_emb_dict
+        self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
+        # self.statistics['skillwise_sgs'] = skillwise_sgs
+
+        return data_list
+
+    ## note that this dual_manual dataset cannot merge with unimanual dataset
+    def get_dataslice_bimanual(self, skill_info, skill_name,  obj_pcds, traj_len, rbt_states, rbt_action, task_name):
+        data_slice = {}
+
+        pre_sg = get_sg(skill_info, 'pre_sg')
+        pre_idx_list = pre_sg.graph['idx_list']
+
+        ## obtain the pc at the first several frame (10 frames)
+        init_pc = []
+        for obj_name in obj_pcds.keys():
+            init_pc.append(obj_pcds[obj_name][10][:, :3])
+        init_pc = np.concatenate(init_pc, axis=0)
+        init_pc_n, init_pc_offset = centralize_downsample(init_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
+
+        ## random select one eefpose at the switch point
+        ## TODO: we can also learn the bimanual traj
+        # pre_dual_eef_xyz_left = rbt_states['robot0_eef_pos'][pre_idx_list]
+        # pre_dual_eef_xyz_right = rbt_states['robot1_eef_pos'][pre_idx_list]
+        # eef_dist = np.linalg.norm(pre_dual_eef_xyz_left - pre_dual_eef_xyz_right, axis=-1)
+        # filtered_idx_list = pre_idx_list[eef_dist > 0.15]
+
+        random_switch_id = np.random.choice(pre_idx_list)
+        switch_xyz_left = rbt_states['robot0_eef_pos'][random_switch_id]
+        switch_xyz_right = rbt_states['robot1_eef_pos'][random_switch_id]
+        switch_quat_left = rbt_states['robot0_eef_quat'][random_switch_id]
+        switch_quat_right = rbt_states['robot1_eef_quat'][random_switch_id]
+        left_eef_trans = compose_transformation(switch_xyz_left, switch_quat_left)
+        left_eef_trans = centralize_grasp(left_eef_trans, init_pc_offset)
+        right_eef_trans = compose_transformation(switch_xyz_right, switch_quat_right)
+        right_eef_trans = centralize_grasp(right_eef_trans, init_pc_offset)
+        
+        ## make the bikp compatible to the unimanual dataset
+        rep_times = traj_len // 2
+        left_eef_trans_rep = np.tile(left_eef_trans, (rep_times, 1, 1))
+        right_eef_trans_rep = np.tile(right_eef_trans, (rep_times, 1, 1))
+        pre_dual_eef = np.concatenate([left_eef_trans_rep, right_eef_trans_rep], axis=0)
+
+        ## gripper action, won't be used
+        gripper_left = rbt_action['robot0'][random_switch_id]
+        gripper_right = rbt_action['robot1'][random_switch_id]
+        gripper_left_rep = np.tile(gripper_left, (rep_times, 1, 1))
+        gripper_right_rep = np.tile(gripper_right, (rep_times, 1, 1))
+        gripper_list = np.concatenate([gripper_left_rep, gripper_right_rep], axis=0)
+
+        data_slice['eefpos'] = torch.tensor(pre_dual_eef).to(torch.float32)
+        data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32)
+        data_slice['pc'] = torch.tensor(init_pc_n).to(torch.float32).reshape(1, -1, 3)
+        data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
+        data_slice['task_name'] = str_to_ascii_tensor(task_name)
+
+        return data_slice
+
+
+
+    def get_dataslice_unimanual(self, skill_info, skill_name, skill_key, cfg, traj_len,  obj_pcds, rbt_states, rbt_action,  task_name):
+        data_slice = {}
+
+        pre_sg = get_sg(skill_info, 'pre_sg')
+        # cur_sg = get_sg(skill_info, 'cur_sg')
+        # eff_sg = get_sg(skill_info, 'eff_sg')
+
+        # obj_name = skill_condition_objs[skill_name]
+        obj_name = skill_info['related_objs'][0].decode('utf-8')
+        rbt_name = skill_info['related_rbts'][0].decode('utf-8')
+        idx_list = skill_info['extended_ids'][()]
+        essential_ids = skill_info['essential_ids'][()]
+
+        obj_pc_list = obj_pcds[obj_name] 
+        obj_pc = obj_pc_list[pre_sg.graph['idx_list'][0]][:, :3]
+        
+        obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
+        obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
+        
+        if cfg.choose_id_method == "rdp":   
+            choiced_ids = choose_ids_rdp(rbt_states[f'{rbt_name}_eef_pos'], traj_len, idx_list, essential_ids = essential_ids)
+        else:
+            choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+        eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
+        eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
+        eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
+        normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
+        normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
+
+        gripper_list = rbt_action[rbt_name][choiced_ids]
+        
+        ## input
+        data_slice['pc'] = obj_pc_tensor
+        # data_slice['skill_name_emb'] = skill_name_to_emb[skill_name]
+        ## output
+        data_slice['eefpos'] = normalized_eef_pos_tensor
+        data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
+        data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
+        data_slice['task_name'] = str_to_ascii_tensor(task_name)
+        ## note: if rotation, then the min xy and max xy will be same. So we need mean instead of min/max
+        if cfg.rot_aug:
+            data_slice = rotate_dataslice(data_slice)
+
+        return data_slice
+
 
     def get_normalizer_and_statistics(self, data_list):
         normalizer = LinearNormalizer()

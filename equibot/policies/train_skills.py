@@ -104,6 +104,8 @@ def main(cfg):
         )
     else:
         log_dir = None
+        # ## debug
+        # log_dir = os.getcwd()
 
     # train loop
     # min_eval_rot_error = 1e9
