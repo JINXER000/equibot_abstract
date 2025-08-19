@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp, choose_ids, choose_ids_rdp, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg, convert_trans_to_vec, convert_trans_to_4pts, str_to_ascii_tensor
+from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp, choose_ids, choose_ids_rdp, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg, convert_trans_to_vec, convert_trans_to_4pts, str_to_ascii_tensor, combined_pc_instances_and_offset
 
 from equibot.policies.utils.lan_utils import get_embs_without_saving, save_embs
 
@@ -330,20 +330,22 @@ class PerSkillDataset(Dataset):
                     for _ in range(traj_nums):
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
-                            ## record the sg first
-                            if skill_name not in skillwise_sgs:
-                                skillwise_sgs[skill_name] = skill_info
 
                             ## only use bimanual skills
                             if 'bimanual' in skill_name:
                                 data_slice = self.get_dataslice_bimanual(skill_info, skill_name, obj_pcds, traj_len, rbt_states, rbt_action, task_name)
+                                # continue
                             elif skill_name in interested_skills:
                                 data_slice = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, rbt_states, rbt_action, task_name)
                             else:
                                 continue
-                            
+                                   
                             data_list.append(data_slice)
         
+                            ## record the sg first
+                            if skill_name not in skillwise_sgs:
+                                skillwise_sgs[skill_name] = skill_info
+
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
         print('processed all hdf5 files!')
@@ -369,18 +371,22 @@ class PerSkillDataset(Dataset):
         pre_idx_list = pre_sg.graph['idx_list']
 
         ## obtain the pc at the first several frame (10 frames)
-        init_pc = []
-        for obj_name in obj_pcds.keys():
-            init_pc.append(obj_pcds[obj_name][10][:, :3])
-        init_pc = np.concatenate(init_pc, axis=0)
-        init_pc_n, init_pc_offset = centralize_downsample(init_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
+        observation_idx = 10
+        ## normalize method 1
+        # init_pc = []
+        # for obj_name in obj_pcds.keys():
+        #     init_pc.append(obj_pcds[obj_name][10][:, :3])
+        # init_pc = np.concatenate(init_pc, axis=0)
+        # init_pc_n, init_pc_offset = centralize_downsample(init_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
+
+        ## normalize method 2
+        part_pc_shape= (self.pc_shape[0]//2, 3)
+        related_pc_dict = {obj_name: obj_pcds[obj_name][observation_idx]for obj_name in obj_pcds.keys()}
+        init_pc_n, init_pc_offset = combined_pc_instances_and_offset(related_pc_dict, part_pc_shape, self.is_obj_centric, self.is_add_bottom, self.downsample_method)
+  
 
         ## random select one eefpose at the switch point
         ## TODO: we can also learn the bimanual traj
-        # pre_dual_eef_xyz_left = rbt_states['robot0_eef_pos'][pre_idx_list]
-        # pre_dual_eef_xyz_right = rbt_states['robot1_eef_pos'][pre_idx_list]
-        # eef_dist = np.linalg.norm(pre_dual_eef_xyz_left - pre_dual_eef_xyz_right, axis=-1)
-        # filtered_idx_list = pre_idx_list[eef_dist > 0.15]
 
         random_switch_id = np.random.choice(pre_idx_list)
         switch_xyz_left = rbt_states['robot0_eef_pos'][random_switch_id]

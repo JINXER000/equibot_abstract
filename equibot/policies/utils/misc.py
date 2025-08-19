@@ -712,6 +712,18 @@ def decentralize_grasp(grasp, pc_offset, ref_grasp = None):
         grasp = np.squeeze(grasp, axis=0)
     return grasp
 
+def combined_pc_instances_and_offset(related_pc_dict, part_pc_shape, is_obj_centric=True, is_add_bottom= True, downsample_method = 'fps'):
+
+    init_pcs = []
+    pc_offsets = []
+    for obj_name in related_pc_dict.keys():
+        pc, pc_offset = centralize_downsample(related_pc_dict[obj_name][:, :3], part_pc_shape, obj_centric = is_obj_centric, add_bottom = is_add_bottom, method = downsample_method, debug_visualize=False)
+        init_pcs.append(pc)
+        pc_offsets.append(pc_offset)
+    init_pc_n = np.concatenate(init_pcs, axis=0)
+    init_pc_offset = (pc_offsets[0] + pc_offsets[1])/2
+    return init_pc_n, init_pc_offset
+
 def get_sg(hdf5_group, sg_name):
     sg_json = hdf5_group[sg_name][()] if sg_name in hdf5_group else None
     if sg_json is None:

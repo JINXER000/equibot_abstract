@@ -4,7 +4,7 @@ import torch
 import hydra
 import numpy as np
 
-from equibot.policies.utils.misc import get_agent, get_agent_from_ckpt, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, decentralize_cond_pc, decentralize_grasp, centralize_downsample
+from equibot.policies.utils.misc import get_agent, get_agent_from_ckpt, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, decentralize_cond_pc, decentralize_grasp, centralize_downsample, combined_pc_instances_and_offset
 
 
 TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
@@ -199,25 +199,26 @@ class pddl_wrapper(object):
 
         return action_w
     
-    # def gen_bimanual_kp(self, skill_name, agent_obs, task_name = None):
-    #     obs_tensor = to_tensor(agent_obs)
-    #     obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method)
-    #     obs_c = to_tensor(obs_c)
-    #     obs_gpu = to_torch(obs_c, self.cfg.device)
+    def gen_bimanual_kp(self, skill_name, related_pc_dict, task_name = None):
+        obs_tensor = to_tensor(related_pc_dict)
+        # obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method)
+        obs_c, offset_dict = combined_pc_instances_and_offset(obs_tensor, self.cfg.data.dataset.pc_shape, self.cfg.data.dataset.is_obj_centric, self.cfg.data.dataset.is_add_bottom, self.cfg.data.dataset.downsample_method)
+        obs_c = to_tensor(obs_c)
+        obs_gpu = to_torch(obs_c, self.cfg.device)
         
-    #     skill_key = skill_name
-    #     action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(skill_key, obs_gpu, task_name_batch=task_name)
-    #     action_c = to_np(action_c)
+        skill_key = skill_name
+        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(skill_key, obs_gpu, task_name_batch=task_name)
+        action_c = to_np(action_c)
 
-    #     ## TODO: decode for bimanual
+        ## TODO: decode for bimanual
 
-    #     ## decentralize the final action
-    #     if offset_dict is not None:
-    #         action_w = self.decentralize_action(action_c, offset_dict)
-    #     else:
-    #         action_w = action_c
+        ## decentralize the final action
+        if offset_dict is not None:
+            action_w = self.decentralize_action(action_c, offset_dict)
+        else:
+            action_w = action_c
 
-    #     return action_w
+        return action_w
     
 
     def gen_uncond_jposes(self, arm1, arm2, sk):
