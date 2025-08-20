@@ -2,6 +2,7 @@ defaults:
   - base
 
 use_wandb: true
+wandb_note: null
 
 training:
   # ckpt: "logs/train/dmg_threading/2025-07-03_21-13-09/checkpoints/ckpt00400.pth" 
@@ -49,7 +50,7 @@ model:
 data:
   dataset:
     num_points: 128
-    n_use: 50
+    n_use: 100
     # uniskills: []
     # skill_names: ['bimanual_0']
     # conditioned_objects: ['None']

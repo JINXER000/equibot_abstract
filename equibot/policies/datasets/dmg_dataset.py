@@ -349,7 +349,7 @@ class RobosuiteDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 64
+        traj_nums = 32
         primitive_kws = cfg.uniskills
         interested_objs = cfg.conditioned_objects
         skill_names = cfg.skill_names
@@ -402,19 +402,28 @@ class RobosuiteDataset(Dataset):
 
                             if 'bimanual' in skill_name:
                                 pre_idx_list = pre_sg.graph['idx_list']
+                                pre_left_eef_pos = rbt_states['robot0_eef_pos'][pre_idx_list]
+                                pre_right_eef_pos = rbt_states['robot1_eef_pos'][pre_idx_list]
+                                pre_eef_dist = np.linalg.norm(pre_left_eef_pos - pre_right_eef_pos, axis=1)
+                                ## gfilter idx by eef dist
+                                max_eef_dist = 0.3  
+                                min_eef_dist = 0.25
+                                distclose_ids = list(set(np.where(pre_eef_dist < max_eef_dist)[0]).intersection(np.where(pre_eef_dist >min_eef_dist)[0]))
+                                qtraj_indice = pre_idx_list[np.random.choice(distclose_ids)]
+                                selected_jpose = np.concatenate([rbt_states['robot0_joint_pos'][qtraj_indice], rbt_states['robot1_joint_pos'][qtraj_indice]], axis=0).astype(np.float32)
+                                data_slice[f'{skill_name}:jpose'] = selected_jpose
+                                # pre_dual_jpose_all = np.concatenate([rbt_states['robot0_joint_pos'][pre_idx_list], \
+                                #     rbt_states['robot1_joint_pos'][pre_idx_list]], axis=1)
+                                # qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1) if len(pre_dual_jpose_all) > 1 else 0
+                                # data_slice[f'{skill_name}:jpose'] = pre_dual_jpose_all[qtraj_indice].astype(np.float32)
 
-                                pre_dual_jpose_all = np.concatenate([rbt_states['robot0_joint_pos'][pre_idx_list], \
-                                    rbt_states['robot1_joint_pos'][pre_idx_list]], axis=1)
-                                qtraj_indice = np.random.randint(0, len(pre_dual_jpose_all)-1) if len(pre_dual_jpose_all) > 1 else 0
-                                data_slice[f'{skill_name}:jpose'] = pre_dual_jpose_all[qtraj_indice].astype(np.float32)
-
-                                if 'eff_sg' in skill_info:
-                                    eff_idx_list = eff_sg.graph['idx_list']
-                                    eff_dual_jpose_all = np.concatenate([rbt_states['robot0_joint_pos'][eff_idx_list], \
-                                        rbt_states['robot1_joint_pos'][eff_idx_list]], axis=1)
-                                    qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
-                                    eff_dual_jpose= eff_dual_jpose_all[qtraj_indice].astype(np.float32)
-                                    data_slice[f'{skill_name}:jpose'] = np.concatenate([data_slice[f'{skill_name}:jpose'], eff_dual_jpose], axis=0)
+                                # if 'eff_sg' in skill_info:
+                                #     eff_idx_list = eff_sg.graph['idx_list']
+                                #     eff_dual_jpose_all = np.concatenate([rbt_states['robot0_joint_pos'][eff_idx_list], \
+                                #         rbt_states['robot1_joint_pos'][eff_idx_list]], axis=1)
+                                #     qtraj_indice = np.random.randint(0, len(eff_dual_jpose_all)-1)
+                                #     eff_dual_jpose= eff_dual_jpose_all[qtraj_indice].astype(np.float32)
+                                #     data_slice[f'{skill_name}:jpose'] = np.concatenate([data_slice[f'{skill_name}:jpose'], eff_dual_jpose], axis=0)
 
                             else:
                                 for skill_key in primitive_kws:
