@@ -22,19 +22,42 @@ class UnconditionalMLP(nn.Module):
             nn.SiLU(),
             nn.Linear(dsed * 4, dsed),
         )
+        # self.jpose_encoder = nn.Sequential(
+        #     nn.Linear(input_dim, dsed//2),
+        #     nn.SiLU(),
+        #     nn.Linear(dsed//2, dsed//2),
+        #     nn.SiLU(),
+        #     nn.Linear(dsed//2, dsed//2),
+        #     nn.SiLU(),
+        #     nn.Linear(dsed//2, dsed),
+        # )
+        # self.jpose_time_mixer = nn.Sequential(
+        #     nn.Linear(2*dsed, dsed),
+        #     nn.SiLU(),
+        # )
+        # self.jpose_decoder = nn.Sequential(
+        #     nn.Linear(dsed, dsed//2),
+        #     nn.SiLU(),
+        #     nn.Linear(dsed//2, dsed//2),
+        #     nn.SiLU(),
+        #     nn.Linear(dsed//2, dsed//2),
+        #     nn.SiLU(),
+        #     nn.Linear(dsed//2, input_dim),
+        # )
+
         self.jpose_encoder = nn.Sequential(
-            nn.Linear(input_dim, dsed//2),
+            nn.Linear(input_dim, dsed),
             nn.SiLU(),
-            nn.Linear(dsed//2, dsed),
+            nn.Linear(dsed, dsed),
         )
         self.jpose_time_mixer = nn.Sequential(
             nn.Linear(2*dsed, dsed),
             nn.SiLU(),
         )
         self.jpose_decoder = nn.Sequential(
-            nn.Linear(dsed, dsed//2),
+            nn.Linear(dsed, dsed),
             nn.SiLU(),
-            nn.Linear(dsed//2, input_dim),
+            nn.Linear(dsed, input_dim),
         )
 
     def forward(self, 
