@@ -104,10 +104,20 @@ class DMGPolicy(nn.Module):
         for skill_name in self.skill_names:
             if 'bimanual' in skill_name:
                 joint_scalar_dims = self.dof * self.num_eef  
+                
+                # Get unconditional MLP configuration
+                if hasattr(cfg.model, 'unconditional_mlp_cfg'):
+                    mlp_cfg = cfg.model.unconditional_mlp_cfg
+                else:
+                    mlp_cfg = None
+                    
+                diffusion_step_embed_dim = self.obs_dim * self.obs_horizon
+
                 net_dict[f'{skill_name}_noise_pred_net'] = UnconditionalMLP(
-                    input_dim= joint_scalar_dims,
-                    diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
-                )   
+                    input_dim=joint_scalar_dims,
+                    diffusion_step_embed_dim=diffusion_step_embed_dim,
+                    cfg=mlp_cfg
+                )
             else:
                 ## TODO: check if we should use word embedding
                 if 'unitraj_noise_pred_net' in net_dict:

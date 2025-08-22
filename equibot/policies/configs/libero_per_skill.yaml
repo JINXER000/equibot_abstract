@@ -7,7 +7,7 @@ wandb_note: null
 training:
   # ckpt: "logs/train/libero_per_skill/ckpt_3view_static.pth" 
 
-  eval_interval: 10
+  eval_interval: 50
   num_epochs: 2000
 
 env:
@@ -45,6 +45,7 @@ model:
 
 data:
   dataset:
+
     num_points: 128
     uniskills: ['grasp', 'place']
     # skill_names: ['robot0_grasp_akita_black_bowl_1', 'robot0_place_akita_black_bowl_1_plate_1']

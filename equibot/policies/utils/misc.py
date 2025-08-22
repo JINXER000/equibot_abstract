@@ -961,7 +961,7 @@ def choose_ids_rdp(traj, target_len, idx_list, essential_ids=None):
     return selected_indices
 
 
-def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction'):
+def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction', max_resolution=400, dpi=100):
     """
     Render point cloud and full trajectory of end-effector poses using matplotlib.
     
@@ -969,6 +969,9 @@ def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction')
         pc: Point cloud data (N, 3)
         eef_poses: End-effector poses for all timesteps (T, 4, 4)
         gripper_values: Gripper values for each timestep (T,) - if provided, colors trajectory based on gripper state
+        title: Title for the plot
+        max_resolution: Maximum resolution (width or height) of the output image
+        dpi: Dots per inch for the figure
         
     Returns:
         rendered_image: RGB image as numpy array
@@ -978,12 +981,19 @@ def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction')
     import matplotlib
     matplotlib.use('Agg')  # Use non-interactive backend for headless rendering
     
-    # Create figure
-    fig = plt.figure(figsize=(10, 8))
+    # Calculate figure size to limit resolution
+    # max_resolution = max(width, height) in pixels
+    # figure_size = max_resolution / dpi
+    max_fig_size = max_resolution / dpi
+    fig_width = max_fig_size * 1.25  # 10/8 aspect ratio
+    fig_height = max_fig_size * 1.0
+    
+    # Create figure with calculated size
+    fig = plt.figure(figsize=(fig_width, fig_height), dpi=dpi)
     ax = fig.add_subplot(111, projection='3d')
     
     # Plot point cloud
-    ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c='red', s=30, alpha=0.6, label='Point Cloud')
+    ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c='red', s=max_fig_size, alpha=0.6, label='Point Cloud')
     
     # Plot trajectory
     trajectory_points = []
@@ -1025,9 +1035,9 @@ def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction')
         
         # Add colored sphere for each pose based on gripper state
         if gripper_values is not None:
-            ax.scatter(pos[0], pos[1], pos[2], c=colors[t], s=50, alpha=0.8)
+            ax.scatter(pos[0], pos[1], pos[2], c=colors[t], s=max_fig_size, alpha=0.8)
         else:
-            ax.scatter(pos[0], pos[1], pos[2], c=[colors[t]], s=50, alpha=0.8)
+            ax.scatter(pos[0], pos[1], pos[2], c=[colors[t]], s=max_fig_size, alpha=0.8)
     
     # Connect trajectory points with line
     if len(trajectory_points) > 1:
