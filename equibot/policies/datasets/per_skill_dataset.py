@@ -113,7 +113,6 @@ class PerSkillDataset(Dataset):
             # Process the data
             print('Processing dataset...')
             self.process_select(cfg,**kwargs)
-            self.normalizer = self.get_normalizer_and_statistics(self.data)
             self.skill_names = list(self.statistics['skill_embs_all_tasks'].keys())
             self.task_names = list(self.statistics['task_emb_dict'].keys())
 
@@ -145,9 +144,14 @@ class PerSkillDataset(Dataset):
         if self.dataset_type == 'per_skill_traj':
             ## libero
             self.data = self.process_per_skill_traj(cfg, **kwargs)
+            self.normalizer = self.get_normalizer_and_statistics(self.data)
         elif self.dataset_type == 'per_skill_bikp_traj':
             ## dexmimicgen
             self.data = self.process_per_skill_bikp_traj(cfg, **kwargs)
+            self.normalizer = self.get_normalizer_and_statistics(self.data)
+        elif self.dataset_type == 'per_skill_biop_jpose':
+            self.data = self.process_per_biop(cfg, **kwargs)
+            self.normalizer = self.get_normalizer_and_statistics(self.data, mode = 'bimanual')
         else:
             raise NotImplementedError(f'Dataset type {self.dataset_type} not implemented!')
         
@@ -158,7 +162,7 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 64
+        traj_nums = 32
         primitive_kws = cfg.uniskills
         task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
@@ -168,7 +172,7 @@ class PerSkillDataset(Dataset):
         # skill_condition_objs = {skill_names[i]: interested_objs[i] for i in range(len(skill_names))}
         self.involved_skill_names = set()
         skill_embs_all_tasks = {}
-        skillwise_sgs = {}
+        matched_action_sgs = {}
 
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -195,12 +199,16 @@ class PerSkillDataset(Dataset):
                 n_use = cfg.n_use if 'n_use' in cfg else len(demos)
                 demos = demos[:n_use]
 
+                ## record the skillwise_sgs
+                matched_action_sgs[task_name] = f[f'data/demo_0/matched_actions_json'][()]
+
                 ## interested objs and skills for each task
                 interested_objs = set()
                 interested_skills = set()
                 ## get all skill names
                 for demo_id in range(len(demos)):
                     sg_info = f[f'data/demo_{demo_id}/sg_info']
+
                     for skill_name in sg_info.keys():
                         for skill_key in primitive_kws:
                             if skill_key in skill_name:
@@ -226,17 +234,16 @@ class PerSkillDataset(Dataset):
                     rbt_action = get_rbt_actions(action_arr, robot_names)
 
                     for _ in range(traj_nums):
+                
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
-                            ## record the sg first
-                            if skill_name not in skillwise_sgs:
-                                skillwise_sgs[skill_name] = skill_info
 
                             ## only use interested unimanual skills
                             if skill_name not in interested_skills:
                                 continue
 
                             data_slice  = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, rbt_states, rbt_action, task_name)
+
                             data_list.append(data_slice)
         
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
@@ -251,9 +258,132 @@ class PerSkillDataset(Dataset):
 
         self.statistics['task_emb_dict'] = task_emb_dict
         self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
-        # self.statistics['skillwise_sgs'] = skillwise_sgs
+        self.statistics['matched_action_sgs'] = matched_action_sgs
+        return data_list
+
+    def process_per_biop(self, cfg, **kwargs):
+        print('Processing hdf5 dataset...')
+        data_list = []
+        raw_files = self.raw_file_names
+        traj_len = cfg.pred_horizon
+        traj_nums = 32
+        primitive_kws = cfg.uniskills
+        # task_suite_name = cfg.task_suite_name
+        cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
+        # task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
+        self.involved_skill_names = set()
+        skill_embs_all_tasks = {}
+        matched_action_sgs = {}
+
+        involved_tasks = set()
+
+        for file_id in range(len(raw_files)):
+            file_name = raw_files[file_id]
+            if 'hdf5' not in  file_name:
+                continue
+        
+            hdf5_path = os.path.join(self.root, 'raw', file_name)
+            with h5py.File(hdf5_path, 'r') as f:
+                ## read sg
+                sg_params_json = f['sg_params'][()]
+                sg_params = json.loads(sg_params_json.decode('utf-8'))
+                robot_names = sg_params['robots']  
+
+                ## get task name and emb for libero
+                task_name = sg_params['task_name']
+                involved_tasks.add(task_name)
+                # task_name = find_correct_task_name(task_emb_dict.keys(), file_name)
+
+
+                demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]   
+                inds = np.argsort([int(elem[5:]) for elem in demos])
+                demos = [demos[i] for i in inds]
+
+                n_use = cfg.n_use if 'n_use' in cfg else len(demos)
+                demos = demos[:n_use]
+
+                ## record the skillwise_sgs
+                matched_action_sgs[task_name] = f[f'data/demo_0/matched_actions_json'][()]
+
+                ## interested objs and skills for each task
+                interested_objs = set()
+                interested_skills = set()
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                    for skill_name in sg_info.keys():
+                        if 'bi' in skill_name:
+                            interested_skills.add(skill_name)
+                            skill_info = sg_info[skill_name]
+                            interested_objs.add(skill_info['related_objs'][0].decode('utf-8'))
+                            break
+                    else:
+                        ## if no interested skill found, skip this skill
+                        continue
+
+                skill_name_to_emb = get_embs_without_saving(list(interested_skills), cache_dir=cache_dir)
+                skill_embs_all_tasks.update(skill_name_to_emb)
+                self.involved_skill_names = self.involved_skill_names.union(interested_skills)
+
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                
+                    obs_grp = f[f'data/demo_{demo_id}/obs']
+                    rbt_states = get_rbt_states(obs_grp, robot_names)
+                    obj_pcds = get_pc_instances(obs_grp, interested_objs)
+                    action_arr = f[f'data/demo_{demo_id}/actions'][()]
+                    rbt_action = get_rbt_actions(action_arr, robot_names)
+
+                    for _ in range(traj_nums):
+                        # Create separate data slices for each skill name
+                        for skill_name, skill_info in sg_info.items():
+
+                            ## only use bimanual skills
+                            if 'bimanual' in skill_name:
+                                data_slice = self.get_dataslice_bimanual_jpose(skill_info, skill_name, rbt_states, task_name)
+                            else:
+                                continue
+                                   
+                            data_list.append(data_slice)
+        
+
+
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print('processed all hdf5 files!')
+
+        cache_name = f'{cfg.dataset_type}_skill_name_to_emb.npy'
+        save_embs(skill_embs_all_tasks, cache_dir=cache_dir, cache_name=cache_name)
+
+        task_emb_dict = get_embs_without_saving(list(involved_tasks), cache_dir=cache_dir)
+        self.statistics['task_emb_dict'] = task_emb_dict
+        self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
+        self.statistics['matched_action_sgs'] = matched_action_sgs
 
         return data_list
+
+
+    def get_dataslice_bimanual_jpose(self, skill_info, skill_name,  rbt_states,  task_name):
+        pre_sg = get_sg(skill_info, 'pre_sg')
+        data_slice_bi = {}
+        pre_idx_list = pre_sg.graph['idx_list']
+        pre_left_eef_pos = rbt_states['robot0_eef_pos'][pre_idx_list]
+        pre_right_eef_pos = rbt_states['robot1_eef_pos'][pre_idx_list]
+        pre_eef_dist = np.linalg.norm(pre_left_eef_pos - pre_right_eef_pos, axis=1)
+        ## gfilter idx by eef dist
+        max_eef_dist = 0.29
+        min_eef_dist = 0.25
+        distclose_ids = list(set(np.where(pre_eef_dist < max_eef_dist)[0]).intersection(np.where(pre_eef_dist >min_eef_dist)[0]))
+        if len(distclose_ids) == 0:
+            print(f'No valid bimanual jpose found for {skill_name} in {task_name}')
+            return None
+
+        qtraj_indice = pre_idx_list[np.random.choice(distclose_ids)]
+        selected_jpose = np.concatenate([rbt_states['robot0_joint_pos'][qtraj_indice], rbt_states['robot1_joint_pos'][qtraj_indice]], axis=0).astype(np.float32)
+        data_slice_bi['jpose'] = selected_jpose
+        data_slice_bi['skill_name'] = str_to_ascii_tensor(skill_name)
+        data_slice_bi['task_name'] = str_to_ascii_tensor(task_name)
+
+        return data_slice_bi
 
     def process_per_skill_bikp_traj(self, cfg, **kwargs):
 
@@ -268,7 +398,6 @@ class PerSkillDataset(Dataset):
         # task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
         self.involved_skill_names = set()
         skill_embs_all_tasks = {}
-        skillwise_sgs = {}
 
         involved_tasks = set()
 
@@ -333,7 +462,7 @@ class PerSkillDataset(Dataset):
 
                             ## only use bimanual skills
                             if 'bimanual' in skill_name:
-                                data_slice = self.get_dataslice_bimanual(skill_info, skill_name, obj_pcds, traj_len, rbt_states, rbt_action, task_name)
+                                data_slice = self.get_dataslice_bimanual_kp(skill_info, skill_name, obj_pcds, traj_len, rbt_states, rbt_action, task_name)
                                 # continue
                             elif skill_name in interested_skills:
                                 data_slice = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, rbt_states, rbt_action, task_name)
@@ -342,9 +471,6 @@ class PerSkillDataset(Dataset):
                                    
                             data_list.append(data_slice)
         
-                            ## record the sg first
-                            if skill_name not in skillwise_sgs:
-                                skillwise_sgs[skill_name] = skill_info
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
         torch.save((data_list, None), self.processed_file_path)
@@ -359,12 +485,11 @@ class PerSkillDataset(Dataset):
         task_emb_dict = get_embs_without_saving(list(involved_tasks), cache_dir=cache_dir)
         self.statistics['task_emb_dict'] = task_emb_dict
         self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
-        # self.statistics['skillwise_sgs'] = skillwise_sgs
 
         return data_list
 
     ## note that this dual_manual dataset cannot merge with unimanual dataset
-    def get_dataslice_bimanual(self, skill_info, skill_name,  obj_pcds, traj_len, rbt_states, rbt_action, task_name):
+    def get_dataslice_bimanual_kp(self, skill_info, skill_name,  obj_pcds, traj_len, rbt_states, rbt_action, task_name):
         data_slice = {}
 
         pre_sg = get_sg(skill_info, 'pre_sg')
@@ -435,7 +560,7 @@ class PerSkillDataset(Dataset):
         essential_ids = skill_info['essential_ids'][()]
 
         obj_pc_list = obj_pcds[obj_name] 
-        obj_pc = obj_pc_list[pre_sg.graph['idx_list'][0]][:, :3]
+        obj_pc = obj_pc_list[0][:, :3]
         
         obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
         obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
@@ -467,8 +592,16 @@ class PerSkillDataset(Dataset):
         return data_slice
 
 
-    def get_normalizer_and_statistics(self, data_list):
+
+    def get_normalizer_and_statistics(self, data_list, mode = 'unimanual'):
         normalizer = LinearNormalizer()
+
+        if mode == 'bimanual':
+            jpose_arr = np.concatenate([data['jpose'].reshape(2, -1) for data in data_list], axis=0)
+            jpose_stats = to_torch_stats(jpose_arr.reshape(-1, jpose_arr.shape[-1]))
+            normalizer['jpose'] = get_torch_range_symmetric_normalizer_from_stat(jpose_stats)
+            return normalizer
+
         ### normalize pc
         pc_arr = np.concatenate([data['pc'] for data in data_list], axis=0)
         # pc_torch = torch.tensor(pc_arr).to(torch.float32).to("cuda")

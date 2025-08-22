@@ -5,7 +5,7 @@ use_wandb: true
 
 training:
   ckpt: "logs/train/dmg_assembly_policy/ckpt_fixed_leftright.pth" 
-  eval_interval: 10
+  eval_interval: 50
   num_epochs: 2000
 
 env:

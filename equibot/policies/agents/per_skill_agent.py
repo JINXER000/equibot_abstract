@@ -7,7 +7,7 @@ from equibot.policies.utils.misc import to_torch, \
     ascii_tensor_to_str
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 
-from equibot.policies.agents.per_skill_policy import EquiSkillPolicy
+from equibot.policies.agents.per_skill_policy import EquiSkillPolicy, BiopSkillPolicy
 from equibot.policies.utils.misc import to_torch,  rotate_observation, to_tensor, EQUIBOT_PATH , ascii_tensor_to_str
 
 
@@ -15,7 +15,8 @@ from equibot.policies.utils.misc import to_torch,  rotate_observation, to_tensor
 class EquiSkillAgent(object):
     def __init__(self, cfg) -> None:
         self.cfg = cfg
-        self._init_actor()
+        self.dataset_type = cfg.data.dataset.dataset_type
+        self._init_actor(self.dataset_type)
         if cfg.mode == "train":
             self.optimizer = torch.optim.AdamW(
                 self.actor.nets.parameters(),
@@ -41,14 +42,14 @@ class EquiSkillAgent(object):
 
         self.all_normalizers = None
 
-        # self.symb_mask = cfg.data.dataset.symb_mask
-
-
-    def _init_actor(self):
-        self.actor = EquiSkillPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
+    def _init_actor(self, dataset_type):
+        if dataset_type == "per_skill_traj":
+            self.actor = EquiSkillPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
+        elif dataset_type == "per_skill_biop_jpose":
+            self.actor = BiopSkillPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
+        else:
+            raise ValueError(f"Invalid dataset type: {dataset_type}")
         self.actor.ema.averaged_model.to(self.cfg.device)
-
-    
 
     
     def get_pc_scale(self, pc_data, ac_scale):
@@ -65,6 +66,7 @@ class EquiSkillAgent(object):
         xyz_normalizer = Normalizer(flattend_xyz, symmetric=True, indices=indices)
         return xyz_normalizer
 
+    ## NOTE: only for unimanual
     def _init_multi_normalizers(self, n_data_dict):
         all_normalizers = {}
 
@@ -93,7 +95,18 @@ class EquiSkillAgent(object):
 
 
 
-    def learn_unimanual_traj(self,  n_data_dict):
+    def learn_unimanual_traj(self,  batch):
+        n_data_dict = {}
+        # n_data_dict['skill_name_emb'] = batch['skill_name_emb']
+        n_data_dict['skill_name'] = batch['skill_name']
+        n_data_dict['task_name'] = batch['task_name']
+        n_data_dict['pc'] = batch['pc']
+        n_data_dict['eefpos'] = batch['eefpos']
+        n_data_dict['gripper'] = batch['gripper']
+        # n_data_dict['skill_name'] = ascii_tensor_to_str(batch['skill_name'])
+
+        n_data_dict['pc'] = batch['pc'].repeat(1, self.obs_horizon, 1, 1)
+
         ## cached pc feature
         obs_vec, center, scale = self.actor.proc_pc(n_data_dict['pc'])
 
@@ -145,24 +158,39 @@ class EquiSkillAgent(object):
 
         return vec_loss, scalar_loss
 
-    ## NOTE: this function only for libero single robot skill update
-            ## as skill_type is different in a batch, it is hard to branching
+
+    def learn_bimanual_jpose(self,  batch):
+        n_data_dict = {}
+        n_data_dict['skill_name'] = batch['skill_name']
+        n_data_dict['task_name'] = batch['task_name']
+        n_data_dict['jpose'] = batch['jpose']
+
+        jpose_key = 'jpose'
+        scalar_dual_jpose_raw = n_data_dict[jpose_key]
+        batch_size = scalar_dual_jpose_raw.shape[0]
+        scalar_dual_jpose_raw = scalar_dual_jpose_raw.reshape(batch_size, -1, self.dof)
+        scalar_dual_jpose = self.actor.proc_jpose(scalar_dual_jpose_raw,  jpose_key).squeeze(1)
+        timesteps = torch.randint(
+            0,
+            self.actor.noise_scheduler.config.num_train_timesteps,
+            (batch_size,),
+            device=self.device,
+        ).long()
+        jpose_noise = torch.randn_like(scalar_dual_jpose, device=self.device)
+        noisy_jpose = self.actor.noise_scheduler.add_noise(
+            scalar_dual_jpose, jpose_noise, timesteps
+        )
+
+        scalar_noise_pred = self.actor.nets['jpose_noise_pred_net'](noisy_jpose, timesteps)
+        scalar_loss = nn.functional.mse_loss(scalar_noise_pred, jpose_noise)
+        return scalar_loss
+
+
     def update(self, batch):
         self.train()
 
         ###### Load data, preprocessing using mask ######
         batch = to_torch(batch, self.device)
-        n_data_dict = {}
-        # n_data_dict['skill_name_emb'] = batch['skill_name_emb']
-        n_data_dict['skill_name'] = batch['skill_name']
-        n_data_dict['task_name'] = batch['task_name']
-        n_data_dict['pc'] = batch['pc']
-        n_data_dict['eefpos'] = batch['eefpos']
-        n_data_dict['gripper'] = batch['gripper']
-        # n_data_dict['skill_name'] = ascii_tensor_to_str(batch['skill_name'])
-
-        n_data_dict['pc'] = batch['pc'].repeat(1, self.obs_horizon, 1, 1)
-
 
         ## assume the data is already normalized
         if self.all_normalizers is None and self.cfg.data.dataset.normalization_method == "batch":
@@ -172,8 +200,13 @@ class EquiSkillAgent(object):
 
     ######## train the pred net ########
         metrics = {}
-        vec_loss, scalar_loss = self.learn_unimanual_traj(n_data_dict)
-        metrics['vec_loss'] = vec_loss
+        if self.dataset_type == "per_skill_traj":
+            vec_loss, scalar_loss = self.learn_unimanual_traj(batch)
+            metrics['vec_loss'] = vec_loss
+        elif self.dataset_type == "per_skill_biop_jpose":
+            scalar_loss = self.learn_bimanual_jpose(batch)
+        else:
+            raise ValueError(f"Invalid dataset type: {self.dataset_type}")
         metrics['scalar_loss'] = scalar_loss
 
         total_loss = 0
@@ -291,3 +324,190 @@ class EquiSkillAgent(object):
             action_dict, eval_metrics, denoise_history = self.actor(gpu_obs, skill_id=skill_id)
 
         return denoise_history, eval_metrics
+
+
+# class BiopSkillAgent(object):
+#     def __init__(self, cfg) -> None:
+#         self.cfg = cfg
+#         self._init_actor()
+#         if cfg.mode == "train":
+#             self.optimizer = torch.optim.AdamW(
+#                 self.actor.nets.parameters(),
+#                 lr=cfg.training.lr,
+#                 weight_decay=cfg.training.weight_decay,
+#             )
+#             self.lr_scheduler = get_scheduler(
+#                 name="cosine",
+#                 optimizer=self.optimizer,
+#                 num_warmup_steps=500,
+#                 num_training_steps=cfg.data.dataset.num_training_steps,
+#             )
+#         self.device = cfg.device
+#         # self.num_eef = cfg.env.num_eef
+#         self.num_eef = self.actor.num_eef
+#         self.dof = cfg.env.dof
+#         self.num_points = cfg.data.dataset.num_points
+#         self.obs_mode = cfg.model.obs_mode
+#         self.ac_mode = cfg.model.ac_mode
+#         self.obs_horizon = cfg.model.obs_horizon
+#         self.pred_horizon = cfg.model.pred_horizon
+#         self.shuffle_pc = cfg.data.dataset.shuffle_pc
+
+#         self.all_normalizers = None
+
+#     def _init_actor(self):
+#         self.actor = BiopSkillPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
+#         self.actor.ema.averaged_model.to(self.cfg.device)
+
+    
+#     def train(self, training=True):
+#         self.actor.nets.train(training)
+
+
+
+#     def learn_bimanual_jpose(self,  batch):
+#         n_data_dict = {}
+#         n_data_dict['skill_name'] = batch['skill_name']
+#         n_data_dict['task_name'] = batch['task_name']
+#         n_data_dict['jpose'] = batch['jpose']
+
+#         jpose_key = 'jpose'
+#         scalar_dual_jpose_raw = n_data_dict[jpose_key]
+#         batch_size = scalar_dual_jpose_raw.shape[0]
+#         scalar_dual_jpose_raw = scalar_dual_jpose_raw.reshape(batch_size, -1, self.dof)
+#         scalar_dual_jpose = self.actor.proc_jpose(scalar_dual_jpose_raw,  jpose_key).squeeze(1)
+#         timesteps = torch.randint(
+#             0,
+#             self.actor.noise_scheduler.config.num_train_timesteps,
+#             (batch_size,),
+#             device=self.device,
+#         ).long()
+#         jpose_noise = torch.randn_like(scalar_dual_jpose, device=self.device)
+#         noisy_jpose = self.actor.noise_scheduler.add_noise(
+#             scalar_dual_jpose, jpose_noise, timesteps
+#         )
+
+#         scalar_noise_pred = self.actor.nets['jpose_noise_pred_net'](noisy_jpose, timesteps)
+#         scalar_loss = nn.functional.mse_loss(scalar_noise_pred, jpose_noise)
+#         return scalar_loss
+
+#     def update(self, batch):
+#         self.train()
+
+#         ###### Load data, preprocessing using mask ######
+#         batch = to_torch(batch, self.device)
+#         n_data_dict = {}
+#         n_data_dict['skill_name'] = batch['skill_name']
+#         n_data_dict['task_name'] = batch['task_name']
+#         # n_data_dict['pc'] = batch['pc']
+#         # n_data_dict['pc'] = batch['pc'].repeat(1, self.obs_horizon, 1, 1)
+
+#         n_data_dict['jpose'] = batch['jpose']
+
+
+
+#     ######## train the pred net ########
+#         metrics = {}
+#         vec_loss, scalar_loss = self.learn_bimanual_jpose(n_data_dict)
+#         metrics['vec_loss'] = vec_loss
+#         metrics['scalar_loss'] = scalar_loss
+
+#         total_loss = 0
+#         for metric_key in metrics:
+#             if metric_key.endswith('_loss'):
+#                 total_loss += metrics[metric_key]
+
+#         metrics["log_loss"] = np.log(total_loss.detach().cpu().numpy())
+
+#         if torch.isnan(total_loss):
+#             print(f"Loss is nan, please investigate.")
+#             import pdb
+
+#             pdb.set_trace()
+
+#         self.optimizer.zero_grad()
+#         total_loss.backward()
+#         self.optimizer.step()
+#         self.lr_scheduler.step()
+
+#         self.actor.step_ema()
+
+#         return metrics
+
+#     def set_normalizer_and_statistics(self, dataset):
+#         self.actor.statistics = dataset.statistics
+#         self.actor.skill_names = dataset.skill_names
+#         self.actor.task_names = dataset.task_names
+
+#         if self.cfg.data.dataset.normalization_method == "all":
+#             self.set_normalizer(dataset.normalizer.state_dict())
+
+#     def set_normalizer(self, normalizer_state_dict):
+#         self.actor.normalizer.load_state_dict(normalizer_state_dict)
+
+
+#     def fix_checkpoint_keys(self, state_dict):
+#         fixed_state_dict = dict()
+#         for k, v in state_dict.items():
+#             if "encoder.encoder" in k:
+#                 fixed_k = k.replace("encoder.encoder", "encoder")
+#             else:
+#                 fixed_k = k
+#             if "handle" in k:
+#                 continue
+#             fixed_state_dict[fixed_k] = v
+#         return fixed_state_dict
+    
+#     def save_snapshot(self, save_path):
+#         state_dict = dict(
+#             cfg = self.cfg,
+#             actor=self.actor.state_dict(),
+#             ema_model=self.actor.ema.averaged_model.state_dict(),
+#         )
+#         # state_dict['skill_name_to_emb_tensor'] = self.actor.skill_name_to_emb_tensor
+        
+#         state_dict["statistics"] = self.actor.statistics
+
+#         state_dict["normalizer"] = self.actor.normalizer.state_dict()
+
+#         torch.save(state_dict, save_path)
+
+#     def load_state_dict_to_actor(self, state_dict):
+#         self.actor.cfg = state_dict["cfg"]
+#         self.cfg = state_dict["cfg"]
+    
+#         self.actor.load_state_dict(self.fix_checkpoint_keys(state_dict["actor"]))
+#         self.actor._init_torch_compile()
+
+#         self.actor.ema.averaged_model.load_state_dict(
+#             self.fix_checkpoint_keys(state_dict["ema_model"])
+#         )
+
+#         self.actor.statistics = state_dict["statistics"]
+#         self.actor.skill_names = list(state_dict["statistics"]["skill_embs_all_tasks"].keys())
+
+
+#         self.set_normalizer(state_dict["normalizer"])
+
+
+
+#     def load_snapshot(self, load_path):
+#         import os
+#         load_path_full = os.path.join(EQUIBOT_PATH, load_path)
+#         state_dict = torch.load(load_path_full)
+#         self.load_state_dict_to_actor(state_dict)
+
+            
+#     ## call this function during evaluation (only during training)
+#     def eval_with_rotation(self, obs, skill_id = -1):
+#         self.train(False)
+#         random_yaw = np.random.uniform(-np.pi, np.pi)
+#         np_obs= rotate_observation(obs, random_yaw)
+#         cpu_obs = to_tensor(np_obs)
+#         gpu_obs = to_torch(cpu_obs, self.device)
+
+#         # gpu_obs = obs
+#         with torch.no_grad():
+#             action_dict, eval_metrics, denoise_history = self.actor(gpu_obs, skill_id=skill_id)
+
+#         return denoise_history, eval_metrics

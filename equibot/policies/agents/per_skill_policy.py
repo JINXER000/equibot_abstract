@@ -14,7 +14,7 @@ from equibot.policies.utils.lan_utils import get_and_save_skill_bert_embs, MLPEn
 
 from equibot.policies.utils.misc import to_torch, \
     convert_trans_to_vec, convert_vec_to_trans, ActionSlice,\
-    rotation_6d_to_matrix, geodestDist, EQUIBOT_PATH, to_torch, to_tensor,\
+     geodestDist, EQUIBOT_PATH, to_torch, to_tensor,\
     convert_trans_to_4pts, convert_4pts_to_trans, matrix_to_rotation_6d, render_trajectory, ascii_tensor_batch_to_str, vis_metric_imgs
 
     
@@ -78,10 +78,6 @@ class EquiSkillPolicy(nn.Module):
             self.eef_recover_fn = self.recover_eef_4pts
             ## expand to B, H, 4, 3
             self.original_gripper_pcd = np.array(cfg.data.dataset.original_gripper_pcd)
-            # self.original_gripper_pcd = np.array([[0.10, 0.01, 0], 
-            #                                       [0.03, -0.04, 0],
-            #                                       [0.02, 0.05, 0],
-            #                                       [0,0,0]])
             self.eef_dims = 4
         else:
             raise ValueError(f"Unsupported eef_representation: {self.eef_representation}")
@@ -215,17 +211,7 @@ class EquiSkillPolicy(nn.Module):
         # trans_batch = trans_batch.detach().cpu().numpy()
         return trans_batch, unnormed_eefpos_xyz, rot6d_batch
 
-    # def recover_jpose(self, jpose_batch, key):
-    #     # squeeze the pred horizon to 1
-    #     jpose_action = jpose_batch.reshape(-1,  self.num_eef, self.dof)
-    #     unnormed_joint = (
-    #                 self.unnormalize_from_key(key, jpose_action)
-    #                 .detach()
-    #                 .cpu()
-    #                 .numpy()
-    #             )
-        
-    #     return unnormed_joint
+
 
     def recover_gripper(self, gripper_batch, key):
         unnormed_gripper = (
@@ -428,5 +414,233 @@ class EquiSkillPolicy(nn.Module):
 
                 denoise_history.append(action_slice)
         return action_dict_all, eval_metrics_all, denoise_history
+
+class BiopSkillPolicy(nn.Module):
+    def __init__(self, cfg,  device="cpu"):
+        nn.Module.__init__(self)
+        self.cfg = cfg
+        self.obs_mode = cfg.model.obs_mode
+        self.ac_mode = cfg.model.ac_mode
+        self.use_torch_compile = cfg.model.use_torch_compile
+        self.device = device
+
+        # |o|o|                             observations: 2
+        # | |a|a|a|a|a|a|a|a|               actions executed: 8
+        # | |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
+        self.pred_horizon = cfg.model.pred_horizon
+        self.obs_horizon = cfg.model.obs_horizon
+        self.action_horizon = cfg.model.ac_horizon
+
+        self.normalizer = LinearNormalizer()
+        self.statistics = {}
+
+        if hasattr(cfg.model, "num_diffusion_iters"):
+            self.num_diffusion_iters = cfg.model.num_diffusion_iters
+        else:
+            self.num_diffusion_iters = cfg.model.noise_scheduler.num_train_timesteps
+
+
+        self.encoder_out_dim = cfg.model.encoder.c_dim
+
+        self.separate_policy = cfg.model.separate_policy
+
+        self.dof = cfg.env.dof # 6
+        self.num_eef = cfg.env.num_eef
+
+        self.obs_dim = self.encoder_out_dim
+
+        net_dict = {}
+        # net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
+
+        # self.eef_dims = {}
+
+        ##  set up language encoder TODO: check if it is saved in ckpt
+        language_encoder_cfg = cfg.model.language_encoder_cfg
+        output_size = language_encoder_cfg.hidden_size
+        assert output_size == self.encoder_out_dim
+        self.language_encoder = self._setup_language_encoder(output_size=output_size, **language_encoder_cfg)
+        ## will be included into ema_model further
+        net_dict['language_encoder'] = self.language_encoder 
+
+
+        joint_scalar_dims = self.dof * self.num_eef  
+        
+        ### Get unconditional MLP configuration
+        if hasattr(cfg.model, 'unconditional_mlp_cfg'):
+            mlp_cfg = cfg.model.unconditional_mlp_cfg
+        else:
+            mlp_cfg = None
+            
+        diffusion_step_embed_dim = self.obs_dim * self.obs_horizon
+
+        net_dict['jpose_noise_pred_net'] = UnconditionalMLP(
+            input_dim=joint_scalar_dims,
+            diffusion_step_embed_dim=diffusion_step_embed_dim,
+            cfg=mlp_cfg
+        )
+
+        self.nets = nn.ModuleDict(net_dict)
+
+        self.ema = EMAModel(model=copy.deepcopy(self.nets), power=0.75)
+
+        self._init_torch_compile()
+
+        self.noise_scheduler = hydra.utils.instantiate(cfg.model.noise_scheduler)
+        
+        num_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        print(f"Initialized DMG Policy with {num_parameters} parameters")
+
+
+    def _init_torch_compile(self):
+        nets_handles = {}
+        if self.use_torch_compile:
+            for key, net in self.nets.items():
+                nets_handles[key] = torch.compile(net)
+        else:
+            nets_handles = self.nets
+
+        self.nets = nets_handles
+
+    def proc_jpose(self, jpose, key):
+        
+        jpose_n = self.normalize_from_key(key, jpose)
+        # jpose_vec = self._convert_jpose_to_vec(jpose_n)
+        jpose_vec = jpose_n.reshape(jpose_n.shape[0], -1,  self.dof * self.num_eef)
+        return jpose_vec
+    
+
+    def recover_jpose(self, jpose_batch, key):
+        # squeeze the pred horizon to 1
+        jpose_action = jpose_batch.reshape(-1,  self.num_eef, self.dof)
+        unnormed_joint = (
+                    self.unnormalize_from_key(key, jpose_action)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
+        
+        return unnormed_joint
+
+    def _setup_language_encoder(self, network_name, **language_encoder_kwargs):
+        return eval(network_name)(**language_encoder_kwargs)
+    
+    def get_encoding_from_name_batch(self, name_batch, batch_size, mapping_dict):
+
+        if batch_size == 1:
+            emb_tensor = mapping_dict[name_batch]
+            if isinstance(emb_tensor, np.ndarray):
+                emb_tensor = torch.tensor(emb_tensor).to(self.device)
+            emb_batch = self.encode_bert_emb(emb_tensor, batch_size)
+        else:
+            emb_tensor_batch = []
+            for skill_name in name_batch:
+                emb_tensor = mapping_dict[skill_name]
+                if isinstance(emb_tensor, np.ndarray):
+                    emb_tensor = torch.tensor(emb_tensor).to(self.device)
+                emb_tensor_batch.append(emb_tensor)
+            emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
+            emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
+        return emb_batch
+
+    def encode_bert_emb(self, bert_emb, batch_size):
+        skill_emb = self.nets['language_encoder'](bert_emb)
+        skill_emb_batch = skill_emb.reshape(batch_size, -1)       
+        return skill_emb_batch
+
+    def step_ema(self):
+        self.ema.step(self.nets)
+
+    def normalize_from_key(self, key, data):
+        if self.cfg.data.dataset.normalization_method == "batch":
+            return self.all_normalizers[key].normalize(data)
+        else:
+            return self.normalizer[key].normalize(data)
+    
+    def unnormalize_from_key(self, key, data):
+        if self.cfg.data.dataset.normalization_method == "batch":
+            return self.all_normalizers[key].unnormalize(data)
+        else:
+            return self.normalizer[key].unnormalize(data)
+
+
+
+    def get_all_embs(self, skill_name_batch, batch_size, task_name_batch = None):
+        skill_emb_batch = self.get_encoding_from_name_batch(skill_name_batch, batch_size, self.statistics['skill_embs_all_tasks'])
+
+        if task_name_batch is not None:
+            task_emb_batch = self.get_encoding_from_name_batch(task_name_batch, batch_size, self.statistics['task_emb_dict'])
+            skill_emb_batch = torch.cat([skill_emb_batch, task_emb_batch], dim=-1)
+        return skill_emb_batch
+
+    
+    def pred_bimanual_jposes(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
+        batch_size = len(skill_name_batch)
+        ema_nets = self.ema.averaged_model
+
+        initial_noise_scale = 1
+        noisy_jpose = torch.randn((batch_size,   self.num_eef*self.dof)).to(self.device) * initial_noise_scale
+
+        self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
+
+        curr_action = {'jpose': noisy_jpose}
+
+        ## TODO: condition on skill name and task name
+        emb_batch = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
+
+        ####### inverse diffusion step
+        for k in self.noise_scheduler.timesteps:
+            biop_key = 'jpose'
+            new_action = {biop_key: None}
+
+            scalar_noise_pred = ema_nets['jpose_noise_pred_net'](\
+                sample=curr_action[biop_key],
+                timesteps = k,
+            )
+            new_action[biop_key] = self.noise_scheduler.step(
+                model_output=scalar_noise_pred, timestep=k, sample=curr_action[biop_key]
+            ).prev_sample
+
+            curr_action = new_action
+
+        unnormed_joint = self.recover_jpose(curr_action[biop_key], key=biop_key)
+        unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
+
+        action_dict = {}
+        eval_metrics = {}
+        if batch_size ==1:
+            action_dict[biop_key] = unnormed_joint.reshape(self.num_eef, self.dof)
+        else:
+            gt_joint = gt_batch['jpose'].reshape(-1, self.num_eef, self.dof)
+            joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
+            eval_metrics["dual_joint_mse"] = joint_mse
+
+        return action_dict, eval_metrics
+    
+
+    def skill_task_ascii_to_str(self, batch):
+        skill_name_batch = ascii_tensor_batch_to_str(batch['skill_name'])
+        task_name_batch = ascii_tensor_batch_to_str(batch['task_name'])
+        return skill_name_batch, task_name_batch
+
+    def forward(self, batch, skill_id=-1):
+        ###### preprocess data from dataset #######
+        batch = to_torch(batch, self.device)
+
+        action_dict_all = {}
+        eval_metrics_all = {}
+
+        # self.load_skill_name_to_emb()
+        assert self.skill_names is not None
+        assert self.task_names is not None
+
+        skill_name_batch, task_name_batch = self.skill_task_ascii_to_str(batch)
+
+        agent_obs = None
+        action_dict, eval_metrics = self.pred_bimanual_jposes(skill_name_batch, agent_obs, gt_batch=batch, task_name_batch=task_name_batch)
+        action_dict_all.update(action_dict)
+        eval_metrics_all.update(eval_metrics)
+
+
+        return action_dict_all, eval_metrics_all, None
 
  

@@ -7,7 +7,7 @@ wandb_note: null
 training:
   # ckpt: "logs/train/libero_per_skill/ckpt_3view_static.pth" 
 
-  eval_interval: 10
+  eval_interval: 50
   num_epochs: 2000
 
 env:
@@ -43,6 +43,16 @@ model:
     hidden_size: 256
     num_layers: 1
 
+
+  unconditional_mlp_cfg:
+    # Architecture type: "small", "deeper", "wider", or "custom"
+    architecture: "custom"
+    # For custom architecture, specify individual layer sizes
+    custom_encoder_layers: [256, 256]  # Only used if architecture is "custom"
+    custom_time_mixer_layers: [512, 256]  # Only used if architecture is "custom"
+    custom_decoder_layers: [256, 256]  # Only used if architecture is "custom"
+    
+    
 data:
   dataset:
     num_points: 128

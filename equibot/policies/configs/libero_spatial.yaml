@@ -6,7 +6,7 @@ wandb_node: null
 
 training:
   # ckpt: "logs/train/mj_peg_hole/ckpt_mj_traj.pth" 
-  eval_interval: 10
+  eval_interval: 50
   num_epochs: 2000
 
 env:
