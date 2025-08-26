@@ -642,12 +642,19 @@ def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
         pcd_down = pcd.uniform_down_sample(every_k_points=every_k_points)
     else:
         raise ValueError(f'Method {method} not supported!')
+    
+    down_pts = np.asarray(pcd_down.points)
+
+    ## pc size may be less after downsample, so we need to add some points to make it up to num_points
+    if down_pts.shape[0] < num_points:
+        random_repeated_indices = np.random.choice(down_pts.shape[0], num_points - down_pts.shape[0], replace=True)
+        down_pts = np.concatenate([down_pts, down_pts[random_repeated_indices]], axis=0)
 
     ## save the pc
     if debug_visualize:
         o3d.io.write_point_cloud(f'{method}_pc.ply', pcd_down)
 
-    return np.asarray(pcd_down.points)
+    return down_pts
 
 def add_projected_point(pc, num_ratio = 0.5):
     """
