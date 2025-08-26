@@ -141,13 +141,13 @@ class PerSkillDataset(Dataset):
     
     def process_select(self, cfg, **kwargs):
 
-        if self.dataset_type == 'per_skill_traj':
+        if self.dataset_type == 'per_skill_libero_traj':
             ## libero
-            self.data = self.process_per_skill_traj(cfg, **kwargs)
+            self.data = self.process_per_skill_libero_traj(cfg, **kwargs)
             self.normalizer = self.get_normalizer_and_statistics(self.data)
-        elif self.dataset_type == 'per_skill_bikp_traj':
+        elif self.dataset_type == 'per_skill_dmg_traj':
             ## dexmimicgen
-            self.data = self.process_per_skill_bikp_traj(cfg, **kwargs)
+            self.data = self.process_per_skill_dmg_traj(cfg, **kwargs)
             self.normalizer = self.get_normalizer_and_statistics(self.data)
         elif self.dataset_type == 'per_skill_biop_jpose':
             self.data = self.process_per_biop(cfg, **kwargs)
@@ -156,7 +156,7 @@ class PerSkillDataset(Dataset):
             raise NotImplementedError(f'Dataset type {self.dataset_type} not implemented!')
         
 
-    def process_per_skill_traj(self, cfg, **kwargs):
+    def process_per_skill_libero_traj(self, cfg, **kwargs):
 
         print('Processing hdf5 dataset...')
         data_list = []
@@ -233,10 +233,17 @@ class PerSkillDataset(Dataset):
                     action_arr = f[f'data/demo_{demo_id}/actions'][()]
                     rbt_action = get_rbt_actions(action_arr, robot_names)
 
+
                     for _ in range(traj_nums):
                 
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
+
+                            ## filter out the bad demo
+                            essential_ids = skill_info['essential_ids'][()]
+                            if len(essential_ids) == 0:
+                                print(f'No essential ids found for {skill_name} in {task_name}, demo {demo_id}')
+                                continue
 
                             ## only use interested unimanual skills
                             if skill_name not in interested_skills:
@@ -385,7 +392,7 @@ class PerSkillDataset(Dataset):
 
         return data_slice_bi
 
-    def process_per_skill_bikp_traj(self, cfg, **kwargs):
+    def process_per_skill_dmg_traj(self, cfg, **kwargs):
 
         print('Processing hdf5 dataset...')
         data_list = []
@@ -462,8 +469,8 @@ class PerSkillDataset(Dataset):
 
                             ## only use bimanual skills
                             if 'bimanual' in skill_name:
-                                data_slice = self.get_dataslice_bimanual_kp(skill_info, skill_name, obj_pcds, traj_len, rbt_states, rbt_action, task_name)
-                                # continue
+                                # data_slice = self.get_dataslice_bimanual_kp(skill_info, skill_name, obj_pcds, traj_len, rbt_states, rbt_action, task_name)
+                                continue
                             elif skill_name in interested_skills:
                                 data_slice = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, rbt_states, rbt_action, task_name)
                             else:

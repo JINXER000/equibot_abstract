@@ -43,10 +43,10 @@ class EquiSkillAgent(object):
         self.all_normalizers = None
 
     def _init_actor(self, dataset_type):
-        if dataset_type == "per_skill_traj":
-            self.actor = EquiSkillPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
-        elif dataset_type == "per_skill_biop_jpose":
+        if 'jpose' in dataset_type:
             self.actor = BiopSkillPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
+        elif 'traj' in dataset_type:
+            self.actor = EquiSkillPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
         else:
             raise ValueError(f"Invalid dataset type: {dataset_type}")
         self.actor.ema.averaged_model.to(self.cfg.device)
@@ -200,11 +200,11 @@ class EquiSkillAgent(object):
 
     ######## train the pred net ########
         metrics = {}
-        if self.dataset_type == "per_skill_traj":
+        if 'jpose' in self.dataset_type:
+            scalar_loss = self.learn_bimanual_jpose(batch)
+        elif 'traj' in self.dataset_type:
             vec_loss, scalar_loss = self.learn_unimanual_traj(batch)
             metrics['vec_loss'] = vec_loss
-        elif self.dataset_type == "per_skill_biop_jpose":
-            scalar_loss = self.learn_bimanual_jpose(batch)
         else:
             raise ValueError(f"Invalid dataset type: {self.dataset_type}")
         metrics['scalar_loss'] = scalar_loss
