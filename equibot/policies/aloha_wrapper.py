@@ -222,8 +222,14 @@ class pddl_wrapper(object):
     
 
     def gen_uncond_jposes(self, arm1, arm2, sk):
-        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, batch_size = 1)
-        jpose_out = to_np(action_dict)[f'{sk}:jpose']
+        ## old version
+        # action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, batch_size = 1)
+        # jpose_out = to_np(action_dict)[f'{sk}:jpose']
+
+        ## per_skill version
+        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, agent_obs = None)
+        jpose_out = to_np(action_dict)['jpose']
+
         return jpose_out
 
 

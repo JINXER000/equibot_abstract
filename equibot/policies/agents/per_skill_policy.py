@@ -229,8 +229,13 @@ class EquiSkillPolicy(nn.Module):
 
         ## in training
         encoder_key = 'obj_encoder'
-        encoder_handle = self.nets[encoder_key] 
+        if ema_nets is None:
+            encoder_handle = self.nets[encoder_key] 
+        else:
+            encoder_handle = ema_nets[encoder_key]
+            
         pc_scale = self.statistics['pc_scale']
+
         feat_dict = encoder_handle(pc, target_norm=pc_scale)
 
         center = (
@@ -240,7 +245,6 @@ class EquiSkillPolicy(nn.Module):
         equiv_feat = feat_dict["so3"]  
         obs_cond_vec = equiv_feat.reshape(batch_size, -1, 3)
         return obs_cond_vec, center, scale
-
     # in dataset, first pc is converted using min(). Then, in pc_normalizer, pc.max is mapped to 1. in eef normalizer, eef_xyz = traj = (traj-pc.min)/pc.max.  Here center should be 0.5, and scale be 1. finally, eef_xyz mean shoule be near 0. 
     def proc_eef_3vec(self, eef_pose, key, center, scale):
         eef_xyz_raw, eef_dir1, eef_dir2 = convert_trans_to_vec(eef_pose)
@@ -574,7 +578,11 @@ class BiopSkillPolicy(nn.Module):
 
     
     def pred_bimanual_jposes(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
-        batch_size = len(skill_name_batch)
+        if isinstance(skill_name_batch, str):
+            batch_size = 1
+        else:
+            batch_size = len(skill_name_batch)
+            
         ema_nets = self.ema.averaged_model
 
         initial_noise_scale = 1

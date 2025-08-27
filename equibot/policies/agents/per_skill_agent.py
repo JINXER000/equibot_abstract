@@ -325,19 +325,32 @@ class EquiSkillAgent(object):
 
         return denoise_history, eval_metrics
 
-    # def get_taskwise_skill_objs(self, task_name):
-    #     action_sgs_json = self.actor.statistics['matched_action_sgs'][task_name]
-    #     import json
-    #     action_sgs = json.loads(action_sgs_json)
-    #     skill_names = action_sgs.keys()
-    #     related_objs_all = set()
-    #     for skill_name in skill_names:
-    #         related_objs_all = related_objs_all.union(set(action_sgs[skill_name]['related_objs']))
 
-    #     return list(skill_names), list(related_objs_all)
     
     def get_skillwise_sgs_from_statistics(self, skill_name):
         action_sgs_json = self.actor.statistics['matched_action_sgs'][skill_name]
         import json
         action_sgs = json.loads(action_sgs_json)
-        return action_sgs
+        skill_info_nx = matched_actions_from_json(action_sgs)
+        return skill_info_nx
+
+def _is_node_link(obj: dict) -> bool:
+    # nx.node_link_data produces keys: 'directed','multigraph','graph','nodes','links'
+    return isinstance(obj, dict) and 'nodes' in obj and ('links' in obj or 'edges' in obj)
+
+def _from_serializable(obj):
+    import networkx as nx
+    if isinstance(obj, dict):
+        if _is_node_link(obj):
+            # Rebuild the graph
+            return nx.node_link_graph(obj)
+        # Recurse dictionaries
+        return {k: _from_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        # Recurse lists/tuples; leave as list by default (convert to np.array later if you know schema)
+        return [_from_serializable(x) for x in obj]
+    # Numbers and primitives are already fine
+    return obj
+
+def matched_actions_from_json(action_sgs):
+    return _from_serializable(action_sgs)
