@@ -398,7 +398,7 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 32
+        traj_nums =168
         primitive_kws = cfg.uniskills
         # task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)

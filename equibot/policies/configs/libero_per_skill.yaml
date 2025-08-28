@@ -34,8 +34,8 @@ model:
     backbone_type: VDGCNN
     backbone_args: 
       num_layers: 7
-      preload_path: "pretrained/mugs.pt"
-
+      # preload_path: "pretrained/mugs.pt"
+      preload_path: "pretrained/kit4cates.pt"
 
   language_encoder_cfg:
     network_name: MLPEncoder
