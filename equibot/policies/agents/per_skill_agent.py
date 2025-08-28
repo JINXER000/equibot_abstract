@@ -110,7 +110,7 @@ class EquiSkillAgent(object):
         if 'in_hand_pc' in batch:
             inv_feat = self.actor.revise_inv_feat_using_mask(batch['in_hand_pc'], batch['in_hand_mask'], inv_feat)
 
-        obs_vec = self.actor.combine_inv_feat_and_so3_feat(inv_feat, equiv_feat)
+        # obs_vec = self.actor.combine_inv_feat_and_so3_feat(inv_feat, equiv_feat)
 
         eefpos = n_data_dict['eefpos']
         gripper = n_data_dict['gripper']
@@ -147,12 +147,15 @@ class EquiSkillAgent(object):
         # skill_scalar_id = self.actor.encode_bert_emb(bert_emb, batch_size)
         emb_batch = self.actor.get_all_embs(skill_name_batch, batch_size, task_name_batch)
 
+        obs_vec = equiv_feat
+        task_skill_condition = torch.cat([inv_feat, emb_batch], dim=-1)
+
         eefpos_noise_pred, gripper_noise_pred = self.actor.nets[policy_key](
             noisy_eefpos,
             timesteps,
             scalar_sample = noisy_gripper_action,
             cond = obs_vec,
-            scalar_cond = emb_batch,
+            scalar_cond = task_skill_condition,
         )
         
         vec_loss = nn.functional.mse_loss(eefpos_noise_pred, eefpos_noise)
