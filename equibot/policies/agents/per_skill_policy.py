@@ -243,10 +243,11 @@ class EquiSkillPolicy(nn.Module):
         )
         scale = feat_dict["scale"].reshape(batch_size, self.obs_horizon, 1, 1)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
         equiv_feat = feat_dict["so3"]  
-        obs_cond_vec = equiv_feat.reshape(batch_size, -1, 3)
-        return obs_cond_vec, center, scale
+        equiv_feat = equiv_feat.reshape(batch_size, -1, 3)
+        inv_feat = feat_dict["inv"].reshape(batch_size, -1, 1)
+        return equiv_feat, inv_feat,  center, scale
 
-    def combine_in_hand_pc_feat(self, obs_vec, in_hand_pc, in_hand_mask,  ema_nets = None):
+    def get_in_hand_inv_feat(self, in_hand_pc,  ema_nets = None):
         pc_key = 'in_hand_pc'
         in_hand_pc = self.normalize_from_key(pc_key, in_hand_pc)
         batch_size = in_hand_pc.shape[0]
@@ -263,17 +264,22 @@ class EquiSkillPolicy(nn.Module):
         feat_dict = encoder_handle(in_hand_pc, target_norm=pc_scale)
 
         inv_feat = feat_dict["inv"].reshape(batch_size, -1, 1)
-        inv_feat = inv_feat.repeat(1, 1, 3)
 
-        # Ensure boolean, correct device, and expand per-sample mask [B] -> [B, L, 1]
-        if in_hand_mask.ndim == 2 and in_hand_mask.shape[1] == 1:
-            in_hand_mask = in_hand_mask.squeeze(1)
-        in_hand_mask = in_hand_mask.to(device=obs_vec.device, dtype=torch.bool)
-        B, L, _ = obs_vec.shape
+        return inv_feat
+    
+    def revise_inv_feat_using_mask(self, in_hand_pc, in_hand_mask, inv_feat, ema_nets = None):
+        in_hand_pc_data = in_hand_pc.repeat(1, self.obs_horizon, 1, 1)
+        in_hand_inv_feat = self.get_in_hand_inv_feat(in_hand_pc_data, ema_nets = ema_nets)
+
+        B, L, _ = in_hand_inv_feat.shape
+
+        in_hand_mask = in_hand_mask.to(device=in_hand_pc.device, dtype=torch.bool)
         expanded_mask = in_hand_mask.view(B, 1, 1).expand(B, L, 1)
-        obs_vec_out = torch.where(expanded_mask, inv_feat * obs_vec, obs_vec)
-        return obs_vec_out
-
+        inv_feat = torch.where(expanded_mask, in_hand_inv_feat , inv_feat)
+        return inv_feat
+    
+    def combine_inv_feat_and_so3_feat(self, inv_feat, so3_feat):
+        return inv_feat * so3_feat
 
     # in dataset, first pc is converted using min(). Then, in pc_normalizer, pc.max is mapped to 1. in eef normalizer, eef_xyz = traj = (traj-pc.min)/pc.max.  Here center should be 0.5, and scale be 1. finally, eef_xyz mean shoule be near 0. 
     def proc_eef_3vec(self, eef_pose, key, center, scale):
@@ -307,20 +313,19 @@ class EquiSkillPolicy(nn.Module):
             skill_emb_batch = torch.cat([skill_emb_batch, task_emb_batch], dim=-1)
         return skill_emb_batch
 
-    
+    ## TODO: design a fusion layer for inv_feat and so3 feat
     def pred_unimaual_traj(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
         pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
 
         ema_nets = self.ema.averaged_model
 
-        obs_vec, center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
+        equiv_feat, inv_feat, center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
 
         if 'in_hand_pc' in agent_obs:
-            in_hand_pc_data = agent_obs['in_hand_pc'].repeat(1, self.obs_horizon, 1, 1)
-            in_hand_mask = agent_obs['in_hand_mask']
-            obs_vec = self.combine_in_hand_pc_feat(obs_vec, in_hand_pc_data, ema_nets = ema_nets, in_hand_mask=in_hand_mask)
+            inv_feat = self.revise_inv_feat_using_mask(agent_obs['in_hand_pc'], agent_obs['in_hand_mask'], inv_feat, ema_nets = ema_nets)
 
+        obs_vec = self.combine_inv_feat_and_so3_feat(inv_feat, equiv_feat)
 
         ##### start denoising #####
         initial_noise_scale = 1
