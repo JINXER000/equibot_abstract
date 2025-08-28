@@ -100,15 +100,17 @@ class EquiSkillAgent(object):
         # n_data_dict['skill_name_emb'] = batch['skill_name_emb']
         n_data_dict['skill_name'] = batch['skill_name']
         n_data_dict['task_name'] = batch['task_name']
-        n_data_dict['pc'] = batch['pc']
         n_data_dict['eefpos'] = batch['eefpos']
         n_data_dict['gripper'] = batch['gripper']
         # n_data_dict['skill_name'] = ascii_tensor_to_str(batch['skill_name'])
 
         n_data_dict['pc'] = batch['pc'].repeat(1, self.obs_horizon, 1, 1)
-
-        ## cached pc feature
         obs_vec, center, scale = self.actor.proc_pc(n_data_dict['pc'])
+
+        if 'in_hand_pc' in batch:
+            n_data_dict['in_hand_pc'] = batch['in_hand_pc'].repeat(1, self.obs_horizon, 1, 1)
+            n_data_dict['in_hand_mask'] = batch['in_hand_mask']
+            obs_vec = self.actor.combine_in_hand_pc_feat(obs_vec, n_data_dict['in_hand_pc'], in_hand_mask=n_data_dict['in_hand_mask'])
 
         eefpos = n_data_dict['eefpos']
         gripper = n_data_dict['gripper']

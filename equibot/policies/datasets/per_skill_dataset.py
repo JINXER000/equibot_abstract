@@ -377,8 +377,8 @@ class PerSkillDataset(Dataset):
         pre_right_eef_pos = rbt_states['robot1_eef_pos'][pre_idx_list]
         pre_eef_dist = np.linalg.norm(pre_left_eef_pos - pre_right_eef_pos, axis=1)
         ## gfilter idx by eef dist
-        max_eef_dist = 0.29
-        min_eef_dist = 0.25
+        max_eef_dist = 0.29 # 0.5 #0.29
+        min_eef_dist = 0.25 # 0.3 #0.25
         distclose_ids = list(set(np.where(pre_eef_dist < max_eef_dist)[0]).intersection(np.where(pre_eef_dist >min_eef_dist)[0]))
         if len(distclose_ids) == 0:
             print(f'No valid bimanual jpose found for {skill_name} in {task_name}')
@@ -405,7 +405,7 @@ class PerSkillDataset(Dataset):
         # task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
         self.involved_skill_names = set()
         skill_embs_all_tasks = {}
-
+        matched_action_sgs = {}
         involved_tasks = set()
 
         for file_id in range(len(raw_files)):
@@ -425,6 +425,8 @@ class PerSkillDataset(Dataset):
                 involved_tasks.add(task_name)
                 # task_name = find_correct_task_name(task_emb_dict.keys(), file_name)
 
+                ## record the skillwise_sgs
+                matched_action_sgs[task_name] = f[f'data/demo_0/matched_actions_json'][()]
 
                 demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]   
                 inds = np.argsort([int(elem[5:]) for elem in demos])
@@ -492,7 +494,7 @@ class PerSkillDataset(Dataset):
         task_emb_dict = get_embs_without_saving(list(involved_tasks), cache_dir=cache_dir)
         self.statistics['task_emb_dict'] = task_emb_dict
         self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
-
+        self.statistics['matched_action_sgs'] = matched_action_sgs
         return data_list
 
     ## note that this dual_manual dataset cannot merge with unimanual dataset
@@ -551,26 +553,50 @@ class PerSkillDataset(Dataset):
 
         return data_slice
 
-
+    def get_obj_pc_tensor(self, obj_pc_list, observation_idx, num_points):
+        obj_pc = obj_pc_list[observation_idx][:, :3]
+        
+        obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
+        obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, num_points, 3)
+        return obj_pc_tensor, obj_offset
 
     def get_dataslice_unimanual(self, skill_info, skill_name, skill_key, cfg, traj_len,  obj_pcds, rbt_states, rbt_action,  task_name):
         data_slice = {}
 
-        pre_sg = get_sg(skill_info, 'pre_sg')
-        # cur_sg = get_sg(skill_info, 'cur_sg')
+        # pre_sg = get_sg(skill_info, 'pre_sg')
+        cur_sg = get_sg(skill_info, 'cur_sg')
         # eff_sg = get_sg(skill_info, 'eff_sg')
+        ## diverse pc input
+        pre_start_idx = 0
+        obj_pc_idx = np.random.randint(pre_start_idx, pre_start_idx + 5)
 
         # obj_name = skill_condition_objs[skill_name]
-        obj_name = skill_info['related_objs'][0].decode('utf-8')
+        related_objs = skill_info['related_objs'][()]
+        obj_name = related_objs[0].decode('utf-8')
         rbt_name = skill_info['related_rbts'][0].decode('utf-8')
         idx_list = skill_info['extended_ids'][()]
         essential_ids = skill_info['essential_ids'][()]
 
-        obj_pc_list = obj_pcds[obj_name] 
-        obj_pc = obj_pc_list[0][:, :3]
-        
-        obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
-        obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)
+        obj_pc_tensor, obj_offset = self.get_obj_pc_tensor(obj_pcds[obj_name], obj_pc_idx, cfg.num_points)
+
+        ####### if more than one objs, get another obj pc
+        for edge in cur_sg.edges:
+            entities = set(edge)
+            if obj_name in entities:
+                other_entity = list(entities - {obj_name})
+                if other_entity[0] in obj_pcds.keys():
+                    in_hand_obj_name = other_entity[0]
+                    break
+        else:
+            in_hand_obj_name = None
+
+        if in_hand_obj_name is not None:
+            in_hand_obj_pc_tensor, _ = self.get_obj_pc_tensor(obj_pcds[in_hand_obj_name], obj_pc_idx, cfg.num_points)
+            in_hand_mask_tensor = torch.tensor([True], dtype=torch.bool)
+        else:            
+            in_hand_obj_pc_tensor = torch.zeros(1, cfg.num_points, 3, dtype=torch.float32)
+            in_hand_mask_tensor = torch.tensor([False], dtype=torch.bool)
+        #########
         
         if cfg.choose_id_method == "rdp":   
             choiced_ids = choose_ids_rdp(rbt_states[f'{rbt_name}_eef_pos'], traj_len, idx_list, essential_ids = essential_ids)
@@ -586,6 +612,8 @@ class PerSkillDataset(Dataset):
         
         ## input
         data_slice['pc'] = obj_pc_tensor
+        data_slice['in_hand_pc'] = in_hand_obj_pc_tensor
+        data_slice['in_hand_mask'] = in_hand_mask_tensor
         # data_slice['skill_name_emb'] = skill_name_to_emb[skill_name]
         ## output
         data_slice['eefpos'] = normalized_eef_pos_tensor
@@ -611,14 +639,14 @@ class PerSkillDataset(Dataset):
 
         ### normalize pc
         pc_arr = np.concatenate([data['pc'] for data in data_list], axis=0)
-        # pc_torch = torch.tensor(pc_arr).to(torch.float32).to("cuda")
-        ## normalize pc
         pcd_stats = to_torch_stats(pc_arr.reshape(-1, pc_arr.shape[-1]))
-        # xyz_h_range = (pcd_stats['max'][:3] - pcd_stats['min'][:3]).max()/2
-        # pcd_stats['max'][:3] = pcd_stats['mean'][:3] + xyz_h_range
-        # pcd_stats['min'][:3] = pcd_stats['mean'][:3] - xyz_h_range
 
         normalizer['pc'] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
+
+        if 'in_hand_pc' in data_list[0]:
+            in_hand_pc_arr = np.concatenate([data['in_hand_pc'] for data in data_list], axis=0)
+            in_hand_pcd_stats = to_torch_stats(in_hand_pc_arr.reshape(-1, in_hand_pc_arr.shape[-1]))
+            normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
 
         ## normalize eefpos. first convert to 3vec or 4pts
         eef_pos_arr = np.concatenate([data['eefpos'] for data in data_list], axis=0)

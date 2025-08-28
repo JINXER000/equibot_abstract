@@ -66,7 +66,7 @@ data:
 
     embedding_cache_dir: "./data/bert"
     task_suite_name: "dmg_threading"
-    n_use: 50
+    n_use: 100
 
     # eef_representation: "4pts"
     eef_representation: "3vec"
