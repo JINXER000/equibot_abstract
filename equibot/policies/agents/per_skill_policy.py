@@ -6,7 +6,7 @@ import numpy as np
 
 from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
 from equibot.policies.utils.diffusion.ema_model import EMAModel
-from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
+from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D, FeatFusion
 from equibot.policies.utils.equivariant_diffusion.unconditional_mlp import UnconditionalMLP
 from equibot.policies.utils.normalizer import LinearNormalizer
 
@@ -86,7 +86,7 @@ class EquiSkillPolicy(nn.Module):
 
         # scalar_cond_dim = self.encoder_out_dim * self.obs_horizon
         # skill_names + task_names
-        scalar_cond_dim = self.encoder_out_dim * self.obs_horizon * 3
+        scalar_cond_dim = self.encoder_out_dim * self.obs_horizon * 2
 
         net_dict[policy_key] = VecConditionalUnet1D(
             input_dim=self.eef_dims,  ## vec dim, rot is 2, xyz is 1
@@ -97,6 +97,13 @@ class EquiSkillPolicy(nn.Module):
             cond_predict_scale=False,
             down_dims=cfg.model.down_dims,
             )
+
+        ## input and output are equiv feat, cond is inv feat
+        net_dict['feat_fusion'] = FeatFusion(
+            input_dim=self.obs_dim* self.obs_horizon,
+            output_dim=self.obs_dim* self.obs_horizon,
+            scalar_cond_dim= self.obs_dim* self.obs_horizon,
+        )
         
         self.nets = nn.ModuleDict(net_dict)
 
@@ -279,9 +286,10 @@ class EquiSkillPolicy(nn.Module):
         return inv_feat
     
     def combine_inv_feat_and_so3_feat(self, inv_feat, so3_feat):
-        batch_size = so3_feat.shape[0]
-        inv_feat = inv_feat.reshape(batch_size, -1, 1)
-        return inv_feat * so3_feat
+        # batch_size = so3_feat.shape[0]
+        # inv_feat = inv_feat.reshape(batch_size, -1, 1)
+        # return inv_feat * so3_feat
+        return self.nets['feat_fusion'](so3_feat, inv_feat)
 
     # in dataset, first pc is converted using min(). Then, in pc_normalizer, pc.max is mapped to 1. in eef normalizer, eef_xyz = traj = (traj-pc.min)/pc.max.  Here center should be 0.5, and scale be 1. finally, eef_xyz mean shoule be near 0. 
     def proc_eef_3vec(self, eef_pose, key, center, scale):
@@ -327,7 +335,7 @@ class EquiSkillPolicy(nn.Module):
         if 'in_hand_pc' in agent_obs:
             inv_feat = self.revise_inv_feat_using_mask(agent_obs['in_hand_pc'], agent_obs['in_hand_mask'], inv_feat, ema_nets = ema_nets)
 
-        # obs_vec = self.combine_inv_feat_and_so3_feat(inv_feat, equiv_feat)
+        obs_vec = self.combine_inv_feat_and_so3_feat(inv_feat, equiv_feat)
 
         ##### start denoising #####
         initial_noise_scale = 1
@@ -343,10 +351,10 @@ class EquiSkillPolicy(nn.Module):
         
          ####### inverse diffusion step
         policy_key = 'unitraj_noise_pred_net'
-        emb_batch = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
+        task_skill_condition = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
         
-        obs_vec = equiv_feat
-        task_skill_condition = torch.cat([inv_feat, emb_batch], dim=-1)
+        # obs_vec = equiv_feat
+        # task_skill_condition = torch.cat([inv_feat, task_skill_condition], dim=-1)
 
         for k in self.noise_scheduler.timesteps:
 

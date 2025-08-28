@@ -16,6 +16,16 @@ from equibot.policies.vision.vec_layers import VecLinear
 
 logger = logging.getLogger(__name__)
 
+class FeatFusion(nn.Module):
+    def __init__(self, input_dim, output_dim, scalar_cond_dim):
+        super().__init__()
+        act_func = nn.Mish()
+        vnla_cfg = dict(mode="so3", s_in=scalar_cond_dim, return_tuple=False)
+        self.fuse_layer = VecLNA(input_dim, output_dim, act_func, **vnla_cfg)
+
+    
+    def forward(self, so3_feat, inv_feat):
+        return self.fuse_layer(so3_feat, inv_feat)
 
 class VecConditionalResidualBlock1D(nn.Module):
     def __init__(
