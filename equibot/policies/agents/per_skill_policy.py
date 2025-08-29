@@ -240,7 +240,6 @@ class EquiSkillPolicy(nn.Module):
             encoder_handle = self.nets[encoder_key] 
         else:
             encoder_handle = ema_nets[encoder_key]
-
         pc_scale = self.statistics['pc_scale']
 
         feat_dict = encoder_handle(pc, target_norm=pc_scale)
@@ -637,7 +636,11 @@ class BiopSkillPolicy(nn.Module):
 
     
     def pred_bimanual_jposes(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
-        batch_size = len(skill_name_batch)
+        if isinstance(skill_name_batch, str):
+            batch_size = 1
+        else:
+            batch_size = len(skill_name_batch)
+            
         ema_nets = self.ema.averaged_model
 
         initial_noise_scale = 1

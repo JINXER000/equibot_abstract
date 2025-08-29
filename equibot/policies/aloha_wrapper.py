@@ -105,6 +105,8 @@ class pddl_wrapper(object):
     def decentralize_action(self, action_dict_c, offset_dict):
         action_dict = action_dict_c.copy()
         for k, v in offset_dict.items():
+            if k not in action_dict.keys():
+                continue
             action_dict[k] = decentralize_grasp(action_dict[k], offset_dict[k])
         return action_dict
     
@@ -199,10 +201,12 @@ class pddl_wrapper(object):
 
         return action_w
     
-    def gen_bimanual_kp(self, skill_name, related_pc_dict, task_name = None):
+    def gen_bimanual_kp(self,  related_pc_dict, skill_name = None, task_name = None):
         obs_tensor = to_tensor(related_pc_dict)
         # obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method)
-        obs_c, offset_dict = combined_pc_instances_and_offset(obs_tensor, self.cfg.data.dataset.pc_shape, self.cfg.data.dataset.is_obj_centric, self.cfg.data.dataset.is_add_bottom, self.cfg.data.dataset.downsample_method)
+        init_pc_n, init_pc_offset= combined_pc_instances_and_offset(obs_tensor, self.dataset.pc_shape, self.dataset.is_obj_centric, self.dataset.is_add_bottom, self.dataset.downsample_method)
+        obs_c = {'pc': init_pc_n}
+        offset_dict = {'eefpos': init_pc_offset}
         obs_c = to_tensor(obs_c)
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
@@ -213,17 +217,21 @@ class pddl_wrapper(object):
         ## TODO: decode for bimanual
 
         ## decentralize the final action
-        if offset_dict is not None:
-            action_w = self.decentralize_action(action_c, offset_dict)
-        else:
-            action_w = action_c
+        action_w = self.decentralize_action(action_c, offset_dict)
+
 
         return action_w
     
 
     def gen_uncond_jposes(self, arm1, arm2, sk):
-        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, batch_size = 1)
-        jpose_out = to_np(action_dict)[f'{sk}:jpose']
+        ## old version
+        # action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, batch_size = 1)
+        # jpose_out = to_np(action_dict)[f'{sk}:jpose']
+
+        ## per_skill version
+        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, agent_obs = None)
+        jpose_out = to_np(action_dict)['jpose']
+
         return jpose_out
 
 
