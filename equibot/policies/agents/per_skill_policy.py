@@ -233,7 +233,6 @@ class EquiSkillPolicy(nn.Module):
             encoder_handle = self.nets[encoder_key] 
         else:
             encoder_handle = ema_nets[encoder_key]
-            
         pc_scale = self.statistics['pc_scale']
 
         feat_dict = encoder_handle(pc, target_norm=pc_scale)
@@ -245,6 +244,36 @@ class EquiSkillPolicy(nn.Module):
         equiv_feat = feat_dict["so3"]  
         obs_cond_vec = equiv_feat.reshape(batch_size, -1, 3)
         return obs_cond_vec, center, scale
+
+    def combine_in_hand_pc_feat(self, obs_vec, in_hand_pc, in_hand_mask,  ema_nets = None):
+        pc_key = 'in_hand_pc'
+        in_hand_pc = self.normalize_from_key(pc_key, in_hand_pc)
+        batch_size = in_hand_pc.shape[0]
+
+        ## in training
+        encoder_key = 'obj_encoder'
+        if ema_nets is None:
+            encoder_handle = self.nets[encoder_key] 
+        else:
+            encoder_handle = ema_nets[encoder_key]
+
+        pc_scale = self.statistics['pc_scale']  ## TODO: in_hand?
+
+        feat_dict = encoder_handle(in_hand_pc, target_norm=pc_scale)
+
+        inv_feat = feat_dict["inv"].reshape(batch_size, -1, 1)
+        inv_feat = inv_feat.repeat(1, 1, 3)
+
+        # Ensure boolean, correct device, and expand per-sample mask [B] -> [B, L, 1]
+        if in_hand_mask.ndim == 2 and in_hand_mask.shape[1] == 1:
+            in_hand_mask = in_hand_mask.squeeze(1)
+        in_hand_mask = in_hand_mask.to(device=obs_vec.device, dtype=torch.bool)
+        B, L, _ = obs_vec.shape
+        expanded_mask = in_hand_mask.view(B, 1, 1).expand(B, L, 1)
+        obs_vec_out = torch.where(expanded_mask, inv_feat * obs_vec, obs_vec)
+        return obs_vec_out
+
+
     # in dataset, first pc is converted using min(). Then, in pc_normalizer, pc.max is mapped to 1. in eef normalizer, eef_xyz = traj = (traj-pc.min)/pc.max.  Here center should be 0.5, and scale be 1. finally, eef_xyz mean shoule be near 0. 
     def proc_eef_3vec(self, eef_pose, key, center, scale):
         eef_xyz_raw, eef_dir1, eef_dir2 = convert_trans_to_vec(eef_pose)
@@ -285,6 +314,12 @@ class EquiSkillPolicy(nn.Module):
         ema_nets = self.ema.averaged_model
 
         obs_vec, center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
+
+        if 'in_hand_pc' in agent_obs:
+            in_hand_pc_data = agent_obs['in_hand_pc'].repeat(1, self.obs_horizon, 1, 1)
+            in_hand_mask = agent_obs['in_hand_mask']
+            obs_vec = self.combine_in_hand_pc_feat(obs_vec, in_hand_pc_data, ema_nets = ema_nets, in_hand_mask=in_hand_mask)
+
 
         ##### start denoising #####
         initial_noise_scale = 1
@@ -401,6 +436,9 @@ class EquiSkillPolicy(nn.Module):
 
         pc_data = batch['pc']
         agent_obs = {'pc': pc_data}
+        if 'in_hand_pc' in batch:
+            agent_obs['in_hand_pc'] = batch['in_hand_pc']
+            agent_obs['in_hand_mask'] = batch['in_hand_mask']
         action_dict, eval_metrics = self.pred_unimaual_traj(skill_name_batch, agent_obs, gt_batch=batch, task_name_batch=task_name_batch)
         action_dict_all.update(action_dict)
         eval_metrics_all.update(eval_metrics)

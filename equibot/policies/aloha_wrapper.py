@@ -105,6 +105,8 @@ class pddl_wrapper(object):
     def decentralize_action(self, action_dict_c, offset_dict):
         action_dict = action_dict_c.copy()
         for k, v in offset_dict.items():
+            if k not in action_dict.keys():
+                continue
             action_dict[k] = decentralize_grasp(action_dict[k], offset_dict[k])
         return action_dict
     
