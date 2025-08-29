@@ -643,10 +643,6 @@ class PerSkillDataset(Dataset):
 
         normalizer['pc'] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
 
-        if 'in_hand_pc' in data_list[0]:
-            in_hand_pc_arr = np.concatenate([data['in_hand_pc'] for data in data_list], axis=0)
-            in_hand_pcd_stats = to_torch_stats(in_hand_pc_arr.reshape(-1, in_hand_pc_arr.shape[-1]))
-            normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
 
         ## normalize eefpos. first convert to 3vec or 4pts
         eef_pos_arr = np.concatenate([data['eefpos'] for data in data_list], axis=0)
@@ -673,6 +669,14 @@ class PerSkillDataset(Dataset):
         pc_scale = self.get_pc_scale(pc_arr, eef_stats["max"].max())
         self.statistics['pc_scale'] = pc_scale
 
+        if 'in_hand_pc' in data_list[0]:
+            in_hand_pc_arr = np.concatenate([data['in_hand_pc'] for data in data_list], axis=0)
+            in_hand_pcd_stats = to_torch_stats(in_hand_pc_arr.reshape(-1, in_hand_pc_arr.shape[-1]))
+            normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
+
+            in_hand_pc_scale = self.get_pc_scale(in_hand_pc_arr, eef_stats["max"].max())
+            self.statistics['in_hand_pc_scale'] = in_hand_pc_scale
+
         return normalizer
 
     
@@ -680,11 +684,9 @@ class PerSkillDataset(Dataset):
         """
         pc_data: (N_demos*demo_len, num_points, 3)
         """
-        # pc = pc_data.reshape(-1, self.num_points, 3)
         centroid = pc_data.mean(axis=1, keepdims=True)
         centered_pc = pc_data - centroid
         pc_scale = np.linalg.norm(centered_pc, axis=-1).mean()
-        # ac_scale = pc_normalizer.stats["max"].max()
         normed_pc_scale = pc_scale / ac_scale
         return normed_pc_scale
     

@@ -266,7 +266,10 @@ class EquiSkillPolicy(nn.Module):
         else:
             encoder_handle = ema_nets[encoder_key]
 
-        pc_scale = self.statistics['pc_scale']  ## TODO: in_hand?
+        if 'in_hand_pc_scale' in self.statistics:
+            pc_scale = self.statistics['in_hand_pc_scale'] 
+        else:
+            pc_scale = self.statistics['pc_scale']
 
         feat_dict = encoder_handle(in_hand_pc, target_norm=pc_scale)
 
