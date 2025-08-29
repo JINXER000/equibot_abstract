@@ -105,12 +105,12 @@ class EquiSkillAgent(object):
         # n_data_dict['skill_name'] = ascii_tensor_to_str(batch['skill_name'])
 
         n_data_dict['pc'] = batch['pc'].repeat(1, self.obs_horizon, 1, 1)
-        equiv_feat, inv_feat, center, scale = self.actor.proc_pc(n_data_dict['pc'])
+        obs_vec, inv_feat, center, scale = self.actor.proc_pc(n_data_dict['pc'])
 
-        if 'in_hand_pc' in batch:
+        if self.actor.fuse_inv_feat:
             inv_feat = self.actor.revise_inv_feat_using_mask(batch['in_hand_pc'], batch['in_hand_mask'], inv_feat)
 
-        obs_vec = self.actor.combine_inv_feat_and_so3_feat(inv_feat, equiv_feat)
+            obs_vec = self.actor.combine_inv_feat_and_so3_feat(inv_feat, obs_vec)
 
         eefpos = n_data_dict['eefpos']
         gripper = n_data_dict['gripper']

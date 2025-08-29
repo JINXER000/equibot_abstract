@@ -98,13 +98,20 @@ class EquiSkillPolicy(nn.Module):
             down_dims=cfg.model.down_dims,
             )
 
-        ## input and output are equiv feat, cond is inv feat
-        net_dict['feat_fusion'] = FeatFusion(
-            input_dim=self.obs_dim* self.obs_horizon,
-            output_dim=self.obs_dim* self.obs_horizon,
-            scalar_cond_dim= self.obs_dim* self.obs_horizon,
-        )
-        
+        ## check if fuse_inv_feat in cfg
+        try:
+            self.fuse_inv_feat = cfg.model.fuse_inv_feat
+        except:
+            self.fuse_inv_feat = False
+
+        if self.fuse_inv_feat:
+            ## input and output are equiv feat, cond is inv feat
+            net_dict['feat_fusion'] = FeatFusion(
+                input_dim=self.obs_dim* self.obs_horizon,
+                output_dim=self.obs_dim* self.obs_horizon,
+                scalar_cond_dim= self.obs_dim* self.obs_horizon,
+            )
+            
         self.nets = nn.ModuleDict(net_dict)
 
         self.ema = EMAModel(model=copy.deepcopy(self.nets), power=0.75)
@@ -333,12 +340,12 @@ class EquiSkillPolicy(nn.Module):
 
         ema_nets = self.ema.averaged_model
 
-        equiv_feat, inv_feat, center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
+        obs_vec, inv_feat, center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
 
-        if 'in_hand_pc' in agent_obs:
+        if self.fuse_inv_feat:
             inv_feat = self.revise_inv_feat_using_mask(agent_obs['in_hand_pc'], agent_obs['in_hand_mask'], inv_feat, ema_nets = ema_nets)
 
-        obs_vec = self.combine_inv_feat_and_so3_feat(inv_feat, equiv_feat)
+            obs_vec = self.combine_inv_feat_and_so3_feat(inv_feat, obs_vec)
 
         ##### start denoising #####
         initial_noise_scale = 1

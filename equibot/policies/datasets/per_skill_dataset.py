@@ -599,16 +599,16 @@ class PerSkillDataset(Dataset):
         #########
         
         if cfg.choose_id_method == "rdp":   
-            choiced_ids = choose_ids_rdp(rbt_states[f'{rbt_name}_eef_pos'], traj_len, idx_list, essential_ids = essential_ids)
+            chosen_ids = choose_ids_rdp(rbt_states[f'{rbt_name}_eef_pos'], traj_len, idx_list, essential_ids = essential_ids)
         else:
-            choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
-        eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
-        eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
+            chosen_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+        eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][chosen_ids]
+        eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][chosen_ids]
         eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
         normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
         normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
 
-        gripper_list = rbt_action[rbt_name][choiced_ids]
+        gripper_list = rbt_action[rbt_name][chosen_ids]
         
         ## input
         data_slice['pc'] = obj_pc_tensor
@@ -674,8 +674,8 @@ class PerSkillDataset(Dataset):
             in_hand_pcd_stats = to_torch_stats(in_hand_pc_arr.reshape(-1, in_hand_pc_arr.shape[-1]))
             normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
 
-            in_hand_pc_scale = self.get_pc_scale(in_hand_pc_arr, eef_stats["max"].max())
-            self.statistics['in_hand_pc_scale'] = in_hand_pc_scale
+            # in_hand_pc_scale = self.get_pc_scale(in_hand_pc_arr, eef_stats["max"].max())
+            # self.statistics['in_hand_pc_scale'] = in_hand_pc_scale
 
         return normalizer
 

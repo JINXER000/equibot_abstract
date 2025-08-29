@@ -182,18 +182,18 @@ class RobosuiteDataset(Dataset):
                                 ## delay from action to state
                                 delay = 7
                                 delayed_essential_ids = [(eid + delay) for eid in essential_ids]
-                                choiced_ids = np.random.choice(delayed_essential_ids, size=grasp_nums, replace=True).astype(np.int32) # unsorted
-                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
-                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
+                                chosen_ids = np.random.choice(delayed_essential_ids, size=grasp_nums, replace=True).astype(np.int32) # unsorted
+                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][chosen_ids]
+                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][chosen_ids]
                                 eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
                                 normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*grasp_nums))
                                 normalized_eef_pos_tensor = torch.tensor(np.array(normalized_eef_pos_list)).to(torch.float32).reshape(grasp_nums, 4, 4) 
 
-                                # gripper_list = gripper_actions[rbt_name][choiced_ids]
+                                # gripper_list = gripper_actions[rbt_name][chosen_ids]
                                 # # open_num = len(gripper_list[gripper_list < 0])
                                 # # print(f"open num is: {open_num}, skill name: {skill_name}, obj name: {obj_name}")
 
-                                gripper_list = rbt_states[f'{rbt_name}_gripper_qpos'][choiced_ids,0]
+                                gripper_list = rbt_states[f'{rbt_name}_gripper_qpos'][chosen_ids,0]
                                 
                                 data_slice[f'{skill_name}:pc'] = obj_pc_tensor
                                 data_slice[f'{skill_name}:eefpos'] = normalized_eef_pos_tensor
@@ -319,14 +319,14 @@ class RobosuiteDataset(Dataset):
 
                                 # delay = 7
                                 # delayed_essential_ids = [(eid + delay) for eid in essential_ids]
-                                choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
-                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
-                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
+                                chosen_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][chosen_ids]
+                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][chosen_ids]
                                 eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
                                 normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
                                 normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
 
-                                gripper_list = gripper_actions[rbt_name][choiced_ids]
+                                gripper_list = gripper_actions[rbt_name][chosen_ids]
                                 # open_num = len(gripper_list[gripper_list < 0])
                                 # print(f"open num is: {open_num}, skill name: {skill_name}, obj name: {obj_name}")
                                 
@@ -442,14 +442,14 @@ class RobosuiteDataset(Dataset):
 
                                 idx_list = skill_info['extended_ids'][()]
 
-                                choiced_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
-                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][choiced_ids]
-                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][choiced_ids]
+                                chosen_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+                                eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][chosen_ids]
+                                eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][chosen_ids]
                                 eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
                                 normalized_eef_pos_list = list(map(centralize_grasp, eef_pos_list, [obj_offset]*traj_len))
                                 normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4) 
 
-                                gripper_list = rbt_action[rbt_name][choiced_ids]
+                                gripper_list = rbt_action[rbt_name][chosen_ids]
                                 
                                 data_slice[f'{skill_name}:pc'] = obj_pc_tensor
                                 data_slice[f'{skill_name}:eefpos'] = normalized_eef_pos_tensor
