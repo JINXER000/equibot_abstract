@@ -257,8 +257,8 @@ class EquiSkillPolicy(nn.Module):
         scale = feat_dict["scale"].reshape(batch_size, self.obs_horizon, 1, 1)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
         equiv_feat = feat_dict["so3"]  
         equiv_feat = equiv_feat.reshape(batch_size, -1, 3)
-        inv_feat = feat_dict["inv"].reshape(batch_size, -1)
-        return equiv_feat, inv_feat,  center, scale
+        # inv_feat = feat_dict["inv"].reshape(batch_size, -1)
+        return equiv_feat,  center, scale
 
     def get_in_hand_inv_feat(self, in_hand_pc,  ema_nets = None):
         pc_key = 'in_hand_pc'
@@ -283,16 +283,16 @@ class EquiSkillPolicy(nn.Module):
 
         return inv_feat
     
-    def revise_inv_feat_using_mask(self, in_hand_pc, in_hand_mask, inv_feat, ema_nets = None):
-        in_hand_pc_data = in_hand_pc.repeat(1, self.obs_horizon, 1, 1)
-        in_hand_inv_feat = self.get_in_hand_inv_feat(in_hand_pc_data, ema_nets = ema_nets)
+    # def revise_inv_feat_using_mask(self, in_hand_pc, in_hand_mask, inv_feat, ema_nets = None):
+    #     in_hand_pc_data = in_hand_pc.repeat(1, self.obs_horizon, 1, 1)
+    #     in_hand_inv_feat = self.get_in_hand_inv_feat(in_hand_pc_data, ema_nets = ema_nets)
 
-        B, L = in_hand_inv_feat.shape
+    #     B, L = in_hand_inv_feat.shape
 
-        in_hand_mask = in_hand_mask.to(device=in_hand_pc.device, dtype=torch.bool)
-        expanded_mask = in_hand_mask.view(B, 1).expand(B, L)
-        inv_feat = torch.where(expanded_mask, in_hand_inv_feat , inv_feat)
-        return inv_feat
+    #     in_hand_mask = in_hand_mask.to(device=in_hand_pc.device, dtype=torch.bool)
+    #     expanded_mask = in_hand_mask.view(B, 1).expand(B, L)
+    #     inv_feat = torch.where(expanded_mask, in_hand_inv_feat , inv_feat)
+    #     return inv_feat
     
     def combine_inv_feat_and_so3_feat(self, inv_feat, so3_feat):
         # batch_size = so3_feat.shape[0]
@@ -339,11 +339,12 @@ class EquiSkillPolicy(nn.Module):
 
         ema_nets = self.ema.averaged_model
 
-        obs_vec, inv_feat, center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
+        obs_vec,  center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
 
         if self.fuse_inv_feat:
-            inv_feat = self.revise_inv_feat_using_mask(agent_obs['in_hand_pc'], agent_obs['in_hand_mask'], inv_feat, ema_nets = ema_nets)
-
+            # inv_feat = self.revise_inv_feat_using_mask(agent_obs['in_hand_pc'], agent_obs['in_hand_mask'], inv_feat, ema_nets = ema_nets)
+            in_hand_pc_data = agent_obs['in_hand_pc'].repeat(1, self.obs_horizon, 1, 1)
+            inv_feat = self.get_in_hand_inv_feat(in_hand_pc_data, ema_nets = ema_nets)
             obs_vec = self.combine_inv_feat_and_so3_feat(inv_feat, obs_vec)
 
         ##### start denoising #####
@@ -465,7 +466,7 @@ class EquiSkillPolicy(nn.Module):
         agent_obs = {'pc': pc_data}
         if 'in_hand_pc' in batch:
             agent_obs['in_hand_pc'] = batch['in_hand_pc']
-            agent_obs['in_hand_mask'] = batch['in_hand_mask']
+            # agent_obs['in_hand_mask'] = batch['in_hand_mask']
         action_dict, eval_metrics = self.pred_unimaual_traj(skill_name_batch, agent_obs, gt_batch=batch, task_name_batch=task_name_batch)
         action_dict_all.update(action_dict)
         eval_metrics_all.update(eval_metrics)
