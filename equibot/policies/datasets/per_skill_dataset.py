@@ -560,6 +560,19 @@ class PerSkillDataset(Dataset):
         obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, num_points, 3)
         return obj_pc_tensor, obj_offset
 
+    def decide_in_hand_obj(self,  cur_sg, obj_pcds, obj_name):
+        for edge in cur_sg.edges:
+            entities = set(edge)
+            if obj_name in entities:
+                other_entity = list(entities - {obj_name})
+                if other_entity[0] in obj_pcds.keys():
+                    in_hand_obj_name = other_entity[0]
+                    break
+        else:
+            in_hand_obj_name = None
+
+        return in_hand_obj_name
+
     def get_dataslice_unimanual(self, skill_info, skill_name, skill_key, cfg, traj_len,  obj_pcds, rbt_states, rbt_action,  task_name):
         data_slice = {}
 
@@ -580,22 +593,15 @@ class PerSkillDataset(Dataset):
         obj_pc_tensor, obj_offset = self.get_obj_pc_tensor(obj_pcds[obj_name], obj_pc_idx, cfg.num_points)
 
         ####### if more than one objs, get another obj pc
-        for edge in cur_sg.edges:
-            entities = set(edge)
-            if obj_name in entities:
-                other_entity = list(entities - {obj_name})
-                if other_entity[0] in obj_pcds.keys():
-                    in_hand_obj_name = other_entity[0]
-                    break
-        else:
-            in_hand_obj_name = None
+
+        in_hand_obj_name = self.decide_in_hand_obj(cur_sg, obj_pcds, obj_name)
 
         if in_hand_obj_name is not None:
             in_hand_obj_pc_tensor, _ = self.get_obj_pc_tensor(obj_pcds[in_hand_obj_name], obj_pc_idx, cfg.num_points)
-            in_hand_mask_tensor = torch.tensor([True], dtype=torch.bool)
+            # in_hand_mask_tensor = torch.tensor([True], dtype=torch.bool)
         else:            
-            in_hand_obj_pc_tensor = torch.zeros(1, cfg.num_points, 3, dtype=torch.float32)
-            in_hand_mask_tensor = torch.tensor([False], dtype=torch.bool)
+            in_hand_obj_pc_tensor = obj_pc_tensor.clone()
+            # in_hand_mask_tensor = torch.tensor([False], dtype=torch.bool)
         #########
         
         if cfg.choose_id_method == "rdp":   
@@ -613,7 +619,7 @@ class PerSkillDataset(Dataset):
         ## input
         data_slice['pc'] = obj_pc_tensor
         data_slice['in_hand_pc'] = in_hand_obj_pc_tensor
-        data_slice['in_hand_mask'] = in_hand_mask_tensor
+        # data_slice['in_hand_mask'] = in_hand_mask_tensor
         # data_slice['skill_name_emb'] = skill_name_to_emb[skill_name]
         ## output
         data_slice['eefpos'] = normalized_eef_pos_tensor

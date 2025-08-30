@@ -68,8 +68,8 @@ data:
     eef_representation: "3vec"
 
     normalization_method: "all"
-    # choose_id_method: "normal"
-    choose_id_method: "rdp"
+    choose_id_method: "normal"
+    # choose_id_method: "rdp"
 
     original_gripper_pcd: [[0.10, 0.01, 0], 
                             [0.03, -0.04, 0],
