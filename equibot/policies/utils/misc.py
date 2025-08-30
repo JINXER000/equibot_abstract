@@ -816,6 +816,7 @@ def choose_ids(traj_len, idx_list, essential_ids = None, skill_key = None):
 def choose_ids_rdp(traj, target_len, idx_list, essential_ids=None):
     """
     Use Ramer-Douglas-Peucker algorithm to perform trajectory simplification on traj[idx_list].
+    First keeps first and last elements of idx_list and essential_ids, then applies RDP to remaining IDs.
     
     Args:
         traj: Full trajectory data
@@ -832,140 +833,108 @@ def choose_ids_rdp(traj, target_len, idx_list, essential_ids=None):
     if len(idx_list) <= target_len:
         return idx_list
     
-    # Extract the trajectory segment we want to simplify
-    traj_segment = traj[idx_list]
-    
     # Ensure essential_ids has at least 2 elements for first and last
     if essential_ids is None or len(essential_ids) < 2:
         essential_ids = [idx_list[0], idx_list[-1]]
     
-    # Always include first and last essential_ids
+    # Always include first and last elements from both lists
+    first_idx = idx_list[0]
+    last_idx = idx_list[-1]
     first_essential = essential_ids[0]
     last_essential = essential_ids[-1]
     
-    # Create mask for points that must be preserved (first and last essential)
-    preserve_mask = np.zeros(len(idx_list), dtype=bool)
-    first_idx = np.where(idx_list == first_essential)[0]
-    last_idx = np.where(idx_list == last_essential)[0]
+    # Collect IDs that must be preserved
+    preserved_ids = set([first_idx, last_idx, first_essential, last_essential])
     
-    if len(first_idx) > 0:
-        preserve_mask[first_idx[0]] = True
-    if len(last_idx) > 0:
-        preserve_mask[last_idx[0]] = True
+    # Get remaining IDs for RDP processing
+    remaining_ids = [idx for idx in idx_list if idx not in preserved_ids]
     
-    # Apply RDP algorithm with adaptive epsilon to get close to target_len
-    epsilon_range = np.logspace(-3, 2, 50)
+    if len(remaining_ids) == 0:
+        # If no remaining IDs, just return the preserved ones
+        selected_ids = sorted(list(preserved_ids))
+        # Ensure we don't exceed target_len
+        if len(selected_ids) > target_len:
+            selected_ids = selected_ids[:target_len]
+        return selected_ids
+    
+    # Calculate how many additional points we can select from RDP
+    remaining_slots = target_len - len(preserved_ids)
+    
+    if remaining_slots <= 0:
+        # If we can't add more points, return preserved ones (truncated if needed)
+        selected_ids = sorted(list(preserved_ids))[:target_len]
+        return selected_ids
+    
+    # Apply RDP to the remaining trajectory segment
+    traj_remaining = traj[remaining_ids]
+    
+    # Use adaptive epsilon to get close to remaining_slots
+    epsilon_range = np.logspace(-3, 0, 10)
     
     best_indices = None
     best_count = 0
     
     for epsilon in epsilon_range:
         # Apply RDP
-        simplified_points = rdp(traj_segment, epsilon=epsilon)
+        simplified_points = rdp(traj_remaining, epsilon=epsilon)
         
         # Find which original indices correspond to the simplified points
         simplified_indices = []
         for point in simplified_points:
             # Find the closest original point
-            distances = [np.linalg.norm(point - orig_point) for orig_point in traj_segment]
+            distances = [np.linalg.norm(point - orig_point) for orig_point in traj_remaining]
             closest_idx = np.argmin(distances)
             simplified_indices.append(closest_idx)
         
-        # Ensure first and last essential points are included
-        simplified_indices = list(set(simplified_indices))  # Remove duplicates
-        if len(first_idx) > 0 and first_idx[0] not in simplified_indices:
-            simplified_indices.append(first_idx[0])
-        if len(last_idx) > 0 and last_idx[-1] not in simplified_indices:
-            simplified_indices.append(last_idx[-1])
-        
-        simplified_indices = sorted(simplified_indices)
+        # Remove duplicates and sort
+        simplified_indices = sorted(list(set(simplified_indices)))
         count = len(simplified_indices)
         
-        # Update best if we get closer to target_len
-        if count <= target_len and count > best_count:
+        # Update best if we get closer to remaining_slots
+        if count <= remaining_slots and count > best_count:
             best_indices = simplified_indices
             best_count = count
         
-        # If we get exactly target_len, we're done
-        if count == target_len:
+        # If we get exactly remaining_slots, we're done. typically, we epsilon is 0.01 for 4 and 0.002 for 5
+        if count == remaining_slots:
+            # print(f"current epsilon: {epsilon}, count: {count}")
             break
     
-    # If RDP didn't work well or we still don't have target_len, start with essential points
-    if best_indices is None or best_count < target_len:
-        # Start with first and last essential points
-        best_indices = []
-        if len(first_idx) > 0:
-            best_indices.append(first_idx[0])
-        if len(last_idx) > 0 and last_idx[-1] not in best_indices:
-            best_indices.append(last_idx[-1])
-        best_count = len(best_indices)
-        
-        # If we still have fewer points than target_len, sample from essential_ids
-        if best_count < target_len:
-            remaining_slots = target_len - best_count
-            
-            # Get available essential_ids that are not already selected
-            available_essential = []
-            for essential_id in essential_ids:
-                essential_idx = np.where(idx_list == essential_id)[0]
-                if len(essential_idx) > 0 and essential_idx[0] not in best_indices:
-                    available_essential.append(essential_idx[0])
-            
-            # Sample from available essential_ids
-            if len(available_essential) >= remaining_slots:
-                additional_indices = np.random.choice(available_essential, size=remaining_slots, replace=False)
-                best_indices.extend(additional_indices.tolist())
-            else:
-                # If not enough essential_ids, add all available and fill remaining with random
-                best_indices.extend(available_essential)
-                remaining_after_essential = target_len - len(best_indices)
-                
-                if remaining_after_essential > 0:
-                    # Sample from remaining idx_list
-                    available_others = [i for i in range(len(idx_list)) if i not in best_indices]
-                    if len(available_others) >= remaining_after_essential:
-                        additional_indices = np.random.choice(available_others, size=remaining_after_essential, replace=False)
-                        best_indices.extend(additional_indices.tolist())
-    
-    # If we have more points than target_len, truncate to target_len
-    if len(best_indices) > target_len:
-        # Ensure first and last essential are kept
-        if len(first_idx) > 0 and len(last_idx) > 0:
-            # Keep first and last essential, then sample the rest
-            best_indices = [first_idx[0], last_idx[-1]]
-            remaining_slots = target_len - 2
-            if remaining_slots > 0:
-                other_indices = [i for i in best_indices if i not in [first_idx[0], last_idx[-1]]]
-                if len(other_indices) >= remaining_slots:
-                    additional = np.random.choice(other_indices, size=remaining_slots, replace=False)
-                    best_indices.extend(additional.tolist())
-                else:
-                    best_indices.extend(other_indices)
+    # If RDP didn't work well, sample randomly from remaining_ids
+    if best_indices is None or best_count < remaining_slots:
+        if len(remaining_ids) >= remaining_slots:
+            best_indices = np.random.choice(remaining_ids, size=remaining_slots, replace=False).tolist()
         else:
-            best_indices = best_indices[:target_len]
+            best_indices = remaining_ids
     
-    # Convert back to original indices
-    selected_indices = [idx_list[i] for i in sorted(best_indices)]
+    # # Convert back to original indices and combine with preserved ones
+    # # best_indices contains indices relative to traj_remaining, so we need to map them to actual remaining_ids
+    # if best_indices and isinstance(best_indices[0], int) and best_indices[0] < len(remaining_ids):
+    #     # best_indices contains positions in traj_remaining, map to actual remaining_ids
+    #     selected_remaining = [remaining_ids[i] for i in best_indices]
+    # else:
+    #     # best_indices already contains actual IDs (from random sampling fallback)
+    #     selected_remaining = best_indices if best_indices else []
+    
+    selected_ids = sorted(list(preserved_ids) + list(best_indices))
     
     # Ensure we have exactly target_len points
-    if len(selected_indices) < target_len:
-        # Add more points if needed
-        remaining = target_len - len(selected_indices)
-        available = [idx for idx in idx_list if idx not in selected_indices]
-        if len(available) >= remaining:
-            additional = np.random.choice(available, size=remaining, replace=False)
-            selected_indices.extend(additional.tolist())
+    if len(selected_ids) > target_len:
+        # Keep first and last, then sample the rest
+        final_ids = [selected_ids[0], selected_ids[-1]]
+        remaining_slots = target_len - 2
+        if remaining_slots > 0:
+            middle_ids = [idx for idx in selected_ids[1:-1] if idx not in [selected_ids[0], selected_ids[-1]]]
+            if len(middle_ids) >= remaining_slots:
+                additional = np.random.choice(middle_ids, size=remaining_slots, replace=False)
+                final_ids.extend(additional.tolist())
+            else:
+                final_ids.extend(middle_ids)
+        selected_ids = final_ids
     
-    # Sort the indices to maintain trajectory order
-    selected_indices = sorted(selected_indices)
+    assert len(selected_ids) == target_len, f"Selected indices length {len(selected_ids)} does not match target_len {target_len}"
     
-    # Ensure we don't exceed target_len
-    if len(selected_indices) > target_len:
-        selected_indices = selected_indices[:target_len]
-    
-    assert len(selected_indices) == target_len, f"Selected indices length {len(selected_indices)} does not match target_len {target_len}"
-    
-    return selected_indices
+    return selected_ids
 
 
 def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction', max_resolution=400, dpi=100):

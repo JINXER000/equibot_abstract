@@ -30,6 +30,8 @@ model:
   separate_encoder: False
   separate_policy: False
 
+  fuse_inv_feat: True
+
   encoder:
     backbone_type: VDGCNN
     backbone_args: 
@@ -65,7 +67,8 @@ data:
     eef_representation: "3vec"
 
     normalization_method: "all"
-    choose_id_method: "normal"
+    # choose_id_method: "normal"
+    choose_id_method: "rdp"
 
     original_gripper_pcd: [[0.10, 0.01, 0], 
                             [0.03, -0.04, 0],
