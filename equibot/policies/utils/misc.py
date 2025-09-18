@@ -749,6 +749,14 @@ def get_rbt_states(obs_grp, robot_names):
 
     return data_dict
 
+def get_obj_visibility(obs_grp, obj_names):
+    obj_visibility = {}
+    for obj_name in obj_names:
+        pc_key = f'{obj_name}_visible'
+        if pc_key in obs_grp:
+            obj_visibility[obj_name] = obs_grp[pc_key][()]
+    return obj_visibility
+
 def get_rbt_actions(action_arr, robot_names):
     data_dict = {}
     for robot_name in robot_names:

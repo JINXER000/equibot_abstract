@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp, choose_ids, choose_ids_rdp, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg, convert_trans_to_vec, convert_trans_to_4pts, str_to_ascii_tensor, combined_pc_instances_and_offset
+from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp, choose_ids, choose_ids_rdp, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg, convert_trans_to_vec, convert_trans_to_4pts, str_to_ascii_tensor, combined_pc_instances_and_offset, get_obj_visibility
 
 from equibot.policies.utils.lan_utils import get_embs_without_saving, save_embs
 
@@ -56,19 +56,23 @@ def collate_fn(batch):
     # Use default collate for the rest
     return torch.utils.data.dataloader.default_collate(batch)
 
-def get_libero_task_emb(task_suite_name, cache_dir):
+def get_libero_task_emb(task_suite_names, cache_dir):
     from libero.libero import benchmark
     
     benchmark_dict = benchmark.get_benchmark_dict()
-    task_suite = benchmark_dict[task_suite_name]()
 
-    descriptions = []
-    for task_id in range(task_suite.n_tasks):
-        task = task_suite.get_task(task_id)
-        descriptions.append(task.name)
+    task_emb_dict = {}
+    for task_suite_name in task_suite_names:
+        task_suite = benchmark_dict[task_suite_name]()
 
-    task_emb_dict = get_embs_without_saving(descriptions, cache_dir=cache_dir)
-    # task_emb_dict = {descriptions[i]: task_embs_list[i] for i in range(len(descriptions))}
+        descriptions = []
+        for task_id in range(task_suite.n_tasks):
+            task = task_suite.get_task(task_id)
+            descriptions.append(task.name)
+
+        per_suite_task_emb_dict = get_embs_without_saving(descriptions, cache_dir=cache_dir)
+        task_emb_dict.update(per_suite_task_emb_dict)
+
     return task_emb_dict
 
 def find_correct_task_name(task_name_list, hdf5_name):
@@ -164,12 +168,10 @@ class PerSkillDataset(Dataset):
         traj_len = cfg.pred_horizon
         traj_nums = 32
         primitive_kws = cfg.uniskills
-        task_suite_name = cfg.task_suite_name
+        task_suite_names = cfg.task_suite_names
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
-        task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
-        # interested_objs = cfg.conditioned_objects
-        # skill_names = cfg.skill_names
-        # skill_condition_objs = {skill_names[i]: interested_objs[i] for i in range(len(skill_names))}
+        task_emb_dict = get_libero_task_emb(task_suite_names, cache_dir)
+
         self.involved_skill_names = set()
         skill_embs_all_tasks = {}
         matched_action_sgs = {}
@@ -187,26 +189,28 @@ class PerSkillDataset(Dataset):
                 robot_names = sg_params['robots']  
 
                 ## get task name and emb for libero
-                # task_name = sg_params['task_name']
                 task_name = find_correct_task_name(task_emb_dict.keys(), file_name)
-                # task_desc = task_name.replace('_', ' ')
-                # task_emb = task_emb_dict[task_name]
 
                 demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]   
-                inds = np.argsort([int(elem[5:]) for elem in demos])
-                demos = [demos[i] for i in inds]
+                inds = [int(demo.split('_')[-1]) for demo in demos]
+                inds = sorted(inds)
+                demos = [f'demo_{ind}' for ind in inds]
 
                 n_use = cfg.n_use if 'n_use' in cfg else len(demos)
+                if n_use > len(demos):
+                    print(f'n_use {n_use} > len(demos) {len(demos)}')
+                    n_use = len(demos)
                 demos = demos[:n_use]
-
+                inds = inds[:n_use]
                 ## record the skillwise_sgs
-                matched_action_sgs[task_name] = f[f'data/demo_0/matched_actions_json'][()]
+                matched_action_sgs[task_name] = f[f'data/demo_{inds[0]}/matched_actions_json'][()]
 
                 ## interested objs and skills for each task
                 interested_objs = set()
                 interested_skills = set()
                 ## get all skill names
-                for demo_id in range(len(demos)):
+                for i in range(n_use):
+                    demo_id = inds[i]
                     sg_info = f[f'data/demo_{demo_id}/sg_info']
 
                     for skill_name in sg_info.keys():
@@ -224,7 +228,8 @@ class PerSkillDataset(Dataset):
                 skill_embs_all_tasks.update(skill_name_to_emb)
                 self.involved_skill_names = self.involved_skill_names.union(interested_skills)
 
-                for demo_id in range(len(demos)):
+                for i in range(n_use):
+                    demo_id = inds[i]
                     sg_info = f[f'data/demo_{demo_id}/sg_info']
                 
                     obs_grp = f[f'data/demo_{demo_id}/obs']
@@ -232,7 +237,7 @@ class PerSkillDataset(Dataset):
                     obj_pcds = get_pc_instances(obs_grp, interested_objs)
                     action_arr = f[f'data/demo_{demo_id}/actions'][()]
                     rbt_action = get_rbt_actions(action_arr, robot_names)
-
+                    obj_visibility = get_obj_visibility(obs_grp, interested_objs)
 
                     for _ in range(traj_nums):
                 
@@ -249,7 +254,7 @@ class PerSkillDataset(Dataset):
                             if skill_name not in interested_skills:
                                 continue
 
-                            data_slice  = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, rbt_states, rbt_action, task_name)
+                            data_slice  = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, obj_visibility, rbt_states, rbt_action, task_name)
 
                             data_list.append(data_slice)
         
@@ -275,9 +280,8 @@ class PerSkillDataset(Dataset):
         traj_len = cfg.pred_horizon
         traj_nums = 32
         primitive_kws = cfg.uniskills
-        # task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
-        # task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
+
         self.involved_skill_names = set()
         skill_embs_all_tasks = {}
         matched_action_sgs = {}
@@ -303,19 +307,25 @@ class PerSkillDataset(Dataset):
 
 
                 demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]   
-                inds = np.argsort([int(elem[5:]) for elem in demos])
-                demos = [demos[i] for i in inds]
+                inds = [int(demo.split('_')[-1]) for demo in demos]
+                inds = sorted(inds)
+                demos = [f'demo_{ind}' for ind in inds]
 
                 n_use = cfg.n_use if 'n_use' in cfg else len(demos)
+                if n_use > len(demos):
+                    print(f'n_use {n_use} > len(demos) {len(demos)}')
+                    n_use = len(demos)
                 demos = demos[:n_use]
+                inds = inds[:n_use]
 
                 ## record the skillwise_sgs
-                matched_action_sgs[task_name] = f[f'data/demo_0/matched_actions_json'][()]
+                matched_action_sgs[task_name] = f[f'data/demo_{inds[0]}/matched_actions_json'][()]
 
                 ## interested objs and skills for each task
                 interested_objs = set()
                 interested_skills = set()
-                for demo_id in range(len(demos)):
+                for i in range(n_use):
+                    demo_id = inds[i]
                     sg_info = f[f'data/demo_{demo_id}/sg_info']
                     for skill_name in sg_info.keys():
                         if 'bi' in skill_name:
@@ -331,7 +341,8 @@ class PerSkillDataset(Dataset):
                 skill_embs_all_tasks.update(skill_name_to_emb)
                 self.involved_skill_names = self.involved_skill_names.union(interested_skills)
 
-                for demo_id in range(len(demos)):
+                for i in range(n_use):
+                    demo_id = inds[i]
                     sg_info = f[f'data/demo_{demo_id}/sg_info']
                 
                     obs_grp = f[f'data/demo_{demo_id}/obs']
@@ -400,9 +411,9 @@ class PerSkillDataset(Dataset):
         traj_len = cfg.pred_horizon
         traj_nums = 32
         primitive_kws = cfg.uniskills
-        # task_suite_name = cfg.task_suite_name
+
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
-        # task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
+
         self.involved_skill_names = set()
         skill_embs_all_tasks = {}
         matched_action_sgs = {}
@@ -426,20 +437,25 @@ class PerSkillDataset(Dataset):
                 # task_name = find_correct_task_name(task_emb_dict.keys(), file_name)
 
                 ## record the skillwise_sgs
-                matched_action_sgs[task_name] = f[f'data/demo_0/matched_actions_json'][()]
+                matched_action_sgs[task_name] = f[f'data/demo_{inds[0]}/matched_actions_json'][()]
 
                 demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]   
-                inds = np.argsort([int(elem[5:]) for elem in demos])
-                demos = [demos[i] for i in inds]
+                inds = [int(demo.split('_')[-1]) for demo in demos]
+                inds = sorted(inds)
+                demos = [f'demo_{ind}' for ind in inds]
 
                 n_use = cfg.n_use if 'n_use' in cfg else len(demos)
+                if n_use > len(demos):
+                    print(f'n_use {n_use} > len(demos) {len(demos)}')
+                    n_use = len(demos)
                 demos = demos[:n_use]
-
+                inds = inds[:n_use]
                 ## interested objs and skills for each task
                 interested_objs = set()
                 interested_skills = set()
                 ## get all skill names
-                for demo_id in range(len(demos)):
+                for i in range(n_use):
+                    demo_id = inds[i]
                     sg_info = f[f'data/demo_{demo_id}/sg_info']
                     for skill_name in sg_info.keys():
                         for skill_key in primitive_kws:
@@ -456,7 +472,8 @@ class PerSkillDataset(Dataset):
                 skill_embs_all_tasks.update(skill_name_to_emb)
                 self.involved_skill_names = self.involved_skill_names.union(interested_skills)
 
-                for demo_id in range(len(demos)):
+                for i in range(n_use):
+                    demo_id = inds[i]
                     sg_info = f[f'data/demo_{demo_id}/sg_info']
                 
                     obs_grp = f[f'data/demo_{demo_id}/obs']
@@ -553,8 +570,21 @@ class PerSkillDataset(Dataset):
 
         return data_slice
 
-    def get_obj_pc_tensor(self, obj_pc_list, observation_idx, num_points):
-        obj_pc = obj_pc_list[observation_idx][:, :3]
+    def get_obj_pc_tensor(self, obj_pc_list, obj_pc_idx, num_points):
+        # obj_pc = obj_pc_list[pre_sg_idx][:, :3]
+        # # unique points by XYZ; warn if too few unique
+        obj_pc_unique = np.unique(obj_pc_list[obj_pc_idx][:, :3], axis=0)
+        if obj_pc_unique.shape[0] < 10:
+            print(f"No valid object visibility found for {obj_pc_idx}")
+        # nxt_cnt = 0
+        # while obj_pc_unique.shape[0] < 10 and nxt_cnt < 8:
+        #     obj_pc_idx = pre_sg_idx + nxt_cnt
+        #     obj_pc = obj_pc_list[obj_pc_idx][:, :3]
+        #     obj_pc_unique = np.unique(obj_pc, axis=0)
+        #     nxt_cnt += 1
+
+        # obj_pc = obj_pc_unique
+        obj_pc = obj_pc_list[obj_pc_idx][:, :3]
         
         obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
         obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, num_points, 3)
@@ -573,15 +603,15 @@ class PerSkillDataset(Dataset):
 
         return in_hand_obj_name
 
-    def get_dataslice_unimanual(self, skill_info, skill_name, skill_key, cfg, traj_len,  obj_pcds, rbt_states, rbt_action,  task_name):
+    def get_dataslice_unimanual(self, skill_info, skill_name, skill_key, cfg, traj_len,  obj_pcds, obj_visibility, rbt_states, rbt_action,  task_name):
         data_slice = {}
 
-        # pre_sg = get_sg(skill_info, 'pre_sg')
+        pre_sg = get_sg(skill_info, 'pre_sg')
         cur_sg = get_sg(skill_info, 'cur_sg')
         # eff_sg = get_sg(skill_info, 'eff_sg')
         ## diverse pc input
-        pre_start_idx = 0
-        obj_pc_idx = np.random.randint(pre_start_idx, pre_start_idx + 5)
+
+        # obj_pc_idx = np.random.randint(pre_start_idx, pre_start_idx + 5)
 
         # obj_name = skill_condition_objs[skill_name]
         related_objs = skill_info['related_objs'][()]
@@ -590,18 +620,36 @@ class PerSkillDataset(Dataset):
         idx_list = skill_info['extended_ids'][()]
         essential_ids = skill_info['essential_ids'][()]
 
+        pre_start_idx = pre_sg.graph['idx_list'][0]
+
+
+        for obj_pc_idx in range(pre_start_idx, pre_start_idx + 8):
+            if obj_visibility[obj_name][obj_pc_idx] == 1:
+                break
+        else:
+            raise ValueError(f"No valid object visibility found for {obj_name} in {task_name}")
+
         obj_pc_tensor, obj_offset = self.get_obj_pc_tensor(obj_pcds[obj_name], obj_pc_idx, cfg.num_points)
 
         ####### if more than one objs, get another obj pc
 
-        in_hand_obj_name = self.decide_in_hand_obj(cur_sg, obj_pcds, obj_name)
+        # in_hand_obj_name = self.decide_in_hand_obj(cur_sg, obj_pcds, obj_name)
+        if len(related_objs) > 1:
+            in_hand_obj_name = related_objs[1].decode('utf-8')
+        else:
+            in_hand_obj_name = None
 
         if in_hand_obj_name is not None:
+            for obj_pc_idx in range(pre_start_idx, pre_start_idx + 8):
+                if obj_visibility[in_hand_obj_name][obj_pc_idx] == 1:
+                    break
+            else:
+                raise ValueError(f"No valid object visibility found for {in_hand_obj_name} in {task_name}")
+        
             in_hand_obj_pc_tensor, _ = self.get_obj_pc_tensor(obj_pcds[in_hand_obj_name], obj_pc_idx, cfg.num_points)
-            # in_hand_mask_tensor = torch.tensor([True], dtype=torch.bool)
         else:            
             in_hand_obj_pc_tensor = obj_pc_tensor.clone()
-            # in_hand_mask_tensor = torch.tensor([False], dtype=torch.bool)
+        ## note that in_hand pc has been centered
         #########
         
         if cfg.choose_id_method == "rdp":   

@@ -434,6 +434,14 @@ class RobosuiteDataset(Dataset):
 
                                 essential_ids = skill_info['essential_ids'][()]
                                 obj_pc = obj_pc_list[pre_sg.graph['idx_list'][0]][:, :3]
+                                # unique points by XYZ; warn if too few unique
+                                try:
+                                    obj_pc_unique = np.unique(obj_pc, axis=0)
+                                except Exception:
+                                    obj_pc_unique = obj_pc
+                                if obj_pc_unique.shape[0] < 20:
+                                    print(f"[DMGDataset] Warning: only {obj_pc_unique.shape[0]} unique points at idx={pre_sg.graph['idx_list'][0]} (skill={skill_name})")
+                                obj_pc = obj_pc_unique
                                
                                 obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=True)
                                 obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, cfg.num_points, 3)

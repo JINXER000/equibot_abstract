@@ -61,7 +61,7 @@ data:
     rot_aug: True
 
     embedding_cache_dir: "./data/bert"
-    task_suite_name: "libero_spatial"
+    task_suite_names: ["libero_spatial", "libero_object"]
     n_use: 50
 
     # eef_representation: "4pts"
@@ -86,6 +86,9 @@ shape_meta: &shape_meta
       shape: [3, 128, 128]
       type: rgb
     robot0_eye_in_hand_image:
+      shape: [3, 128, 128]
+      type: rgb
+    birdview_image:
       shape: [3, 128, 128]
       type: rgb
     robot0_eef_pos:
