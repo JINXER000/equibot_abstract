@@ -39,7 +39,6 @@ model:
       # preload_path: "pretrained/mugs.pt"
       preload_path: "pretrained/kit4cates.pt"
 
-
   language_encoder_cfg:
     network_name: MLPEncoder
     input_size: 768
