@@ -59,10 +59,10 @@ data:
   dataset:
     num_points: 128
     n_use: 100
-    # uniskills: []
+    # primitive_kws: []
     # skill_names: ['bimanual_0']
     # conditioned_objects: ['None']
-    uniskills: ['grasp']
+    primitive_kws: ['grasp']
     skill_names: ['robot0_grasp_tripod_obj', 'robot1_grasp_needle_obj', 'bimanual_0']
     conditioned_objects: ['tripod_obj', 'needle_obj', 'None']
     dataset_type: 'robosuite_integrate_hdf5_traj'

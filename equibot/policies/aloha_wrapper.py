@@ -261,12 +261,12 @@ def get_cfgs(task_name):
         config_name = "transfer_tape"
         overrides = ["prefix=aloha_transfer_tape", "mode=inference", "use_wandb=false"]
         ply_paths = {'pc': os.path.join(dataset_path, 'tape.ply')}
-    elif task_name == 'aloha_transfer_cup':
+    elif task_name == 'aloha_handoff_cup':
         ## aloha transfer tape
         import pathlib
         dataset_path = pathlib.Path(__file__).parent.parent.parent.absolute()
-        config_name = "transfer_cup"
-        overrides = ["prefix=aloha_transfer_cup", "mode=inference", "use_wandb=false"]
+        config_name = "handoff_cup"
+        overrides = ["prefix=aloha_handoff_cup", "mode=inference", "use_wandb=false"]
         ply_paths = {'pc': os.path.join(dataset_path, 'singleview_cup.ply')}
     elif 'screwdriver' in task_name:
         ## screwdriver and its variants

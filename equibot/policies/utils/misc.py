@@ -1009,13 +1009,13 @@ def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction',
         # Draw coordinate axes
         ax.quiver(origin[0], origin[1], origin[2], 
                  x_axis[0], x_axis[1], x_axis[2], 
-                 color='red', alpha=0.8, length=0.5)
+                 color='red', alpha=0.8, length=0.5+t*0.05)
         ax.quiver(origin[0], origin[1], origin[2], 
                  y_axis[0], y_axis[1], y_axis[2], 
-                 color='green', alpha=0.8, length=0.5)
+                 color='green', alpha=0.8, length=0.5+t*0.05)
         ax.quiver(origin[0], origin[1], origin[2], 
                  z_axis[0], z_axis[1], z_axis[2], 
-                 color='blue', alpha=0.8, length=0.5)
+                 color='blue', alpha=0.8, length=0.5+t*0.05)
         
         # Add colored sphere for each pose based on gripper state
         if gripper_values is not None:

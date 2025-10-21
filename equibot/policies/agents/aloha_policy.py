@@ -9,7 +9,7 @@ from equibot.policies.vision.sim3_encoder import SIM3Vec4Latent
 from equibot.policies.utils.diffusion.ema_model import EMAModel
 from equibot.policies.utils.equivariant_diffusion.conditional_unet1d import VecConditionalUnet1D
 
-from equibot.policies.utils.misc import convert_trans_to_vec, convert_vec_to_trans, ActionSlice
+from equibot.policies.utils.misc import convert_trans_to_vec, convert_vec_to_trans, ActionSlice, render_trajectory
 
 # from torch.utils.tensorboard import SummaryWriter
 
@@ -312,6 +312,12 @@ class ALOHAPolicy(nn.Module):
             # # center = torch.mean(center, dim=1).reshape(-1, 3).detach().cpu().numpy()
             # trans_batch[:, :, :3, 3] = trans_batch[:, :, :3, 3] - pc_raw_mean
             # trans_batch[:, :, 4:7, 3] = trans_batch[:, :, 4:7, 3] - pc_raw_mean
+
+            # Render grasp poses during evaluation
+            pc_data = obs["pc"][0, 0].detach().cpu().numpy()  # Shape: (N, 3)
+            trajectory = trans_batch[0]  # Shape: (T, 4, 4)
+            rendered_img = render_trajectory(pc_data, trajectory, title='aloha-grasp-prediction')
+            metrics['grasp_image'] = rendered_img
 
             # output final grasps and jposes
             action_dict['grasp'] = trans_batch.reshape(-1, 4)

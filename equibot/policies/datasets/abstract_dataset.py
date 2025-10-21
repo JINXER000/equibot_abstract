@@ -507,8 +507,12 @@ class ALOHAPoseDataset(Dataset):
 
                             eff_grasp_poses = f[obj_name]['release_poses'][()]
 
-                        assert len(joint_data) > len(pred_grasp_poses)
+                        # assert len(joint_data) >= len(pred_grasp_poses)
                         
+                    if self.has_eff and eff_grasp_poses.size ==0:
+                        print(f'Warning: no eff grasp poses for {hdf5_path}')
+                        continue
+
                     for i in range(len(joint_data)):
                         assert len(joint_data[i]) == 2*self.dof
                         left_jpose = joint_data[i][:self.dof]
@@ -569,7 +573,7 @@ def main(cfg):
     from examples.pybullet.aloha_real.scripts.aloha_tamp_constants import qpos_to_eepose
 
 
-    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/transfer_cup/')
+    cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/handoff_cup/')
     test_dataset = ALOHAPoseDataset(cfg.data.dataset, "test", est_effpose = False, force_process=True)
     num_workers = 0
     batch_size = 1

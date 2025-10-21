@@ -81,6 +81,20 @@ def find_correct_task_name(task_name_list, hdf5_name):
             return task_name
     return None
 
+def get_random_in_hand_pc(ref_pc):
+    ## input is (1, num_points, 3)
+    with torch.no_grad():
+        mean = ref_pc.mean(dim=1, keepdim=True)  # (1, 1, 3)
+        std = ref_pc.std(dim=1, keepdim=True, unbiased=False)  # (1, 1, 3)
+        eps = 1e-6
+        std = torch.clamp(std, min=eps)
+        rand_norm = torch.randn_like(ref_pc)
+        in_hand_obj_pc_tensor = rand_norm * std + mean
+    return in_hand_obj_pc_tensor
+
+
+        
+
 class PerSkillDataset(Dataset):
     def __init__(self, cfg, mode, transform=None, pre_transform=None, pre_filter=None,  **kwargs):
         super().__init__()
@@ -155,7 +169,7 @@ class PerSkillDataset(Dataset):
             self.normalizer = self.get_normalizer_and_statistics(self.data)
         elif self.dataset_type == 'per_skill_biop_jpose':
             self.data = self.process_per_biop(cfg, **kwargs)
-            self.normalizer = self.get_normalizer_and_statistics(self.data, mode = 'bimanual')
+            self.normalizer = self.get_normalizer_and_statistics(self.data, mode = 'jpose')
         else:
             raise NotImplementedError(f'Dataset type {self.dataset_type} not implemented!')
         
@@ -167,7 +181,7 @@ class PerSkillDataset(Dataset):
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
         traj_nums = 128
-        primitive_kws = cfg.uniskills
+        primitive_kws = cfg.primitive_kws
         task_suite_names = cfg.task_suite_names
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
         task_emb_dict = get_libero_task_emb(task_suite_names, cache_dir)
@@ -279,7 +293,7 @@ class PerSkillDataset(Dataset):
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
         traj_nums = 32
-        primitive_kws = cfg.uniskills
+        primitive_kws = cfg.primitive_kws
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
 
         self.involved_skill_names = set()
@@ -362,7 +376,6 @@ class PerSkillDataset(Dataset):
                                 continue
                                    
                             data_list.append(data_slice)
-        
 
 
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
@@ -387,9 +400,9 @@ class PerSkillDataset(Dataset):
         pre_left_eef_pos = rbt_states['robot0_eef_pos'][pre_idx_list]
         pre_right_eef_pos = rbt_states['robot1_eef_pos'][pre_idx_list]
         pre_eef_dist = np.linalg.norm(pre_left_eef_pos - pre_right_eef_pos, axis=1)
-        ## gfilter idx by eef dist
-        max_eef_dist = 0.29 # 0.5 #0.29
-        min_eef_dist = 0.25 # 0.3 #0.25
+        ## gfilter idx by eef dist. assmbly; threading
+        max_eef_dist =  0.5 #0.29
+        min_eef_dist =  0.3 #0.25       
         distclose_ids = list(set(np.where(pre_eef_dist < max_eef_dist)[0]).intersection(np.where(pre_eef_dist >min_eef_dist)[0]))
         if len(distclose_ids) == 0:
             print(f'No valid bimanual jpose found for {skill_name} in {task_name}')
@@ -409,8 +422,8 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums =168
-        primitive_kws = cfg.uniskills
+        traj_nums = 64
+        primitive_kws = cfg.primitive_kws
 
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
 
@@ -436,13 +449,11 @@ class PerSkillDataset(Dataset):
                 involved_tasks.add(task_name)
                 # task_name = find_correct_task_name(task_emb_dict.keys(), file_name)
 
-                ## record the skillwise_sgs
-                matched_action_sgs[task_name] = f[f'data/demo_{inds[0]}/matched_actions_json'][()]
-
                 demos = [ent for ent in list(f['data'].keys()) if ent.startswith('demo_')]   
                 inds = [int(demo.split('_')[-1]) for demo in demos]
                 inds = sorted(inds)
                 demos = [f'demo_{ind}' for ind in inds]
+
 
                 n_use = cfg.n_use if 'n_use' in cfg else len(demos)
                 if n_use > len(demos):
@@ -450,6 +461,10 @@ class PerSkillDataset(Dataset):
                     n_use = len(demos)
                 demos = demos[:n_use]
                 inds = inds[:n_use]
+
+                ## record the skillwise_sgs
+                matched_action_sgs[task_name] = f[f'data/demo_{inds[0]}/matched_actions_json'][()]
+
                 ## interested objs and skills for each task
                 interested_objs = set()
                 interested_skills = set()
@@ -481,17 +496,19 @@ class PerSkillDataset(Dataset):
                     obj_pcds = get_pc_instances(obs_grp, interested_objs)
                     action_arr = f[f'data/demo_{demo_id}/actions'][()]
                     rbt_action = get_rbt_actions(action_arr, robot_names)
+                    obj_visibility = get_obj_visibility(obs_grp, interested_objs)
 
                     for _ in range(traj_nums):
                         # Create separate data slices for each skill name
-                        for skill_name, skill_info in sg_info.items():
+                        for skill_name in interested_skills:
+                            skill_info = sg_info[skill_name]
 
                             ## only use bimanual skills
                             if 'bimanual' in skill_name:
-                                # data_slice = self.get_dataslice_bimanual_kp(skill_info, skill_name, obj_pcds, traj_len, rbt_states, rbt_action, task_name)
-                                continue
+                                data_slice = self.get_dataslice_bimanual_kp(skill_info, skill_name, obj_pcds, traj_len, rbt_states, rbt_action, task_name)
+                                # continue
                             elif skill_name in interested_skills:
-                                data_slice = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, rbt_states, rbt_action, task_name)
+                                data_slice = self.get_dataslice_unimanual(skill_info, skill_name, skill_key, cfg, traj_len, obj_pcds, obj_visibility, rbt_states, rbt_action, task_name)
                             else:
                                 continue
                                    
@@ -514,15 +531,40 @@ class PerSkillDataset(Dataset):
         self.statistics['matched_action_sgs'] = matched_action_sgs
         return data_list
 
+
+    def get_bimanual_pcs(self, pre_sg, related_pc_dict, observation_idx, num_points):
+        ## only implemented for assembly case, 3 objs
+        if len(related_pc_dict) != 3:
+            raise ValueError(f"Only implemented for assembly case, 3 objs")
+
+        bimanual_pcs = {'left_in_hand_pc': None, 'right_in_hand_pc': None, 'pc': None}
+        ## TODO: input the default graph in yaml
+        nbr_side_mapping = {'robot0': 'left_in_hand_pc', 'robot1': 'right_in_hand_pc', 'table': 'pc'}
+        table_pc_offset = None
+        for obj_name, obj_pc_list in related_pc_dict.items():
+            obj_pc = obj_pc_list[observation_idx]
+            obj_nbr = list(pre_sg.neighbors(obj_name))[0]
+            pc_kw = nbr_side_mapping[obj_nbr]
+
+            obj_pc_tensor, obj_offset = self.get_obj_pc_tensor(obj_pc, num_points)
+            bimanual_pcs[pc_kw] = obj_pc_tensor
+            if obj_nbr == 'table':
+                table_pc_offset = obj_offset
+
+        return bimanual_pcs, table_pc_offset
+
     ## note that this dual_manual dataset cannot merge with unimanual dataset
     def get_dataslice_bimanual_kp(self, skill_info, skill_name,  obj_pcds, traj_len, rbt_states, rbt_action, task_name):
         data_slice = {}
 
         pre_sg = get_sg(skill_info, 'pre_sg')
-        pre_idx_list = pre_sg.graph['idx_list']
+
+        ## NOTE: we cannot use pre_sg.graph['idx_list'] because it has been modified in unimanual skill detection. 
+        extended_ids = skill_info['extended_ids'][()]
 
         ## obtain the pc at the first several frame (10 frames)
-        observation_idx = 10
+        # observation_idx = 10
+        observation_idx = extended_ids[0]
         ## normalize method 1
         # init_pc = []
         # for obj_name in obj_pcds.keys():
@@ -530,16 +572,18 @@ class PerSkillDataset(Dataset):
         # init_pc = np.concatenate(init_pc, axis=0)
         # init_pc_n, init_pc_offset = centralize_downsample(init_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
 
-        ## normalize method 2
-        part_pc_shape= (self.pc_shape[0]//2, 3)
-        related_pc_dict = {obj_name: obj_pcds[obj_name][observation_idx]for obj_name in obj_pcds.keys()}
-        init_pc_n, init_pc_offset = combined_pc_instances_and_offset(related_pc_dict, part_pc_shape, self.is_obj_centric, self.is_add_bottom, self.downsample_method)
+        # ## normalize method 2
+        # part_pc_shape= (self.pc_shape[0]//2, 3)
+        # related_pc_dict = {obj_name: obj_pcds[obj_name][observation_idx]for obj_name in obj_pcds.keys()}
+        # init_pc_n, init_pc_offset = combined_pc_instances_and_offset(related_pc_dict, part_pc_shape, self.is_obj_centric, self.is_add_bottom, self.downsample_method)
+
+        bimanual_pcs, init_pc_offset = self.get_bimanual_pcs(pre_sg, obj_pcds, observation_idx, self.pc_shape[0])
+        for pc_kw, pc_tensor in bimanual_pcs.items():
+            data_slice[pc_kw] = pc_tensor.to(torch.float32).reshape(1, -1, 3)
   
 
         ## random select one eefpose at the switch point
-        ## TODO: we can also learn the bimanual traj
-
-        random_switch_id = np.random.choice(pre_idx_list)
+        random_switch_id = np.random.choice(extended_ids)
         switch_xyz_left = rbt_states['robot0_eef_pos'][random_switch_id]
         switch_xyz_right = rbt_states['robot1_eef_pos'][random_switch_id]
         switch_quat_left = rbt_states['robot0_eef_quat'][random_switch_id]
@@ -564,18 +608,18 @@ class PerSkillDataset(Dataset):
 
         data_slice['eefpos'] = torch.tensor(pre_dual_eef).to(torch.float32)
         data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32)
-        data_slice['pc'] = torch.tensor(init_pc_n).to(torch.float32).reshape(1, -1, 3)
+        # data_slice['pc'] = torch.tensor(init_pc_n).to(torch.float32).reshape(1, -1, 3)
         data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
         data_slice['task_name'] = str_to_ascii_tensor(task_name)
 
         return data_slice
 
-    def get_obj_pc_tensor(self, obj_pc_list, obj_pc_idx, num_points):
+    def get_obj_pc_tensor(self, obj_pc, num_points):
         # obj_pc = obj_pc_list[pre_sg_idx][:, :3]
         # # unique points by XYZ; warn if too few unique
-        obj_pc_unique = np.unique(obj_pc_list[obj_pc_idx][:, :3], axis=0)
+        obj_pc_unique = np.unique(obj_pc[:, :3], axis=0)
         if obj_pc_unique.shape[0] < 10:
-            print(f"No valid object visibility found for {obj_pc_idx}")
+            print(f"No valid object visibility found")
         # nxt_cnt = 0
         # while obj_pc_unique.shape[0] < 10 and nxt_cnt < 8:
         #     obj_pc_idx = pre_sg_idx + nxt_cnt
@@ -584,24 +628,24 @@ class PerSkillDataset(Dataset):
         #     nxt_cnt += 1
 
         # obj_pc = obj_pc_unique
-        obj_pc = obj_pc_list[obj_pc_idx][:, :3]
+        obj_pc = obj_pc[:, :3]
         
         obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
         obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, num_points, 3)
         return obj_pc_tensor, obj_offset
 
-    def decide_in_hand_obj(self,  cur_sg, obj_pcds, obj_name):
-        for edge in cur_sg.edges:
-            entities = set(edge)
-            if obj_name in entities:
-                other_entity = list(entities - {obj_name})
-                if other_entity[0] in obj_pcds.keys():
-                    in_hand_obj_name = other_entity[0]
-                    break
-        else:
-            in_hand_obj_name = None
+    # def decide_in_hand_obj(self,  cur_sg, obj_pcds, obj_name):
+    #     for edge in cur_sg.edges:
+    #         entities = set(edge)
+    #         if obj_name in entities:
+    #             other_entity = list(entities - {obj_name})
+    #             if other_entity[0] in obj_pcds.keys():
+    #                 in_hand_obj_name = other_entity[0]
+    #                 break
+    #     else:
+    #         in_hand_obj_name = None
 
-        return in_hand_obj_name
+    #     return in_hand_obj_name
 
     def get_dataslice_unimanual(self, skill_info, skill_name, skill_key, cfg, traj_len,  obj_pcds, obj_visibility, rbt_states, rbt_action,  task_name):
         data_slice = {}
@@ -629,7 +673,7 @@ class PerSkillDataset(Dataset):
         else:
             raise ValueError(f"No valid object visibility found for {obj_name} in {task_name}")
 
-        obj_pc_tensor, obj_offset = self.get_obj_pc_tensor(obj_pcds[obj_name], obj_pc_idx, cfg.num_points)
+        obj_pc_tensor, obj_offset = self.get_obj_pc_tensor(obj_pcds[obj_name][obj_pc_idx], cfg.num_points)
 
         ####### if more than one objs, get another obj pc
 
@@ -646,9 +690,13 @@ class PerSkillDataset(Dataset):
             else:
                 raise ValueError(f"No valid object visibility found for {in_hand_obj_name} in {task_name}")
         
-            in_hand_obj_pc_tensor, _ = self.get_obj_pc_tensor(obj_pcds[in_hand_obj_name], obj_pc_idx, cfg.num_points)
+            in_hand_obj_pc_tensor, _ = self.get_obj_pc_tensor(obj_pcds[in_hand_obj_name][obj_pc_idx], cfg.num_points)
         else:            
-            in_hand_obj_pc_tensor = obj_pc_tensor.clone()
+            # Create a randomized point cloud with the same per-dimension mean and variance as obj_pc_tensor
+            in_hand_obj_pc_tensor = get_random_in_hand_pc(obj_pc_tensor)
+
+
+
         ## note that in_hand pc has been centered
         #########
         
@@ -682,20 +730,14 @@ class PerSkillDataset(Dataset):
 
 
 
-    def get_normalizer_and_statistics(self, data_list, mode = 'unimanual'):
+    def get_normalizer_and_statistics(self, data_list, mode = 'traj'):
         normalizer = LinearNormalizer()
 
-        if mode == 'bimanual':
+        if mode == 'jpose':
             jpose_arr = np.concatenate([data['jpose'].reshape(2, -1) for data in data_list], axis=0)
             jpose_stats = to_torch_stats(jpose_arr.reshape(-1, jpose_arr.shape[-1]))
             normalizer['jpose'] = get_torch_range_symmetric_normalizer_from_stat(jpose_stats)
             return normalizer
-
-        ### normalize pc
-        pc_arr = np.concatenate([data['pc'] for data in data_list], axis=0)
-        pcd_stats = to_torch_stats(pc_arr.reshape(-1, pc_arr.shape[-1]))
-
-        normalizer['pc'] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
 
 
         ## normalize eefpos. first convert to 3vec or 4pts
@@ -719,17 +761,29 @@ class PerSkillDataset(Dataset):
         gripper_stats = to_torch_stats(gripper_arr.reshape(-1, gripper_arr.shape[-1]))
         normalizer['gripper'] = get_torch_range_symmetric_normalizer_from_stat(gripper_stats)
 
-        ## set_scale. 
-        pc_scale = self.get_pc_scale(pc_arr, eef_stats["max"].max())
-        self.statistics['pc_scale'] = pc_scale
 
-        if 'in_hand_pc' in data_list[0]:
-            in_hand_pc_arr = np.concatenate([data['in_hand_pc'] for data in data_list], axis=0)
-            in_hand_pcd_stats = to_torch_stats(in_hand_pc_arr.reshape(-1, in_hand_pc_arr.shape[-1]))
-            normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
+        ### normalize pc
+        for kw in data_list[0].keys():
+            if 'pc' in kw:
+                pc_arr = np.concatenate([data[kw] for data in data_list], axis=0)
+                pcd_stats = to_torch_stats(pc_arr.reshape(-1, pc_arr.shape[-1]))
 
-            # in_hand_pc_scale = self.get_pc_scale(in_hand_pc_arr, eef_stats["max"].max())
-            # self.statistics['in_hand_pc_scale'] = in_hand_pc_scale
+                normalizer[kw] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
+
+                scale_kw = kw.replace('pc', 'pc_scale')
+                self.statistics[scale_kw] = self.get_pc_scale(pc_arr, eef_stats["max"].max())
+
+        # ## set_scale. 
+        # pc_scale = self.get_pc_scale(pc_arr, eef_stats["max"].max())
+        # self.statistics['pc_scale'] = pc_scale
+
+        # if 'in_hand_pc' in data_list[0]:
+        #     in_hand_pc_arr = np.concatenate([data['in_hand_pc'] for data in data_list], axis=0)
+        #     in_hand_pcd_stats = to_torch_stats(in_hand_pc_arr.reshape(-1, in_hand_pc_arr.shape[-1]))
+        #     normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
+
+        #     # in_hand_pc_scale = self.get_pc_scale(in_hand_pc_arr, eef_stats["max"].max())
+        #     # self.statistics['in_hand_pc_scale'] = in_hand_pc_scale
 
         return normalizer
 

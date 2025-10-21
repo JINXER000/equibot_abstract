@@ -87,7 +87,7 @@ class RobosuiteDataset(Dataset):
         raw_files = self.raw_file_names
         grasp_nums = cfg.pred_horizon
         repeat_nums = 16
-        interested_skills = cfg.uniskills
+        interested_skills = cfg.primitive_kws
 
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -216,7 +216,7 @@ class RobosuiteDataset(Dataset):
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
         traj_nums = 64
-        interested_skills = cfg.uniskills
+        interested_skills = cfg.primitive_kws
 
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -350,7 +350,7 @@ class RobosuiteDataset(Dataset):
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
         traj_nums = 32
-        primitive_kws = cfg.uniskills
+        primitive_kws = cfg.primitive_kws
         interested_objs = cfg.conditioned_objects
         skill_names = cfg.skill_names
         skill_condition_objs = {skill_names[i]: interested_objs[i] for i in range(len(skill_names))}

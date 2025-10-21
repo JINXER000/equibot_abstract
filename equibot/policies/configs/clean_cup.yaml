@@ -5,7 +5,7 @@ use_wandb: true
 
 training:
   # ckpt: "logs/train/mj_peg_hole/ckpt01600.pth" 
-  eval_interval: 1
+  eval_interval: 50
   num_epochs: 2000
 
 env:
@@ -46,7 +46,7 @@ data:
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
-    dataset_type: 'dual_hdf5_mini'
+    dataset_type: 'hdf5_mini'
     # dataset_type: 'mj_insertion_pred'
     has_eff_list: [false, false]
     is_obj_centric: True

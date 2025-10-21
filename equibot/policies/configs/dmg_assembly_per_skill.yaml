@@ -11,7 +11,7 @@ training:
   num_epochs: 2000
 
 env:
-  env_class: 'libero_per_skill'
+  env_class: 'dmg_assembly_per_skill'
   num_eef: 2
   dof: 7
   max_episode_length: 50
@@ -23,6 +23,21 @@ model:
   down_dims: [128, 256, 512]
 ### use VDGCNN and transfer from pretrained model
   hidden_dim: 256
+  encoder:
+    backbone_type: VDGCNN
+    backbone_args: 
+      num_layers: 7
+      preload_path: "pretrained/chairs.pt"
+
+# ## use vec_pointnet and train from scratch
+#   hidden_dim: 32
+#   encoder:
+#     backbone_type: vn_pointnet
+#     backbone_args: 
+#       num_layers: 7
+#       preload_path: "pretrained/mugs.pt"
+
+
 
   obs_horizon: 1
   pred_horizon: 8
@@ -32,27 +47,33 @@ model:
 
   fuse_inv_feat: True
 
-  encoder:
-    backbone_type: VDGCNN
-    backbone_args: 
-      num_layers: 7
-      # preload_path: "pretrained/mugs.pt"
-      preload_path: "pretrained/kit4cates.pt"
+
+
 
   language_encoder_cfg:
     network_name: MLPEncoder
     input_size: 768
     hidden_size: 256
+    # hidden_size: 32
     num_layers: 1
 
+
+  unconditional_mlp_cfg:
+    # Architecture type: "small", "deeper", "wider", or "custom"
+    architecture: "custom"
+    # For custom architecture, specify individual layer sizes
+    custom_encoder_layers: [256, 256]  # Only used if architecture is "custom"
+    custom_time_mixer_layers: [512, 256]  # Only used if architecture is "custom"
+    custom_decoder_layers: [256, 256]  # Only used if architecture is "custom"
+    
+    
 data:
   dataset:
-
     num_points: 128
-    primitive_kws: ['grasp', 'place']
-    # skill_names: ['robot0_grasp_akita_black_bowl_1', 'robot0_place_akita_black_bowl_1_plate_1']
-    # conditioned_objects: ['akita_black_bowl_1', 'plate_1']
-    dataset_type: 'per_skill_libero_traj'
+    # primitive_kws: ['bi']
+    primitive_kws: ['grasp']
+    dataset_type: 'per_skill_dmg_traj'
+    # dataset_type: 'per_skill_biop_jpose'
 
     is_obj_centric: True
     is_add_bottom: True 
@@ -60,34 +81,36 @@ data:
     rot_aug: True
 
     embedding_cache_dir: "./data/bert"
-    task_suite_names: ["libero_spatial", "libero_object"]
-    n_use: 50
+    task_suite_name: "dmg_assembly"
+    n_use: 100
 
     # eef_representation: "4pts"
     eef_representation: "3vec"
 
     normalization_method: "all"
     choose_id_method: "normal"
-    # choose_id_method: "rdp"
 
     original_gripper_pcd: [[0.10, 0.01, 0], 
                             [0.03, -0.04, 0],
                             [0.02, 0.05, 0],
                             [0,0,0]]
-    # original_gripper_pcd: [[ 5.34803828e-04, -2.65891908e-03, -6.49434167e-02],
-    #                         [ 3.48747446e-04,  4.88699045e-02, -2.86211470e-02],
-    #                         [ 8.89648299e-05, -5.10463244e-02, -2.45325339e-02],
-    #                         [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00]]
+
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
   obs:
     agentview_image:
       shape: [3, 128, 128]
       type: rgb
+    # sideview_image:
+    #   shape: [3, 128, 128]
+    #   type: rgb
+    # birdview_image:
+    #   shape: [3, 128, 128]
+    #   type: rgb
     robot0_eye_in_hand_image:
       shape: [3, 128, 128]
       type: rgb
-    birdview_image:
+    robot1_eye_in_hand_image:
       shape: [3, 128, 128]
       type: rgb
     robot0_eef_pos:
@@ -96,6 +119,12 @@ shape_meta: &shape_meta
     robot0_eef_quat:
       shape: [4]
     robot0_gripper_qpos:
+      shape: [2]
+    robot1_eef_pos:
+      shape: [3]
+    robot1_eef_quat:
+      shape: [4]
+    robot1_gripper_qpos:
       shape: [2]
 
   action: 

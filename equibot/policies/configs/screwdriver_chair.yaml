@@ -5,7 +5,7 @@ use_wandb: true
 
 training:
   # ckpt: "logs/train/screwdriver_fresh/ckpt_best.pth"
-  eval_interval: 1
+  eval_interval: 50
 
 env:
   env_class: 'screwdriver'
@@ -46,7 +46,7 @@ data:
 
     tamp_type: 'precondition'
     dataset_type: 'hdf5_mini'
-    has_eff: false
+    has_eff_list: [false, false]
 
     is_obj_centric: true
 

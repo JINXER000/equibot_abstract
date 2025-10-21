@@ -19,7 +19,10 @@ from equibot.envs.subproc_vec_env import SubprocVecEnv
 from equibot.policies.agents.aloha_agent import ALOHAAgent  
 from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
 
-from .test_abstract import run_eval
+try:    
+    from .test_abstract import run_eval
+except ImportError:
+    from test_abstract import run_eval
 # from torch.utils.tensorboard import SummaryWriter
 # import pathlib
 # EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()

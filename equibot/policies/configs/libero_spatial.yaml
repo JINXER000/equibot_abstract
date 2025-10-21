@@ -46,7 +46,7 @@ model:
 data:
   dataset:
     num_points: 128
-    uniskills: ['grasp', 'place']
+    primitive_kws: ['grasp', 'place']
     skill_names: ['robot0_grasp_akita_black_bowl_1', 'robot0_place_akita_black_bowl_1_plate_1']
     conditioned_objects: ['akita_black_bowl_1', 'plate_1']
     dataset_type: 'robosuite_integrate_hdf5_traj'

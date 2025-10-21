@@ -260,9 +260,9 @@ class EquiSkillPolicy(nn.Module):
         # inv_feat = feat_dict["inv"].reshape(batch_size, -1)
         return equiv_feat,  center, scale
 
-    def get_in_hand_inv_feat(self, in_hand_pc,  ema_nets = None):
-        pc_key = 'in_hand_pc'
-        in_hand_pc = self.normalize_from_key(pc_key, in_hand_pc)
+    def get_in_hand_inv_feat(self, in_hand_pc, in_hand_kw,  ema_nets = None):
+        # pc_key = 'in_hand_pc'
+        in_hand_pc = self.normalize_from_key(in_hand_kw, in_hand_pc)
         batch_size = in_hand_pc.shape[0]
 
         ## in training
@@ -272,8 +272,8 @@ class EquiSkillPolicy(nn.Module):
         else:
             encoder_handle = ema_nets[encoder_key]
 
-        if 'in_hand_pc_scale' in self.statistics:
-            pc_scale = self.statistics['in_hand_pc_scale'] 
+        if f'{in_hand_kw}_scale' in self.statistics:
+            pc_scale = self.statistics[f'{in_hand_kw}_scale'] 
         else:
             pc_scale = self.statistics['pc_scale']
 
@@ -331,8 +331,22 @@ class EquiSkillPolicy(nn.Module):
             task_emb_batch = self.get_encoding_from_name_batch(task_name_batch, batch_size, self.statistics['task_emb_dict'])
             skill_emb_batch = torch.cat([skill_emb_batch, task_emb_batch], dim=-1)
         return skill_emb_batch
+    
+    def fuse_in_hand_pc(self, agent_obs, obs_vec, should_fuse, ema_nets = None):
+        if not should_fuse:
+            return obs_vec
+        
+        in_hand_kws = [kw for kw in agent_obs.keys() if 'in_hand_pc' in kw]
+        in_hand_kws = sorted(in_hand_kws)
+        ## debug: use explicit list
+        # in_hand_kws = ['left_in_hand_pc', 'right_in_hand_pc']
+        for in_hand_kw in in_hand_kws:
+            in_hand_pc_data = agent_obs[in_hand_kw].repeat(1, self.obs_horizon, 1, 1)
+            inv_feat = self.get_in_hand_inv_feat(in_hand_pc_data, in_hand_kw,  ema_nets = ema_nets)
+            obs_vec = self.combine_inv_feat_and_so3_feat(inv_feat, obs_vec)
 
-    ## TODO: design a fusion layer for inv_feat and so3 feat
+        return obs_vec
+
     def pred_unimaual_traj(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
         pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
@@ -341,11 +355,7 @@ class EquiSkillPolicy(nn.Module):
 
         obs_vec,  center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)
 
-        if self.fuse_inv_feat:
-            # inv_feat = self.revise_inv_feat_using_mask(agent_obs['in_hand_pc'], agent_obs['in_hand_mask'], inv_feat, ema_nets = ema_nets)
-            in_hand_pc_data = agent_obs['in_hand_pc'].repeat(1, self.obs_horizon, 1, 1)
-            inv_feat = self.get_in_hand_inv_feat(in_hand_pc_data, ema_nets = ema_nets)
-            obs_vec = self.combine_inv_feat_and_so3_feat(inv_feat, obs_vec)
+        obs_vec = self.fuse_in_hand_pc(agent_obs, obs_vec, self.fuse_inv_feat, ema_nets = ema_nets)
 
         ##### start denoising #####
         initial_noise_scale = 1
@@ -462,10 +472,15 @@ class EquiSkillPolicy(nn.Module):
 
         skill_name_batch, task_name_batch = self.skill_task_ascii_to_str(batch)
 
-        pc_data = batch['pc']
-        agent_obs = {'pc': pc_data}
-        if 'in_hand_pc' in batch:
-            agent_obs['in_hand_pc'] = batch['in_hand_pc']
+        agent_obs = {}
+        for key, value in batch.items():
+            if 'pc' in key:
+                agent_obs[key] = value
+
+        # pc_data = batch['pc']
+        # agent_obs = {'pc': pc_data}
+        # if 'in_hand_pc' in batch:
+        #     agent_obs['in_hand_pc'] = batch['in_hand_pc']
             # agent_obs['in_hand_mask'] = batch['in_hand_mask']
         action_dict, eval_metrics = self.pred_unimaual_traj(skill_name_batch, agent_obs, gt_batch=batch, task_name_batch=task_name_batch)
         action_dict_all.update(action_dict)

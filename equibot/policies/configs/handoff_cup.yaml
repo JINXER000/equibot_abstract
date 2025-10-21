@@ -4,7 +4,7 @@ defaults:
 use_wandb: true
 
 training:
-  # ckpt: "logs/train/aloha_transfer_cup/ckpt01600single.pth"
+  # ckpt: "logs/train/aloha_handoff_cup/ckpt01600single.pth"
   eval_interval: 1
 
 env:
