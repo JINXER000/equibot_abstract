@@ -27,8 +27,8 @@ class UnconditionalMLP(nn.Module):
         if cfg is not None and hasattr(cfg, 'architecture'):
             self._build_architecture_from_config(input_dim, dsed, cfg)
         else:
-            # Default to wider architecture if no config provided
-            self._build_wider_architecture(input_dim, dsed)
+            # self._build_wider_architecture(input_dim, dsed)
+            self._build_small_architecture(input_dim, dsed)
 
     def _build_architecture_from_config(self, input_dim, dsed, cfg):
         """Build network architecture based on configuration"""
