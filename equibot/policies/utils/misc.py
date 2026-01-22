@@ -27,10 +27,31 @@ def rotate_around_z(
     center=np.array([0.0, 0.0, 0.0]),
     scale=np.array([1.0, 1.0, 1.0]),
 ):
-    # Check if the input points have the correct shape (N, 3)
-    assert (len(points.shape) == 1 and len(points) == 3) or points.shape[-1] == 3
+    """
+    Rotate points around Z axis.
+    
+    Args:
+        points: Point cloud of shape (N, D) or (D,) where D >= 3.
+            First 3 channels are xyz (rotated).
+            Additional channels (e.g., rgb at channels 3:6) are preserved unchanged.
+        angle_rad: Rotation angle in radians.
+        center: Center of rotation (3,).
+        scale: Scale factor (3,).
+        
+    Returns:
+        Rotated points with same shape as input.
+    """
+    # Check if the input points have the correct shape (at least 3 channels for xyz)
+    assert (len(points.shape) == 1 and len(points) >= 3) or points.shape[-1] ==6
     p_shape = points.shape
-    points = points.reshape(-1, 3) - center[None]
+    num_channels = p_shape[-1]
+    
+    # Reshape to (N, D)
+    points_flat = points.reshape(-1, num_channels)
+    
+    # Extract xyz and extra channels (e.g., rgb)
+    xyz = points_flat[:, :3] - center[None]
+    extra_channels = points_flat[:, 3:] if num_channels > 3 else None
 
     # Create the rotation matrix
     cos_theta = np.cos(angle_rad)
@@ -39,8 +60,15 @@ def rotate_around_z(
         [[cos_theta, -sin_theta, 0], [sin_theta, cos_theta, 0], [0, 0, 1]]
     )
 
-    # Apply the rotation to all points using matrix multiplication
-    rotated_points = np.dot(points, rotation_matrix.T) * scale[None] + center[None]
+    # Apply the rotation to xyz only
+    rotated_xyz = np.dot(xyz, rotation_matrix.T) * scale[None] + center[None]
+    
+    # Combine rotated xyz with preserved extra channels (rgb)
+    if extra_channels is not None:
+        rotated_points = np.concatenate([rotated_xyz, extra_channels], axis=-1)
+    else:
+        rotated_points = rotated_xyz
+    
     rotated_points = rotated_points.reshape(p_shape)
 
     return rotated_points
@@ -151,6 +179,9 @@ def get_agent(agent_name):
     elif agent_name == "per_skill":
         from equibot.policies.agents.per_skill_agent import EquiSkillAgent
         return EquiSkillAgent
+    elif agent_name == "sdp":
+        from equibot.policies.agents.sdp_agent import SDPAgent
+        return SDPAgent
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
 
@@ -620,7 +651,23 @@ def compose_transformation(xyz, quat):
 import open3d as o3d
 
 def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
-    if pc.shape[0] < num_points* 0.3:
+    """
+    Downsample point cloud to num_points.
+    
+    Args:
+        pc: Point cloud array of shape (N, D) where D >= 3.
+            First 3 channels are xyz (used for geometry-based selection).
+            Additional channels (e.g., rgb) are preserved.
+        num_points: Target number of points.
+        method: 'random', 'fps', or 'uniform'.
+        debug_visualize: If True, save downsampled point cloud to file.
+        
+    Returns:
+        Downsampled point cloud of shape (num_points, D).
+    """
+    use_pc_color = pc.shape[1] > 3
+
+    if pc.shape[0] < num_points * 0.3:
         raise ValueError('Input pc shape is not enough points!')
     elif pc.shape[0] < num_points:
         random_repeated_indices = np.random.choice(pc.shape[0], num_points - pc.shape[0], replace=True)
@@ -629,9 +676,19 @@ def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
     elif pc.shape[0] == num_points:
         return pc
 
-    # Convert numpy array to Open3D point cloud
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pc)
+    
+
+    # Extract xyz for geometry-based downsampling
+    xyz = pc[:, :3]
+    pcd.points = o3d.utility.Vector3dVector(xyz)
+
+    if use_pc_color:
+        rgb = pc[:, 3:]
+        pcd.colors = o3d.utility.Vector3dVector(rgb)
+    else:
+        rgb = None
+    
     if method == 'random':
         selected_ids = np.random.choice(pc.shape[0], num_points, replace=False)
         pcd_down = pcd.select_by_index(selected_ids)
@@ -644,25 +701,34 @@ def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
         raise ValueError(f'Method {method} not supported!')
     
     down_pts = np.asarray(pcd_down.points)
-
-    ## pc size may be less after downsample, so we need to add some points to make it up to num_points
+    if use_pc_color:
+        down_pts_rgb = np.asarray(pcd_down.colors)
+        down_pts = np.concatenate([down_pts, down_pts_rgb], axis=-1)
+    # Ensure we have exactly num_points
     if down_pts.shape[0] < num_points:
         random_repeated_indices = np.random.choice(down_pts.shape[0], num_points - down_pts.shape[0], replace=True)
         down_pts = np.concatenate([down_pts, down_pts[random_repeated_indices]], axis=0)
 
     ## save the pc
     if debug_visualize:
-        o3d.io.write_point_cloud(f'{method}_pc.ply', pcd_down)
+        pcd_debug = o3d.geometry.PointCloud()
+        pcd_debug.points = o3d.utility.Vector3dVector(down_pts[:, :3])
+        if use_pc_color:
+            pcd_debug.colors = o3d.utility.Vector3dVector(down_pts[:, 3:])
+        o3d.io.write_point_cloud(f'{method}_pc.ply', pcd_debug)
 
     return down_pts
 
 def add_projected_point(pc, num_ratio = 0.5):
     """
-    Project the point cloud onto the plane at the minimum z value, then downsample to 100 points.
+    Project the point cloud onto the plane at the minimum z value, then downsample.
+    
     Args:
-        pc (np.ndarray): Input point cloud of shape (N, 3)
+        pc (np.ndarray): Input point cloud of shape (N, D) where D >= 3.
+            First 3 channels are xyz. Additional channels (e.g., rgb) are preserved
+            using average values for projected points.
     Returns:
-        np.ndarray: Downsampled projected point cloud of shape (100, 3)
+        np.ndarray: Downsampled projected point cloud of shape (num_points, D)
     """
     # Find the minimum z value
     min_z = np.min(pc[:, 2])
@@ -672,9 +738,32 @@ def add_projected_point(pc, num_ratio = 0.5):
     
     num_points = int(pc.shape[0] * num_ratio)
     projected_pc_down = downsample_pc(projected_pc, num_points, method = 'random')
+    
+    # If there are additional channels (rgb), use average values for projected points
+    if pc.shape[1] > 3:
+        avg_extra = pc[:, 3:].mean(axis=0, keepdims=True)
+        projected_pc_down[:, 3:] = avg_extra
+    
     return projected_pc_down
 
 def centralize_downsample(pc, pc_shape, obj_centric = True, add_bottom = False, method = 'random', debug_visualize = True):
+    """
+    Downsample and centralize point cloud.
+    
+    Args:
+        pc: Point cloud of shape (N, D) where D >= 3.
+            First 3 channels are xyz (centralized).
+            Additional channels (e.g., rgb at channels 3:6) are preserved unchanged.
+        pc_shape: Target shape (num_points, D).
+        obj_centric: If True, subtract centroid from xyz.
+        add_bottom: If True, add projected bottom points.
+        method: Downsampling method ('random', 'fps', 'uniform').
+        debug_visualize: If True, save point cloud for debugging.
+        
+    Returns:
+        input_pc: Downsampled point cloud of shape (num_points, D)
+        pc_offset: Centroid offset (3,) - only xyz offset, not full D
+    """
     input_pc = np.asarray(pc)
     assert len(input_pc.shape) == 2 
 
@@ -684,8 +773,9 @@ def centralize_downsample(pc, pc_shape, obj_centric = True, add_bottom = False, 
     input_pc= downsample_pc(input_pc, pc_shape[0], method=method, debug_visualize=debug_visualize)
 
     if obj_centric:
-        pc_offset = np.mean(input_pc, axis=0)
-        input_pc = input_pc - pc_offset
+        # Only centralize xyz (first 3 channels), preserve other channels (e.g., rgb)
+        pc_offset = np.mean(input_pc[:, :3], axis=0)
+        input_pc[:, :3] = input_pc[:, :3] - pc_offset
     else:
         pc_offset = np.zeros(3)
     return input_pc, pc_offset
