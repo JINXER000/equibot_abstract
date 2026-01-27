@@ -32,9 +32,8 @@ model:
   
   # Horizons
   obs_horizon: 1
-  pred_horizon: 8
-  ac_horizon: 8
-  
+  pred_horizon: 4
+
   # Policy parameters (following reference sdp_ddpm_5layer.yaml)
   canonicalize: false               # Canonicalize point cloud and actions
   # use_pc_color: true               # Use RGB color in point cloud 
@@ -110,7 +109,9 @@ data:
     is_obj_centric: true
     is_add_bottom: true
     downsample_method: 'fps'
-    rot_aug: true
+
+    traj_nums: 1
+    rot_aug: false
     shuffle_pc: true
     
     embedding_cache_dir: "./data/bert"

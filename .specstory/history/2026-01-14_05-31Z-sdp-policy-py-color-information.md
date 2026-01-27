@@ -193,7 +193,6 @@ _**Agent (model default, mode Agent)**_
 
 ---
 
-
 Checking where point clouds are created and how to access color information:
 
 
@@ -294,7 +293,6 @@ Output mode: content
 
 ---
 
-
 Checking `get_pc_instances` to see the point cloud format:
 
 
@@ -337,7 +335,6 @@ Output mode: content
 
 ---
 
-
 Modifying the dataset to support xyzrgb when `use_pc_color=True`. Checking how the dataset accesses the config:
 
 
@@ -373,7 +370,6 @@ Output mode: content
 
 ---
 
-
 Checking `centralize_downsample` to see how it handles point clouds:
 
 
@@ -390,7 +386,6 @@ Checking `centralize_downsample` to see how it handles point clouds:
 
 
 ---
-
 
 Updating the dataset to support xyzrgb when `use_pc_color=True`:
 
@@ -420,7 +415,6 @@ Updating the dataset to support xyzrgb when `use_pc_color=True`:
 
 
 ---
-
 
 Updating the dataset to support xyzrgb format when `use_pc_color=True`:
 
@@ -535,7 +529,6 @@ Output mode: content
 
 ---
 
-
 Checking `downsample_pc` to understand how to handle color:
 
 
@@ -552,7 +545,6 @@ Checking `downsample_pc` to understand how to handle color:
 
 
 ---
-
 
 Refining the approach: downsample xyz and rgb together, using xyz for geometry-based selection, then centralize only xyz:
 
@@ -698,7 +690,6 @@ Lines added: 92, lines removed: 19
 
 ---
 
-
 Simplifying the approach. Checking imports and fixing issues:
 
 
@@ -732,7 +723,6 @@ Lint results
 
 
 ---
-
 
 Simplifying the implementation:
 
@@ -901,7 +891,6 @@ Lines added: 33, lines removed: 85
 
 ---
 
-
 Updating normalization to handle 6-channel point clouds. Checking the normalization function:
 
 
@@ -919,7 +908,6 @@ Updating normalization to handle 6-channel point clouds. Checking the normalizat
 
 ---
 
-
 Checking the normalization function:
 
 
@@ -936,7 +924,6 @@ Checking the normalization function:
 
 
 ---
-
 
 Updating normalization to only normalize xyz (first 3 channels), not rgb:
 
@@ -994,7 +981,6 @@ Lines added: 15, lines removed: 3
 
 ---
 
-
 Checking how normalization is applied in the policy:
 
 
@@ -1011,7 +997,6 @@ Checking how normalization is applied in the policy:
 
 
 ---
-
 
 Simplifying normalization: compute stats only on xyz, and handle full normalization in the policy if needed. Updating the code:
 
@@ -1071,7 +1056,6 @@ Lines added: 7, lines removed: 7
 
 
 ---
-
 
 Updating `get_pc_scale` to handle 6-channel point clouds (use only xyz for scale):
 
@@ -1163,7 +1147,6 @@ Lint results
 
 ---
 
-
 Checking for other places that need updates, especially `get_dataslice_bimanual_kp`:
 
 
@@ -1180,7 +1163,6 @@ Checking for other places that need updates, especially `get_dataslice_bimanual_
 
 
 ---
-
 
 The `get_dataslice_bimanual_kp` function also needs updating for color, but it's for bimanual skills and may not be the primary use case. Summary of changes:
 
@@ -1865,6 +1847,4600 @@ Updated `rotate_around_z` to handle xyzrgb:
 - **rgb (channels 3:6)**: Preserved unchanged (color shouldn't rotate)
 
 The function now works with any D-dimensional point cloud (D >= 3), only rotating the xyz geometry while keeping additional channels intact.
+
+---
+
+_**User (2026-01-23 05:59Z)**_
+
+for sdp_policy, summarize the input info, and how they are fed into the neural network.
+
+---
+
+_**Agent (model claude-4.5-opus-high-thinking, mode Agent)**_
+
+<think><details><summary>Thought Process</summary>
+The user wants a summary of how inputs flow through the SDPPolicy. Let me read the relevant file to provide an accurate summary.</details></think>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Let me summarize the input flow through the SDPPolicy neural networks.</details></think>
+
+---
+
+## SDPPolicy Input Flow Summary
+
+### **Inputs (from Dataset)**
+
+| Input | Shape | Description |
+|-------|-------|-------------|
+| `pc` | `[B, 1, N, D]` | Point cloud (D=3 xyz or D=6 xyzrgb) |
+| `skill_name` | ASCII tensor | Skill description (e.g., "grasp_cup") |
+| `task_name` | ASCII tensor | Task description (e.g., "pick_place_task") |
+| `eefpos` | `[B, T, 4, 4]` | Ground-truth SE(3) trajectory (training only) |
+| `gripper` | `[B, T, 1, 1]` | Ground-truth gripper actions (training only) |
+
+---
+
+### **Neural Network Architecture**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              SDPPolicy                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. LANGUAGE ENCODER (MLPEncoder)                                           │
+│     ┌──────────────┐                                                        │
+│     │ skill_name   │──► BERT embedding ──► MLPEncoder ──► skill_emb [B, 128]│
+│     │ task_name    │──► BERT embedding ──► MLPEncoder ──► task_emb  [B, 128]│
+│     └──────────────┘                                                        │
+│            │                                                                │
+│            ▼                                                                │
+│     language_emb = concat([skill_emb, task_emb]) ──► [B, 256]               │
+│                                                                              │
+│  2. SDP ENCODER (EquiformerV2)                                              │
+│     ┌──────────────┐                                                        │
+│     │ pc [B,1,N,D] │──► normalize ──► SDPEncoder(pc, language_emb)          │
+│     └──────────────┘         │                                              │
+│                              ▼                                              │
+│     Outputs:                                                                │
+│     • s2_feat: [B, obs_horizon, (c_dim + lang_dim) * irrep_dim]             │
+│       = [B, 1, (128 + 128) * 9] = [B, 1, 2304]  (for lmax=2)               │
+│     • center: [B, T, 1, 3]  (for action canonicalization)                   │
+│     • scale:  [B, T, 1, 1]  (for action canonicalization)                   │
+│                                                                              │
+│     global_cond = s2_feat.flatten() ──► [B, 2304]                          │
+│                                                                              │
+│  3. SDTU (IrrepConditionalUnet1D) - Diffusion Denoiser                      │
+│     ┌────────────────────────────────────────────────────────────┐          │
+│     │ Input:                                                      │          │
+│     │   • sample: [B, T, 10]  (noisy action trajectory)          │          │
+│     │     = 9D (3 vectors × 3) for pos/rot + 1D gripper          │          │
+│     │   • timestep: diffusion step k                             │          │
+│     │   • global_cond: [B, 2304] (spherical features + language) │          │
+│     │                                                             │          │
+│     │ Process:                                                    │          │
+│     │   • SFiLM conditioning with spherical harmonics            │          │
+│     │   • Temporal 1D U-Net with SO(3) equivariance              │          │
+│     │                                                             │          │
+│     │ Output:                                                     │          │
+│     │   • noise_pred: [B, T, 10] (predicted noise)               │          │
+│     └────────────────────────────────────────────────────────────┘          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### **Data Flow During Inference**
+
+```python
+# 1. Encode language
+skill_emb = language_encoder(BERT(skill_name))    # [B, 128]
+task_emb = language_encoder(BERT(task_name))      # [B, 128]
+language_emb = concat([skill_emb, task_emb])      # [B, 256]
+
+# 2. Encode point cloud with language fusion
+obs_vec, center, scale = SDPEncoder(
+    pc,                    # [B, 1, N, 3 or 6]
+    language_emb           # [B, 256] - fused into spherical features
+)
+# obs_vec: [B, 2304] (flattened spherical features with language)
+
+# 3. Initialize noisy action
+noisy_sample = randn([B, T, 10])  # T=pred_horizon, 10=action_dim (3vec)
+
+# 4. Denoising loop (100 steps typically)
+for k in timesteps:
+    noise_pred = SDTU(
+        sample=curr_sample,   # [B, T, 10]
+        timestep=k,
+        global_cond=obs_vec   # [B, 2304]
+    )
+    curr_sample = denoise_step(curr_sample, noise_pred, k)
+
+# 5. Split and recover trajectory
+eef_vectors = curr_sample[:, :, :9].reshape(B, T, 3, 3)  # 3 vectors
+gripper = curr_sample[:, :, 9:]                           # [B, T, 1]
+eefpos = recover_SE3(eef_vectors, scale, center)          # [B, T, 4, 4]
+```
+
+---
+
+### **Key Dimensions**
+
+| Component | Dimension | Notes |
+|-----------|-----------|-------|
+| `irrep_dim` | `(lmax+1)² = 9` | For lmax=2: spherical harmonic coefficients |
+| `c_dim` | 128 | Encoder output channels |
+| `lang_dim` | 128 | Language fusion dimension |
+| `action_dim` | 10 (3vec) or 13 (4pts) | EEF + gripper |
+| `global_cond_dim` | `(c_dim + lang_dim) × irrep_dim × obs_horizon` | = 2304 |
+
+---
+
+_**User (2026-01-23 05:59Z)**_
+
+I guess that language embedding should not go into the @equiformer_enc.py , as we do not equivariant property for language embedding. you can check the impl in code_ref and paper_ref to investigate on this. 
+
+---
+
+_**Agent (model claude-4.5-opus-high-thinking, mode Agent)**_
+
+<think><details><summary>Thought Process</summary>
+The user is pointing out that language embeddings shouldn't be fused into the EquiformerV2 encoder because language is invariant (scalar), not equivariant. Let me check the reference implementation to see how they handle this.
+
+Looking at the reference `equiformer_enc.py`, I can see:
+1. It takes `nobs["point_cloud"]` (xyzrgb) as input
+2. It processes robot proprioception (ee_quat, ee_pose, ee_q) separately and concatenates them to the spherical features at the end
+3. The output is `s2_feat` concatenated with `proprio`
+4. There's no language embedding in the encoder itself
+
+The language conditioning is likely done in the diffusion U-Net (SDTU) via FiLM conditioning, not in the encoder.
+
+Let me check how the reference code handles language conditioning in the diffusion model.</details></think>
+
+---
+
+You're absolutely right! Let me check the reference implementation to understand the correct architecture.
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="glob_file_search">
+<details>
+<summary>Tool use: **glob_file_search** • Searched codebase "*unet*.py" • **22** results in **1** directory</summary>
+
+Directory: **\home\user\yzchen_ws\docker_share_folder\difussion\equibot_abstract\code_ref** (22 files)
+
+| File |
+|------|
+| `Spherical_Diffusion_Policy\sdp\workspace\train_diffusion_unet_video_workspace.py` |
+| `Spherical_Diffusion_Policy\sdp\workspace\train_diffusion_unet_lowdim_workspace.py` |
+| `Spherical_Diffusion_Policy\sdp\workspace\train_diffusion_unet_image_workspace.py` |
+| `Spherical_Diffusion_Policy\sdp\workspace\train_diffusion_unet_hybrid_workspace.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_unet_image_policy.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_unet_voxel_policy.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_equi_unet_cnn_enc_policy.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_equi_unet_voxel_policy.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_unet_lowdim_policy.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_unet_video_policy.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_equi_unet_cnn_enc_policy_se2.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_unet_hybrid_image_policy.py` |
+| `Spherical_Diffusion_Policy\sdp\policy\diffusion_equi_unet_voxel_rel_policy.py` |
+| `Spherical_Diffusion_Policy\sdp\model\equivariant_diffusion\vn_conditional_unet1d.py` |
+| `Spherical_Diffusion_Policy\sdp\model\equivariant_diffusion\reg_rep_conditional_unet1d.py` |
+| `Spherical_Diffusion_Policy\sdp\model\equivariant_diffusion\non_equ_irrep_conditional_unet1d.py` |
+| `Spherical_Diffusion_Policy\sdp\model\equivariant_diffusion\irreps_conditional_unet1d.py` |
+| `Spherical_Diffusion_Policy\sdp\model\unet\obs_cond_unet1d.py` |
+| `Spherical_Diffusion_Policy\sdp\model\equi\equi_conditional_unet1d_2.py` |
+| `Spherical_Diffusion_Policy\sdp\model\equi\equi_conditional_unet1d.py` |
+| `Spherical_Diffusion_Policy\sdp\model\diffusion\conditional_unet1d.py` |
+| `Spherical_Diffusion_Policy\sdp\model\diffusion\dp3_conditional_unet1d.py` |
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Let me look at the main diffusion policy implementation to see how they handle conditioning.</details></think>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Looking at the reference implementation:
+
+1. The `EquiFormerEnc` (encoder) takes:
+   - Point cloud (xyzrgb)
+   - Robot proprioception (ee_quat, ee_pose, ee_q)
+   - NO language embedding
+
+2. The encoder output `s2_feat` is:
+   - Spherical features from point cloud
+   - Robot proprioception appended at the end (as type-1 irreps for rotation, type-0 for gripper)
+
+3. The diffusion U-Net receives:
+   - `global_cond` = flattened encoder output (visual features)
+   - No separate language conditioning in the reference
+
+The reference doesn't have language conditioning at all - it's for robotic manipulation tasks without language.
+
+For our case (per_skill dataset with skill/task names), the language should be:
+1. Encoded by language encoder (MLP on BERT embeddings) → scalar/invariant features
+2. Concatenated to `global_cond` **after** the encoder, not inside it
+
+This makes sense because:
+- Language is **invariant** (scalar) - it shouldn't rotate when you rotate the scene
+- Visual features from the encoder are **equivariant** (spherical harmonics)
+- The diffusion U-Net's FiLM conditioning can handle both by:
+  - Using equivariant parts for SFiLM (spherical FiLM)
+  - Using invariant parts (language) as scalar conditioning
+
+So the correct flow should be:
+```
+pc → SDPEncoder → s2_feat (equivariant)
+skill_name, task_name → LanguageEncoder → lang_feat (invariant/scalar)
+global_cond = concat([s2_feat.flatten(), lang_feat])  # NOT fused in encoder
+```
+
+Let me check our current implementation and fix it.</details></think>
+
+---
+
+Looking at the reference, I see that:
+
+1. **`EquiFormerEnc`** only encodes **point cloud + robot proprioception** → outputs equivariant spherical features
+2. **No language** is fused into the encoder
+3. **`global_cond`** for diffusion = just the flattened encoder output
+
+You're correct! Language is **invariant** (scalar), so it should NOT be inside the equivariant encoder. Let me check our current implementation and fix it:
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+I see the current `SDPEncoder` has `language_embed_dim` and `language_fusion_dim` parameters, which suggests language fusion was added to the encoder. This is incorrect - language should be concatenated to `global_cond` outside the encoder.
+
+Let me check the full encoder to see how language is currently fused, and then I'll need to:1. Remove language fusion from `SDPEncoder`
+2. Update `SDPPolicy` to concatenate language to `global_cond` instead of passing it to the encoder
+
+Let me read more of the encoder to see the language fusion logic.</details></think>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+I see the issue. The current implementation has language fusion in the encoder, which is wrong. Let me check how language is fused and then remove it. Let me read more of the forward function.</details></think>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+I now understand the current (incorrect) implementation:
+
+Current flow:
+1. Language embeddings are passed to SDPEncoder
+2. They are projected and concatenated with spherical features (as l=0 coefficients)
+3. The combined features go to the diffusion model
+
+Correct flow (per reference):
+1. SDPEncoder only encodes point cloud → equivariant spherical features
+2. Language encoder encodes text → invariant scalar features  
+3. Both are concatenated AFTER the encoder to form global_cond for diffusion
+
+The issue is that putting language as l=0 coefficients in the spherical representation is a hack that doesn't follow the reference. The reference simply doesn't have language at all, but if we need it, it should be concatenated to global_cond as scalar features.
+
+Let me:1. Remove language fusion from SDPEncoder (remove language_embed_dim, language_fusion_dim, language_proj)
+2. Update SDPPolicy to concatenate language embeddings to global_cond after encoding
+
+This is the correct architecture:
+```
+Point Cloud → SDPEncoder → s2_feat [B, obs_horizon * c_dim * irrep_dim] (equivariant)
+Skill/Task Name → LanguageEncoder → lang_feat [B, 2 * lang_dim] (invariant/scalar)
+
+global_cond = concat([s2_feat.flatten(), lang_feat])  # concatenate after encoder
+↓
+SDTU (IrrepConditionalUnet1D)
+```</details></think>
+
+---
+
+You're absolutely right. Looking at the reference:
+
+1. **`EquiFormerEnc`** outputs only **equivariant spherical features** from point cloud
+2. **Language is invariant** (scalar) - it should NOT be inside the equivariant encoder
+3. **Language should be concatenated to `global_cond`** after the encoder, not fused inside
+
+Let me fix this:
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -42,5 +42,5 @@
+      
+      Adapts EquiformerV2 to work with per_skill_dataset format:
+-     - Input: Point cloud [B, T, N, 3] (object-centric, already centered)
++     - Input: Point cloud [B, T, N, 3 or 6] (object-centric, xyzrgb if color)
+      - Output: Spherical Fourier features for diffusion conditioning
+      
+```
+
+**Chunk 2**
+Lines added: 3, lines removed: undefined
+
+```diff
+@@ -49,4 +49,7 @@
+      - Input format adapted for per_skill_dataset
+      - Returns both spherical features and canonicalization info (scale, center)
++     
++     Note: Language embeddings are NOT fused here - they are invariant (scalar)
++     and should be concatenated to global_cond in the policy, not in the encoder.
+      """
+      
+```
+
+**Chunk 3**
+Lines added: undefined, lines removed: 2
+
+```diff
+@@ -55,6 +58,4 @@
+          c_dim=128,
+          use_color=False,
+-         language_embed_dim=0,  # Dimension of language embeddings (0 = disabled)
+-         language_fusion_dim=None,  # Output dimension for language fusion (None = use c_dim)
+          max_neighbors=(16, 16, 16, 16),
+          max_radius=(0.05, 0.2, 0.8, 3),
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I need to remove the language-related parameters from the constructor.</details></think>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: undefined, lines removed: 3
+
+```diff
+@@ -96,7 +96,4 @@
+          self.deterministic = deterministic
+          self.use_color = use_color
+-         self.language_embed_dim = language_embed_dim
+-         # Language fusion dimension: if None, use c_dim; otherwise use specified dimension
+-         self.language_fusion_dim = language_fusion_dim if language_fusion_dim is not None else c_dim
+          
+          # Sphere channels (last channel is c_dim) 
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I need to remove the language projection layer and the language fusion code from the forward method.</details></think>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 1, lines removed: 8
+
+```diff
+@@ -236,16 +236,9 @@
+          self.type0_linear = nn.Linear(self.pcd_channels, self.sphere_channels_all, bias=True)
+          
+-         # Language embedding projection (for fusing into spherical representation)
+-         # Language embeddings are scalar (invariant), so they go into l=0, m=0 coefficients
+-         if self.language_embed_dim &gt; 0:
+-             self.language_proj = nn.Linear(self.language_embed_dim, self.language_fusion_dim, bias=True)
+-         else:
+-             self.language_proj = None
+-         
+          # Weight initialization
+          self.apply(self._init_weights)
+          self.apply(self._uniform_init_rad_func_linear_weights)
+          
+-         print(f"SDPEncoder initialized with {self.num_params} parameters, lmax={lmax}, language_embed_dim={language_embed_dim}")
++         print(f"SDPEncoder initialized with {self.num_params} parameters, lmax={lmax}")
+      
+      def forward(self, pcl, target_norm=1.0, language_emb=None):
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I need to update the forward method to remove language_emb parameter and the language fusion code.</details></think>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: 2
+
+```diff
+@@ -242,7 +242,7 @@
+          print(f"SDPEncoder initialized with {self.num_params} parameters, lmax={lmax}")
+      
+-     def forward(self, pcl, target_norm=1.0, language_emb=None):
++     def forward(self, pcl, target_norm=1.0):
+          """
+-         Forward pass for object-centric point cloud encoding with optional language fusion.
++         Forward pass for object-centric point cloud encoding.
+          
+          Args:
+```
+
+**Chunk 2**
+Lines added: 4, lines removed: 3
+
+```diff
+@@ -251,12 +251,13 @@
+                  - If use_color=True: last dim is xyzrgb (xyz + rgb), mirroring EquiFormerEnc.
+              target_norm: Target scale for normalization
+-             language_emb: Optional language embeddings [B, T, language_embed_dim] or [B, language_embed_dim]
+-                          If provided, fused into spherical representation (l=0 coefficients)
+              
+          Returns:
+              dict with:
+-                 - 's2_feat': Spherical Fourier features [B, T, (c_dim + lang_dim) * irrep_dim]
++                 - 's2_feat': Spherical Fourier features [B, T, c_dim * irrep_dim]
+                  - 'scale': Scale factor [B, T, 1, 1]
+                  - 'center': Center offset [B, T, 1, 3]
++                 
++         Note: Language embeddings should be concatenated to global_cond in the policy,
++         NOT fused here. Language is invariant (scalar), encoder output is equivariant.
+          """
+          B, T, N, D = pcl.shape
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I need to remove the language fusion code from the forward method (the part after the final normalization).</details></think>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 1, lines removed: 24
+
+```diff
+@@ -386,28 +386,5 @@
+          s2_feat = node_dst.embedding
+          
+-         # Fuse language embeddings into spherical representation (following EquiFormerEnc pattern)
+-         # Language embeddings are scalar (invariant), so they go into l=0, m=0 coefficients
+-         if self.language_proj is not None and language_emb is not None:
+-             # Handle language_emb shape: [B, T, lang_dim] or [B, lang_dim]
+-             if language_emb.dim() == 2:
+-                 # [B, lang_dim] -&gt; expand to [B, T, lang_dim]
+-                 language_emb = language_emb.unsqueeze(1).expand(B, T, -1)
+-             
+-             # Reshape: [B, T, lang_dim] -&gt; [B*T, lang_dim]
+-             lang_flat = language_emb.view(B * T, -1)
+-             
+-             # Project to fusion dimension: [B*T, lang_dim] -&gt; [B*T, language_fusion_dim]
+-             lang_proj = self.language_proj(lang_flat)  # [B*T, language_fusion_dim]
+-             
+-             # Create language features in spherical format: [B*T, irrep_dim, language_fusion_dim]
+-             # Only l=0, m=0 (first irrep) gets language features
+-             lang_feat = torch.zeros(B * T, self.irrep_dim, self.language_fusion_dim, 
+-                                    device=s2_feat.device, dtype=s2_feat.dtype)
+-             lang_feat[:, 0, :] = lang_proj  # l=0, m=0 coefficients
+-             
+-             # Concatenate along channel dimension (following EquiFormerEnc pattern)
+-             s2_feat = torch.cat([s2_feat, lang_feat], dim=-1)  # [B*T, irrep_dim, c_dim + language_fusion_dim]
+-         
+-         # Flatten: [B*T, irrep_dim, c_dim] or [B*T, irrep_dim, 2*c_dim]
++         # Flatten: [B*T, irrep_dim, c_dim] -&gt; [B*T, c_dim * irrep_dim]
+          s2_feat = einops.rearrange(s2_feat, 'bt irrep c -&gt; bt (c irrep)')
+          
+```
+
+**Chunk 2**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -418,5 +395,5 @@
+          
+          return {
+-             's2_feat': s2_feat,  # [B, T, C * irrep_dim] or [B, T, 2*C * irrep_dim] with language
++             's2_feat': s2_feat,  # [B, T, c_dim * irrep_dim]
+              'scale': z_scale,    # [B, T, 1, 1]
+              'center': z_center,  # [B, T, 1, 3]
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I need to update the `output_shape` method to remove language dimension, and also need to update `output_dim()` if it exists.</details></think>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 3, lines removed: 5
+
+```diff
+@@ -400,9 +400,7 @@
+          }
+      
+-     def output_shape(self):
+-         """Return output feature dimension per irrep (matches EquiFormerEnc semantics)."""
+-         # If language fusion is enabled, output includes both pc and language features
+-         lang_dim = self.language_fusion_dim if self.language_embed_dim &gt; 0 else 0
+-         return self.c_dim + lang_dim
++     def output_dim(self):
++         """Return total output feature dimension: c_dim * irrep_dim."""
++         return self.c_dim * self.irrep_dim
+      
+      @property
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I need to update `SDPPolicy` to:1. Remove language fusion parameters from the encoder
+2. Concatenate language embeddings to `global_cond` after the encoder (instead of passing to encoder)Let me check the current policy implementation.</details></think>
+
+---
+
+Now let me update `SDPPolicy` to concatenate language to `global_cond` after the encoder:
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 1, lines removed: 10
+
+```diff
+@@ -135,18 +135,9 @@
+          # 1. SDPEncoder (EquiformerV2) for point cloud - following reference initialization
+          encoder_output_dim = encoder_cfg.get('encoder_output_dim', encoder_cfg.c_dim)
+-         use_color = cfg.model.get('use_pc_color', False)  
+-         
+-         # Language encoder config (needed for encoder language fusion)
+-         language_encoder_cfg = cfg.model.language_encoder_cfg
+-         language_embed_dim = language_encoder_cfg.hidden_size * 2  # skill + task embeddings
+-         
+-         # Language fusion dimension: use hidden_size from language encoder (can be overridden in encoder_cfg)
+-         language_fusion_dim = encoder_cfg.get('language_fusion_dim', language_encoder_cfg.hidden_size)
++         use_color = cfg.data.dataset.get('use_pc_color', False)  
+          
+          net_dict['obj_encoder'] = SDPEncoder(
+              c_dim=encoder_output_dim,
+              use_color=use_color,
+-             language_embed_dim=language_embed_dim,  # Input: skill + task embeddings (hidden_size * 2)
+-             language_fusion_dim=language_fusion_dim,  # Output: fused dimension (defaults to hidden_size)
+              lmax=self.lmax,
+              mmax=self.mmax,
+```
+
+**Chunk 2**
+Lines added: 14, lines removed: 12
+
+```diff
+@@ -173,23 +164,25 @@
+          
+          self.encoder_out_dim = encoder_output_dim
+-         # Get obs_feature_dim from encoder output_shape (following reference)
+-         # For SDPEncoder with language fusion, output_dim() returns (c_dim + lang_dim) * irrep_dim
+-         obs_feature_dim = net_dict['obj_encoder'].output_shape()
++         # Get obs_feature_dim from encoder output_dim: c_dim * irrep_dim
++         obs_feature_dim = net_dict['obj_encoder'].output_dim()
+          self.obs_feature_dim = obs_feature_dim
+          
+-         # Calculate input_dim and global_cond_dim following reference pattern
+-         input_dim = self.action_dim + obs_feature_dim
+-         global_cond_dim = None
+-         if self.obs_as_global_cond:
+-             input_dim = self.action_dim
+-             # Language embeddings are now fused into encoder output, so no need to add separately
+-             global_cond_dim = obs_feature_dim * self.obs_horizon
+-         
+-         # 2. Language encoder for text conditioning (used for encoder fusion)
++         # 2. Language encoder for text conditioning
++         # Language is invariant (scalar) - concatenated to global_cond, NOT fused in encoder
+          language_encoder_cfg = cfg.model.language_encoder_cfg
+          output_size = language_encoder_cfg.hidden_size
+          self.language_encoder = self._setup_language_encoder(output_size=output_size, **language_encoder_cfg)
+          net_dict['language_encoder'] = self.language_encoder
+          
++         # Calculate input_dim and global_cond_dim following reference pattern
++         # global_cond = [obs_features (equivariant), language_features (invariant)]
++         input_dim = self.action_dim + obs_feature_dim
++         global_cond_dim = None
++         if self.obs_as_global_cond:
++             input_dim = self.action_dim
++             # obs_features: obs_feature_dim * obs_horizon (equivariant spherical features)
++             # language_features: 2 * output_size (skill + task embeddings, invariant scalars)
++             global_cond_dim = obs_feature_dim * self.obs_horizon + 2 * output_size
++         
+          # 3. SDTU (Spherical Denoising Temporal U-net) - following reference
+          diffusion_cfg = cfg.model.get('diffusion', {})
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I need to update the `proc_pc` method to remove the language_emb parameter, and update `pred_unimanual_traj` to concatenate language embeddings to global_cond after the encoder.</details></think>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 7, lines removed: 5
+
+```diff
+@@ -287,21 +287,23 @@
+      
+      # ==================== Point Cloud Processing ====================
+-     def proc_pc(self, pc, language_emb=None, ema_nets=None):
++     def proc_pc(self, pc, ema_nets=None):
+          """
+-         Process point cloud through SDPEncoder with optional language fusion.
++         Process point cloud through SDPEncoder.
+          
+          Following reference step.py pattern:
+          - Strips color if use_pc_color=False
+          - Normalizes point cloud
+-         - Passes through encoder to get spherical features (with language fused)
++         - Passes through encoder to get spherical features
+          - Returns obs_vec (conditioning), center, and scale for canonicalization
++         
++         Note: Language embeddings are NOT fused here - they are invariant (scalar)
++         and should be concatenated to global_cond separately in pred_unimanual_traj.
+          
+          Args:
+              pc: (B, obs_horizon, N, D) point cloud (D=3 or 6)
+-             language_emb: Optional (B, language_embed_dim) language embeddings to fuse
+              ema_nets: optional EMA networks for inference
+              
+          Returns:
+-             obs_vec: (B, obs_horizon * (c_dim + lang_dim) * irrep_dim) spherical conditioning features
++             obs_vec: (B, obs_horizon * c_dim * irrep_dim) spherical conditioning features
+              center: (B, pred_horizon, 1, 3) canonicalization center
+              scale: (B, pred_horizon, 1, 1) canonicalization scale
+```
+
+**Chunk 2**
+Lines added: 4, lines removed: 5
+
+```diff
+@@ -322,18 +324,17 @@
+          
+          pc_scale = self.statistics['pc_scale']
+-         # Pass language embeddings to encoder for fusion
+-         feat_dict = encoder_handle(pc, target_norm=pc_scale, language_emb=language_emb)
++         feat_dict = encoder_handle(pc, target_norm=pc_scale)
+          
+          # Extract outputs
+-         # s2_feat: [B, obs_horizon, (c_dim + lang_dim) * irrep_dim] (with language fused)
++         # s2_feat: [B, obs_horizon, c_dim * irrep_dim]
+          s2_feat = feat_dict['s2_feat']
+          
+          # Reshape for conditioning following reference pattern
+          if self.obs_as_global_cond:
+              if "cross_attention" in self.condition_type:
+-                 # Treat as sequence: (B, obs_horizon, (c_dim + lang_dim) * irrep_dim)
++                 # Treat as sequence: (B, obs_horizon, c_dim * irrep_dim)
+                  obs_vec = s2_feat
+              else:
+-                 # Flatten: (B, obs_horizon * (c_dim + lang_dim) * irrep_dim)
++                 # Flatten: (B, obs_horizon * c_dim * irrep_dim)
+                  obs_vec = s2_feat.reshape(batch_size, -1)
+          else:
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now I need to update the `pred_unimanual_traj` method to:1. Encode point cloud first (no language)
+2. Get language embeddings separately
+3. Concatenate language to global_cond</details></think>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 5, lines removed: undefined
+
+```diff
+@@ -450,4 +450,9 @@
+          Following reference step.py pattern for inference.
+          Uses IrrepConditionalUnet1D for equivariant denoising.
++         
++         Architecture:
++         - obs_vec: equivariant spherical features from point cloud encoder
++         - language_emb: invariant scalar features from language encoder
++         - global_cond = concat([obs_vec, language_emb]) - NOT fused in encoder!
+          
+          Denoising process (from paper Eq. 2):
+```
+
+**Chunk 2**
+Lines added: 11, lines removed: 10
+
+```diff
+@@ -459,21 +464,22 @@
+          ema_nets = self.ema.averaged_model
+          
+-         # Get text conditioning (for fusion into encoder)
+-         task_skill_condition = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
++         # 1. Encode point cloud to spherical features (equivariant)
++         obs_vec, center, scale = self.proc_pc(pc_data, ema_nets=ema_nets)
+          
+-         # Encode point cloud to spherical features with language fusion
+-         obs_vec, center, scale = self.proc_pc(pc_data, language_emb=task_skill_condition, ema_nets=ema_nets)
++         # 2. Get language embeddings (invariant scalars)
++         language_emb = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
+          
+-         # Prepare global_cond following reference pattern
+-         # Language is now fused into obs_vec, so no need to concatenate separately
++         # 3. Prepare global_cond: concatenate obs_vec (equivariant) + language_emb (invariant)
++         # Language is invariant (scalar) so it's concatenated AFTER encoder, not fused inside
+          if self.obs_as_global_cond:
+              if "cross_attention" in self.condition_type:
+-                 # obs_vec is already (B, obs_horizon, (c_dim + lang_dim) * irrep_dim)
++                 # For cross-attention, keep separate (not implemented yet)
+                  global_cond = obs_vec
+              else:
+-                 # obs_vec is (B, obs_horizon * (c_dim + lang_dim) * irrep_dim)
+-                 global_cond = obs_vec
++                 # Concatenate: [obs_vec, language_emb]
++                 # obs_vec: (B, obs_horizon * c_dim * irrep_dim)
++                 # language_emb: (B, 2 * hidden_size) for skill + task
++                 global_cond = torch.cat([obs_vec, language_emb], dim=-1)
+          else:
+-             # Not used as global cond
+              global_cond = None
+          
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Now let me check for linter errors in both files.</details></think>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="read_lints">
+<details>
+          <summary>Tool use: **read_lints** • Read lints for 2 files</summary>
+      
+Lint paths:
+
+- `equibot/policies/vision/sdp_encoder.py`
+- `equibot/policies/agents/sdp_policy.py`
+
+Lint results
+
+
+**No lint errors found**
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Good. Let me also update the docstring in sdp_policy.py to reflect the correct architecture.</details></think>
+
+---
+
+Let me also update the class docstring to reflect the correct architecture:
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 11, lines removed: 3
+
+```diff
+@@ -51,12 +51,20 @@
+      
+      Inputs (from per_skill_dataset):
+-         - pc: Point cloud [B, 1, N, 3] (first-sight observation)
+-         - skill_name: Text embedding for skill conditioning
+-         - task_name: Text embedding for task conditioning
++         - pc: Point cloud [B, 1, N, 3 or 6] (xyz or xyzrgb)
++         - skill_name: Text for skill conditioning
++         - task_name: Text for task conditioning
+      
+      Outputs:
+          - eefpos: SE(3) trajectory [B, T, 4, 4]
+          - gripper: Gripper actions [B, T, 1]
+          
++     Architecture:
++         1. SDPEncoder (EquiformerV2): pc → equivariant spherical features [B, c_dim * irrep_dim]
++         2. LanguageEncoder (MLP): skill/task text → invariant scalar features [B, 2 * hidden_size]
++         3. global_cond = concat([obs_features, language_features])
++            - obs_features are EQUIVARIANT (spherical harmonics)
++            - language_features are INVARIANT (scalars) - NOT fused in encoder!
++         4. SDTU (IrrepConditionalUnet1D): denoising with SFiLM conditioning
++         
+      Key differences from EquiBot (Vector Neurons):
+          - Uses spherical harmonics (degree L) vs vector neurons (degree 1)
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Good. Let me also check the file header comment in sdp_policy.py to update it.</details></think>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 7, lines removed: 4
+
+```diff
+@@ -2,10 +2,13 @@
+  Spherical Diffusion Policy (SDP) for object-centric trajectory prediction.
+  
+- Reference: paper_ref/sdp/example_paper.tex
++ Reference: paper_ref/sdp/example_paper.tex, code_ref/Spherical_Diffusion_Policy/
+  
+  Architecture:
+- 1. EquiformerV2 Encoder - Point cloud to spherical Fourier features (SO(3) equivariant)
+- 2. Language Encoder - Text conditioning for skill/task
+- 3. SDTU (Spherical Denoising Temporal U-net) - Noise estimation with SFiLM conditioning
++ 1. SDPEncoder (EquiformerV2) - Point cloud to spherical Fourier features (SO(3) equivariant)
++ 2. Language Encoder (MLP) - Text conditioning for skill/task (invariant scalars)
++ 3. global_cond = concat([obs_features, language_features])
++    - obs_features: equivariant spherical harmonics from encoder
++    - language_features: invariant scalars, concatenated AFTER encoder (NOT fused inside)
++ 4. SDTU (IrrepConditionalUnet1D) - Noise estimation with SFiLM conditioning
+  
+  Key equations from paper:
+```
+
+**Chunk 2**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -22,5 +25,5 @@
+  - Input sample: (B, T, 10) - 9D for pos/rot (3 vectors x 3) + 1D for gripper
+  - Output: (B, T, 10) - same format (noise prediction)
+- - global_cond: (B, C * irrep_dim) - flattened spherical conditioning
++ - global_cond: (B, obs_dim + lang_dim) - obs features + language features
+  """
+  
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Good. Now the architecture correctly follows the reference:1. SDPEncoder outputs **equivariant** spherical features (no language)
+2. LanguageEncoder outputs **invariant** scalar features
+3. Both are **concatenated** to form global_cond (not fused in encoder)
+
+This is the correct design because:
+- Language is invariant (scalar) - it shouldn't change when you rotate the scene- Visual features are equivariant (spherical harmonics) - they rotate with the scene- Concatenating them preserves both properties
+
+Let me provide a summary.</details></think>
+
+---
+
+## Summary
+
+Fixed the architecture to match the reference implementation:
+
+### Before (Incorrect)
+```
+pc + language_emb → SDPEncoder (language fused inside) → equivariant features
+                                                          ↓
+                                                    global_cond → SDTU
+```
+
+### After (Correct)
+```
+pc → SDPEncoder → equivariant spherical features ─┐
+                                                   ├── concat → global_cond → SDTU
+skill/task → LanguageEncoder → invariant scalars ─┘
+```
+
+### Key Changes
+
+1. **`SDPEncoder`**: Removed `language_embed_dim`, `language_fusion_dim`, `language_proj` - encoder now only outputs equivariant spherical features from point cloud
+
+2. **`SDPPolicy`**: 
+   - `proc_pc()` no longer takes `language_emb` parameter
+   - `pred_unimanual_traj()` now:
+     1. Encodes point cloud → equivariant features
+     2. Encodes language → invariant scalars  
+     3. Concatenates both to form `global_cond`
+
+3. **`global_cond_dim`** calculation updated:
+   ```python
+   global_cond_dim = obs_feature_dim * obs_horizon + 2 * language_hidden_size
+   ```
+
+### Why This Matters
+
+- **Language is invariant** (scalar) - saying "grasp the cup" shouldn't change when you rotate the scene
+- **Visual features are equivariant** - they rotate with the scene
+- **Fusing invariant features into equivariant encoder** breaks the equivariance property
+- **Concatenating after encoder** preserves both properties correctly
+
+---
+
+_**User (2026-01-23 05:59Z)**_
+
+can you explain why @sdp_encoder.py (402-404)  output_dim = self.c_dim * self.irrep_dim
+
+---
+
+_**Agent (model claude-4.5-opus-high-thinking, mode Agent)**_
+
+<think><details><summary>Thought Process</summary>
+The user wants to understand why the output dimension of the SDPEncoder is `c_dim * irrep_dim`. Let me explain this based on the spherical harmonic representation used in EquiformerV2.</details></think>
+
+---
+
+Great question! Let me explain the output dimension formula.
+
+## Spherical Harmonic Representation
+
+The SDPEncoder uses **spherical harmonics** up to degree `lmax` to represent features. The output is:
+
+```
+s2_feat: [B, T, c_dim * irrep_dim]
+```
+
+Where:
+- `c_dim` = number of channels (e.g., 128)
+- `irrep_dim = (lmax + 1)²` = number of spherical harmonic coefficients
+
+### Why `(lmax + 1)²`?
+
+For spherical harmonics of degree `l`, there are `2l + 1` coefficients (orders `m = -l, -l+1, ..., 0, ..., l-1, l`).
+
+Total coefficients up to degree `lmax`:
+```
+Σ(2l + 1) for l = 0 to lmax = (lmax + 1)²
+```
+
+| lmax | Coefficients | irrep_dim |
+|------|--------------|-----------|
+| 0    | l=0: 1       | 1         |
+| 1    | l=0: 1, l=1: 3 | 4       |
+| 2    | l=0: 1, l=1: 3, l=2: 5 | 9 |
+
+### Visual Representation
+
+For `lmax=2` (typical setting), the spherical harmonics look like:
+
+```
+l=0 (1 coef):  ●           - scalar (invariant)
+l=1 (3 coef):  ↑ → ↗       - vector (type-1, rotates like xyz)
+l=2 (5 coef):  ⬡ ⬢ ⬣ ...   - tensor (type-2, higher order)
+               ─────────
+               Total: 9 coefficients
+```
+
+### Output Shape
+
+The encoder outputs:
+```python
+# After processing: [B*T, irrep_dim, c_dim]
+s2_feat = node_dst.embedding  # shape: [B*T, 9, 128] for lmax=2, c_dim=128
+
+# Flatten: [B*T, c_dim * irrep_dim]
+s2_feat = rearrange(s2_feat, 'bt irrep c -> bt (c irrep)')  # shape: [B*T, 1152]
+```
+
+So for `lmax=2, c_dim=128`:
+```
+output_dim = 128 * 9 = 1152
+```
+
+This gives you 128 channels, each with 9 spherical harmonic coefficients that transform correctly under SO(3) rotations (equivariance).
+
+---
+
+_**User (2026-01-23 05:59Z)**_
+
+Exception has occurred: TypeError
+unhashable type: 'list'
+  File "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py", line 268, in get_encoding_from_name_batch
+    emb_tensor = mapping_dict[name_batch]
+  File "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py", line 289, in get_all_embs
+    skill_emb_batch = self.get_encoding_from_name_batch(
+  File "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py", line 481, in pred_unimanual_traj
+    language_emb = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
+  File "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/test_sdp.py", line 66, in run_eval
+    action_dict, eval_metrics = agent.actor.pred_unimanual_traj(
+  File "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/train_sdp.py", line 167, in main
+    _, eval_metrics = run_eval(agent=agent, vis=False, batch=val_batch, history_bid=-1)
+  File "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/train_sdp.py", line 204, in <module>
+    main()
+TypeError: unhashable type: 'list'
+
+---
+
+_**Agent (model claude-4.5-opus-high-thinking, mode Agent)**_
+
+<think><details><summary>Thought Process</summary>
+The error shows that `name_batch` is a list when `batch_size == 1`, but the code tries to use it as a dictionary key directly. Let me look at the `get_encoding_from_name_batch` function to understand the issue.</details></think>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+The issue is that when `batch_size == 1`, `name_batch` is still a list with one element (e.g., `['grasp_cup']`), not a string. The code assumes `batch_size == 1` means `name_batch` is a single string, but it's actually a list.
+
+The fix is to handle the case where `name_batch` is a list with one element when `batch_size == 1`. We should index into it: `name_batch[0]` when it's a list.</details></think>
+
+---
+
+The issue is that when `batch_size == 1`, `name_batch` is still a **list** with one element (e.g., `['grasp_cup']`), not a string. The code tries to use the list directly as a dictionary key.
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 18, lines removed: 14
+
+```diff
+@@ -265,18 +265,22 @@
+      # ==================== Text Encoding ====================
+      def get_encoding_from_name_batch(self, name_batch, batch_size, mapping_dict):
+-         if batch_size == 1:
+-             emb_tensor = mapping_dict[name_batch]
+-             if isinstance(emb_tensor, np.ndarray):
+-                 emb_tensor = torch.tensor(emb_tensor).to(self.device)
+-             emb_batch = self.encode_bert_emb(emb_tensor, batch_size)
+-         else:
+-             emb_tensor_batch = []
+-             for skill_name in name_batch:
+-                 emb_tensor = mapping_dict[skill_name]
+-                 if isinstance(emb_tensor, np.ndarray):
+-                     emb_tensor = torch.tensor(emb_tensor).to(self.device)
+-                 emb_tensor_batch.append(emb_tensor)
+-             emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
+-             emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
++         # Handle both single string and list of strings
++         # name_batch can be: "skill_name" (string) or ["skill_name"] (list with one element)
++         if isinstance(name_batch, str):
++             # Single string case
++             names = [name_batch]
++         else:
++             # List case
++             names = name_batch
++         
++         emb_tensor_batch = []
++         for name in names:
++             emb_tensor = mapping_dict[name]
++             if isinstance(emb_tensor, np.ndarray):
++                 emb_tensor = torch.tensor(emb_tensor).to(self.device)
++             emb_tensor_batch.append(emb_tensor)
++         
++         emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
++         emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
+          return emb_batch
+      
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+The fix now handles both cases:
+1. `name_batch` is a string → wrap it in a list
+2. `name_batch` is a list → use it directly
+
+Then we always iterate through the list and stack the embeddings. This is cleaner and more robust.</details></think>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="read_lints">
+<details>
+          <summary>Tool use: **read_lints** • Read lints for 1 file</summary>
+      
+Lint paths:
+
+- `equibot/policies/agents/sdp_policy.py`
+
+Lint results
+
+
+**No lint errors found**
+</details>
+</tool-use>
+
+---
+
+<think><details><summary>Thought Process</summary>
+Good. The fix now handles both cases consistently:
+- If `name_batch` is a string (single name), wrap it in a list
+- If `name_batch` is a list, use it directly- Then always iterate through the list and stack embeddings
+This is cleaner and avoids the special case for batch_size==1.</details></think>
+
+---
+
+Fixed! The issue was that `name_batch` is always a **list** (e.g., `['grasp_cup']`), even when `batch_size == 1`. The old code assumed it would be a single string when `batch_size == 1`.
+
+The fix now handles both cases uniformly:
+- If `name_batch` is a string → wrap it in a list
+- If `name_batch` is already a list → use it directly
+- Then always iterate and stack embeddings
+
+---
+
+_**User (2026-01-24 04:39Z)**_
+
+for different type of input (type-0, 1, 2), how do the code in @code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py cope with it?
+
+---
+
+_**Agent (model default, mode Agent)**_
+
+
+
+---
+
+
+Examining how the reference code handles different irrep types:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Checking how IrrepConditionalUnet1D handles the action format:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "input_dim.*3|action_dim|type.*0|type.*1|type.*2" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref" • 276 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `self.type0_linear = nn.Linear(self.pcd_channels, self.sphere_channels_all, bias=True)` | L210 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)` | L318 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)[:,` | L320 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `proprio[:, 1:4, :3 * self.n_proprio] = ee_rot_vec  # 3x type1 irrep` | L354 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `proprio[:, 1:4, -self.n_proprio:] = ee_pose  # 1x type1 irrep` | L355 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `proprio[:, 0, :2 * self.n_proprio] = ee_q  # 2x type2 irrep` | L356 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `action_dim = action_shape[0]` | L72 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `action_dim = action_shape[0] * action_shape[1]` | L74 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `input_dim = action_dim + obs_feature_dim` | L92 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `input_dim = action_dim` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `action_dim=action_dim,` | L130 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `self.action_dim = action_dim` | L140 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `Da = self.action_dim` | L218 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `action_dim = action_shape[0]` | L37 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `input_dim = action_dim + obs_feature_dim` | L42 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `input_dim = action_dim` | L45 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `action_dim=action_dim,` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `self.action_dim = action_dim` | L72 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `Da = self.action_dim` | L134 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `action_dim = action_shape[0]` | L151 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `input_dim=action_dim,` | L166 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `action_dim=action_dim, obs_dim=0, max_n_obs_steps=n_obs_steps, fix_obs_steps=True, action_visible=False` | L180 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `self.action_dim = action_dim` | L186 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `Da = self.action_dim` | L261 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `action_dim = action_shape[0]` | L48 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `action_dim=action_dim,` | L76 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `self.action_dim = action_dim` | L86 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `Da = self.action_dim` | L168 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `action_dim = action_shape[0]` | L75 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `action_dim = action_shape[0] * action_shape[1]` | L77 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `input_dim = action_dim + obs_feature_dim` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `input_dim = action_dim` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `action_dim=action_dim,` | L133 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `self.action_dim = action_dim` | L143 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `Da = self.action_dim` | L231 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `self.action_dim = 3 * self.num_eef  # action_dim consists of 4 3D vectors, xyz + x-y-z- axes of each eef` | L71 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `self.obs_dim = self.encoder_out_dim + self.action_dim` | L78 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `input_dim=self.action_dim,` | L80 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `#     action_dim=action_dim,` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `# self.action_dim = action_dim` | L110 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `torch.randn((B, T, self.action_dim, 3)).to(self.device)` | L177 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `noisy_eef_actions = noisy_trajectory[..., :9].reshape(bs, na, self.action_dim, 3)` | L428 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/act_policy.py` | `action_dim = 10` | L104 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/act_policy.py` | `self.action_dim = action_dim` | L144 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/act_policy.py` | `self.all_time_actions = torch.zeros([self.n_envs, self.max_timesteps, self.max_timesteps+self.num_queries, self.action_dim]).to(self.device)` | L148 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/act_policy.py` | `self.all_time_actions = torch.zeros([self.n_envs, self.max_timesteps, self.max_timesteps+self.num_queries, self.action_dim]).to(self.device)` | L219 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_lowdim_policy.py` | `action_dim,` | L19 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_lowdim_policy.py` | `action_dim=action_dim,` | L34 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_lowdim_policy.py` | `self.action_dim = action_dim` | L43 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_lowdim_policy.py` | `Da = self.action_dim` | L106 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `action_dim = action_shape[0]` | L67 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `action_dim=action_dim,` | L114 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `self.action_dim = action_dim` | L124 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `Da = self.action_dim` | L210 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `action_dim = action_shape[0]` | L92 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `action_dim = action_shape[0] * action_shape[1]` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `input_dim = action_dim + obs_feature_dim` | L121 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `input_dim = action_dim` | L124 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `input_dim=input_dim // 3,` | L134 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `input_dim=input_dim // 3,` | L148 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `action_dim=action_dim,` | L179 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `self.action_dim = action_dim` | L193 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `Da = self.action_dim` | L269 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `action_dim = action_shape[0]` | L74 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `action_dim = action_shape[0] * action_shape[1]` | L76 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `input_dim = action_dim + obs_feature_dim` | L93 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `input_dim = action_dim` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `action_dim=action_dim,` | L127 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `self.action_dim = action_dim` | L137 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `Da = self.action_dim` | L205 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `action_dim,` | L19 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `action_dim=action_dim,` | L36 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `self.action_dim = action_dim` | L45 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `Da = self.action_dim` | L112 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `action_dim = action_shape[0]` | L44 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `input_dim = action_dim` | L85 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `action_dim=action_dim,` | L116 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `self.action_dim = action_dim` | L124 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `Da = self.action_dim` | L187 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `action_dim = action_shape[0]` | L42 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `ac_dim=action_dim,` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `in_action_channels = action_dim * n_action_steps` | L126 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `self.action_dim = action_dim` | L148 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `Da = self.action_dim` | L181 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `Da = self.action_dim` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `Da = self.action_dim` | L319 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_lowdim_policy.py` | `action_dim,` | L12 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_lowdim_policy.py` | `in_action_channels = action_dim * n_action_steps` | L24 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_lowdim_policy.py` | `self.action_dim = action_dim` | L46 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_lowdim_policy.py` | `Da = self.action_dim` | L80 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_lowdim_policy.py` | `Da = self.action_dim` | L154 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_lowdim_policy.py` | `Da = self.action_dim` | L201 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `action_dim = 6` | L48 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `action_dim=action_dim,` | L76 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `self.action_dim = action_dim` | L86 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `Da = self.action_dim` | L182 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/robomimic_image_policy.py` | `action_dim = action_shape[0]` | L26 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/robomimic_image_policy.py` | `ac_dim=action_dim,` | L79 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/robomimic_lowdim_policy.py` | `action_dim,` | L13 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/robomimic_lowdim_policy.py` | `ac_dim=action_dim,` | L38 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `action_dim = action_shape[0]` | L54 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `ac_dim=action_dim,` | L106 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `input_dim = action_dim + obs_feature_dim` | L139 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `input_dim = action_dim` | L142 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `action_dim=action_dim,` | L160 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `self.action_dim = action_dim` | L171 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `Da = self.action_dim` | L237 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `action_dim = 13 # 3 + 9 + 1` | L67 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `action_dim=action_dim,` | L104 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `self.action_dim = action_dim` | L114 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `Da = self.action_dim` | L202 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `action_dim = action_shape[0]` | L58 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `ac_dim=action_dim,` | L110 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `input_dim = action_dim if obs_as_cond else (obs_feature_dim + action_dim)` | L143 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `action_dim=action_dim,` | L168 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `self.action_dim = action_dim` | L177 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `Da = self.action_dim` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `sample: (B,T,input_dim,3)` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `self.enc = IrrepConv1dBlock(input_dim, act_emb_dim, 1, self.SO3_grid,` | L74 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `self.dec = IrrepConv1dBlock(act_emb_dim, input_dim, 1, self.SO3_grid,` | L76 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `if type(timestep) == torch.Tensor and len(timestep.shape) == 1:` | L126 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `final_conv = IrrepConv1dBlock(start_dim, input_dim, 3, self.SO3_grid,` | L214 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timesteps = torch.tensor([timesteps], dtype=torch.long, device=s2_input.device)` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `self.register_buffer('signs', torch.tensor(signs, dtype=torch.float32))` | L662 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `self.register_buffer('signs', torch.tensor(signs, dtype=torch.float32))` | L681 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_encoder.py` | `nn.R2Conv(feat_type_in, feat_type_hid, kernel_size=1, stride=stride, bias=False, initialize=initialize),` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/layer_norm.py` | `def get_normalization_layer(norm_type, lmax, num_channels, eps=1e-5, affine=True, normalization='component'):` | L13 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/edge_rot_mat.py` | `fixed_vecs = torch.tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1]], device=edge_vec_0.device, dtype=edge_vec_0.dtype)` | L67 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `#     def __init__(self, in_type: nn.FieldType, out_type: nn.FieldType, kernel_size, stride=1):` | L39 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `#         self.conv = torch.nn.Conv1d(len(in_type), len(out_type), kernel_size, padding=kernel_size // 2, stride=stride)` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `def __init__(self, in_type: nn.FieldType, out_type: nn.FieldType, kernel_size, stride=1):` | L67 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `weights = _matrix.reshape(self.out_type.size, self.kernel_size, -1)` | L86 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `self.out_repr_size = out_type.representations[0].size` | L121 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `self.residual_conv = EquiConv1d(in_type, out_type, 1) \` | L138 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `in_type = nn.FieldType(g, 1*[g.regular_repr])` | L483 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `out_type = nn.FieldType(g, 1*[g.regular_repr])` | L484 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `cond_type = nn.FieldType(g, 1*[g.regular_repr])` | L485 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `# layer = EquiConv1d(in_type, out_type, kernel_size=3, stride=1)` | L487 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `# layer = EquiConditionalResidualBlock1D(in_type, out_type, cond_type, kernel_size=5, n_groups=1, cond_predict_scale=True)` | L501 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/util/misc.py` | `d = torch.tensor(list(self.deque), dtype=torch.float32)` | L65 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/util/misc.py` | `dtype = tensor_list[0].dtype` | L320 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/detr_vae.py` | `actions: batch, seq, action_dim` | L83 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/detr_vae.py` | `latent_sample = torch.zeros([bs, self.latent_dim], dtype=torch.float32).to(qpos.device)` | L113 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/detr_vae.py` | `actions: batch, seq, action_dim` | L179 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/position_encoding.py` | `y_embed = not_mask.cumsum(1, dtype=torch.float32)` | L37 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/position_encoding.py` | `x_embed = not_mask.cumsum(2, dtype=torch.float32)` | L38 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/position_encoding.py` | `dim_t = torch.arange(self.num_pos_feats, dtype=torch.float32, device=x.device)` | L44 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d.py` | `if type(timestep) == torch.Tensor and len(timestep.shape) == 1:` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d.py` | `if type(timestep) == torch.Tensor and len(timestep.shape) == 1:` | L189 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d.py` | `if type(timestep) == torch.Tensor and len(timestep.shape) == 1:` | L307 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/normalizer.py` | `dtype=torch.float32,` | L19 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/normalizer.py` | `dtype=torch.float32,` | L107 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/normalizer.py` | `def create_identity(cls, dtype=torch.float32):` | L153 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/normalizer.py` | `dtype=torch.float32,` | L182 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/tensor_util.py` | `np.ndarray: lambda x: x.astype(np.float32),` | L370 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/transformer.py` | `action_dim: int,` | L17 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/transformer.py` | `output_dim=num_bins * (1 + action_dim),` | L26 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/transformer.py` | `self.action_dim = action_dim` | L33 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/transformer.py` | `A=self.action_dim,` | L57 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/transformer.py` | `selected_offsets, target_offsets.view(-1, self.action_dim)` | L68 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/transformer.py` | `A=self.action_dim,` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/transformer.py` | `].view(batch, seq, self.action_dim)` | L107 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/mingpt.py` | `action_dim: int = 0,` | L27 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/mingpt.py` | `self.action_dim = action_dim` | L44 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/mingpt.py` | `vocab_size=self.vocab_size * (1 + self.action_dim)` | L53 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/mingpt.py` | `A=self.action_dim,` | L107 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/mingpt.py` | `selected_offsets, target_offsets.view(-1, self.action_dim)` | L120 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/mingpt.py` | `A=self.action_dim,` | L162 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/latent_generators/mingpt.py` | `].view(batch, seq, self.action_dim)` | L176 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/libraries/loss_fn.py` | `dtype=torch.float32,` | L142 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/ema_model.py` | `ema_param.add_(param.data.to(dtype=ema_param.dtype), alpha=1 - self.decay)` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/dp3_conditional_unet1d.py` | `if condition_type == 'film': # FiLM modulation https://arxiv.org/abs/1709.07871` | L70 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `action_dim, obs_dim,` | L45 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `self.action_dim = action_dim` | L53 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `assert D == (self.action_dim + self.obs_dim)` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `is_action_dim = dim_mask.clone()` | L73 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `is_action_dim[...,:self.action_dim] = True` | L74 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `is_obs_dim = ~is_action_dim` | L75 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `action_mask = action_mask & is_action_dim` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `action_dim, keypoint_dim,` | L110 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `self.action_dim = action_dim` | L121 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `all_keypoint_dims = D - self.action_dim - self.context_dim` | L135 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `is_action_dim = dim_mask.clone()` | L146 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `is_action_dim[...,:self.action_dim] = True` | L147 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `is_obs_dim = ~(is_action_dim \| is_context_dim)` | L151 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `action_mask = action_mask & is_action_dim` | L175 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `torch.ones((B, T, self.action_dim),` | L183 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/diffusion/mask_generator.py` | `torch.ones((B, self.action_dim),` | L195 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/gym_util/multistep_wrapper.py` | `dtype=all_obs[-1].dtype)` | L58 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env/robomimic/robomimic_lowdim_wrapper.py` | `low = np.full(env.action_dimension, fill_value=-1)` | L29 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env/robomimic/robomimic_lowdim_wrapper.py` | `high = np.full(env.action_dimension, fill_value=1)` | L30 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env/robomimic/robomimic_image_wrapper.py` | `dtype=np.float32` | L32 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env/robomimic/robomimic_image_wrapper.py` | `dtype=np.float32` | L62 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env_runner/robomimic_lowdim_runner.py` | `'obs': obs[:,:self.n_obs_steps].astype(np.float32)` | L310 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env_runner/robomimic_lowdim_runner.py` | `:,-(self.n_obs_steps-1):].astype(np.float32)` | L315 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env_runner/robomimic_image_runner.py` | `:,-(self.n_obs_steps-1):].astype(np.float32)` | L286 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `).astype(np.float32) / 255.` | L259 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L263 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `], axis=-1).astype(np.float32)` | L291 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L351 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `dtype=np.float32` | L451 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `).astype(np.float32) / 255.` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L195 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L198 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L203 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `], axis=-1).astype(np.float32)` | L223 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L283 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `dtype=np.float32` | L371 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `).astype(np.float32) / 255.` | L213 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L217 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L222 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `], axis=-1).astype(np.float32)` | L242 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L298 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_lowdim_dataset.py` | `raw_actions=demo['actions'][:].astype(np.float32),` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_lowdim_dataset.py` | `], axis=-1).astype(np.float32)` | L145 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_lowdim_dataset.py` | `], axis=-1).astype(np.float32)` | L160 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `).astype(np.float32) / 255.` | L259 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L263 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `], axis=-1).astype(np.float32)` | L291 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L351 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `dtype=np.float32` | L439 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/__init__.py` | `input_action (shape: ... x action_dim): The input action to discretize. This can be in a batch,` | L31 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/__init__.py` | `continuous_action (shape: ... x action_dim): The continuous action.` | L53 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `action_dim: int,` | L17 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `self.action_dim = action_dim` | L23 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `self.action_dim == input_actions.shape[-1]` | L28 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `), f"Input action dimension \{self.action_dim\} does not match fitted model \{input_actions.shape[-1]\}"` | L29 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `flattened_actions = input_actions.view(-1, self.action_dim)` | L31 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `input_action (shape: ... x action_dim): The input action to discretize. This can be in a batch,` | L75 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `input_action.shape[-1] == self.action_dim` | L83 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `flattened_actions = input_action.view(-1, self.action_dim)` | L87 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `reconstructed_action (shape: ... x action_dim): The reconstructed action.` | L123 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/action_ae/discretizers/k_means.py` | `latent_action_batch.shape[:-1] + (self.action_dim,)` | L132 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `).astype(np.float32) / 255.` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L236 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `# voxels = np.moveaxis(data[key][T_slice].astype(np.float32), [0, 1, 2, 3, 4], [0, 1, 4, 3, 2])` | L239 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L250 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `], axis=-1).astype(np.float32)` | L270 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L330 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `).astype(np.float32) / 255.` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L242 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L250 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `], axis=-1).astype(np.float32)` | L270 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L330 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `dtype=np.float32` | L430 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/codecs/imagecodecs_numcodecs.py` | `self, shape, dtype, axis=-1, dist=1, delta=False, reorder=False` | L312 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/codecs/imagecodecs_numcodecs.py` | `def __init__(self, shape=None, dtype=None, axis=-1, dist=1):` | L399 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/codecs/imagecodecs_numcodecs.py` | `def __init__(self, shape, dtype, axis=-1, dist=1):` | L448 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/codecs/imagecodecs_numcodecs.py` | `def __init__(self, shape=None, dtype=None, axis=-1):` | L1207 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/pymunk_util.py` | `state = np.zeros(6, dtype=np.float32)` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/env_util.py` | `coord = (action / 512 * 96).astype(np.int32)` | L17 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/cv2_util.py` | `n_rows = np.arange(n_cameras,dtype=np.int64) + 1` | L131 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `scale = np.array([1], dtype=np.float32)` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `offset = np.array([0], dtype=np.float32)` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'min': np.array([0], dtype=np.float32),` | L66 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'max': np.array([1], dtype=np.float32),` | L67 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'mean': np.array([0.5], dtype=np.float32),` | L68 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'std': np.array([np.sqrt(1/12)], dtype=np.float32)` | L69 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `scale = np.array(dim*[1], dtype=np.float32)` | L78 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `offset = np.array(dim*[0], dtype=np.float32)` | L79 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'min': np.array(dim*[-1], dtype=np.float32),` | L81 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'max': np.array(dim*[1], dtype=np.float32),` | L82 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'mean': np.array(dim*[0], dtype=np.float32),` | L83 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'std': np.array(dim*[np.sqrt(1/12)], dtype=np.float32)` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `scale = np.array([2], dtype=np.float32)` | L93 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `offset = np.array([-1], dtype=np.float32)` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'min': np.array([0], dtype=np.float32),` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'max': np.array([1], dtype=np.float32),` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'mean': np.array([0.5], dtype=np.float32),` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'std': np.array([np.sqrt(1/12)], dtype=np.float32)` | L99 |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+How the reference code handles different irrep types:
+
+## Action Representation Breakdown
+
+### 1. **Action Format** (from `step.py` lines 467-469)
+
+```python
+# Converting 6D representation to XY- axes of the end-effector
+rot_mat = pytorch3d_transforms.rotation_6d_to_matrix(nactions[:, :, 3:9].reshape(-1, 6))
+rot_xy = rot_mat.transpose(2, 1)[:, :2, :]  # Extract first 2 columns (X, Y axes)
+rot_xy = rot_xy.reshape(bs, na, 6)
+nactions = torch.cat((nactions[:, :, :3], rot_xy, nactions[:, :, 9:]), dim=-1)
+```
+
+**Action structure**: `[pos(3), rot_xy(6), gripper(1)]` = **10D total**
+
+### 2. **Input to IrrepConditionalUnet1D** (line 134)
+
+```python
+input_dim=input_dim // 3  # For action_dim=10: 10 // 3 = 3
+```
+
+This means: **3 type-1 vectors** (each 3D)
+
+### 3. **Conversion Inside IrrepConditionalUnet1D** (lines 238-240)
+
+```python
+s2_input = torch.zeros(bs, n_hist, self.input_dim, self.d_irrep)  # (B, T, 3, irrep_dim)
+s2_input[..., 1:4] = sample[:, :, :9].reshape(bs, n_hist, 3, 3)  # Type-1: 3 vectors
+s2_input[..., 0, 0] = sample[:, :, -1]  # Type-0: gripper (scalar)
+```
+
+**Mapping**:
+- **Type-1 (l=1, m=-1,0,1)**: `s2_input[..., 1:4, :]` = 3 vectors × 3 coefficients = 9D
+  - Vector 1: position (3D)
+  - Vector 2: rotation X-axis (3D)  
+  - Vector 3: rotation Y-axis (3D)
+- **Type-0 (l=0, m=0)**: `s2_input[..., 0, 0]` = gripper (1D scalar)
+
+### 4. **Output Reconstruction** (lines 287-291)
+
+```python
+gripper_out = x[..., :1, 0]  # Extract type-0 (l=0, m=0)
+pos_rot_out = x[..., 1:4]  # Extract type-1 (l=1, all m)
+pos_rot_out = einops.rearrange(pos_rot_out, 'b h n i -> b h (n i)')  # Flatten to 9D
+out = torch.cat([pos_rot_out, gripper_out], dim=-1)  # [B, T, 10]
+```
+
+## Summary
+
+| Irrep Type | Channels | Dimension | Content | Storage Location |
+|------------|----------|-----------|---------|------------------|
+| **Type-0** (l=0) | 1 | 1D | Gripper | `s2_input[..., 0, 0]` |
+| **Type-1** (l=1) | 3 | 9D | Pos + Rot_X + Rot_Y | `s2_input[..., 1:4, :]` |
+
+**Key insight**: The `input_dim // 3` division tells the network there are **3 type-1 vectors**, and the gripper (type-0 scalar) is handled separately in the l=0, m=0 coefficient. This preserves SO(3) equivariance: type-1 vectors rotate with the scene, while type-0 scalars remain invariant.
+
+---
+
+_**User (2026-01-24 04:39Z)**_
+
+when is the type-2 vector used?
+
+---
+
+_**Agent (model default, mode Agent)**_
+
+
+
+---
+
+
+Searching for type-2 (l=2) usage in the codebase:
+
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "type.*2|type2|l=2|lmax.*2|proprio.*type2" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref" • 118 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `lmax=2,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `-> embedded SH graph, where features are in shape (b (lmax+1)**2 c), signal over S2 irreps` | L215 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `offset_res = offset_res + int((self.lmax_list[i] + 1) ** 2)` | L323 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `proprio[:, 0, :2 * self.n_proprio] = ee_q  # 2x type2 irrep` | L356 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `lmax=2,` | L57 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/vision/pointnet_extractor.py` | `out_channel=256,` | L208 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `max_lmax=2,` | L42 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `self.d_irrep = (max_lmax + 1) ** 2` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `d_irrep = (max_lmax + 1) ** 2` | L157 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `max_lmax=2,` | L40 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `self.d_irrep = (max_lmax + 1) ** 2` | L44 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conv1d_components.py` | `self.d_irrep = (max_lmax + 1) ** 2` | L36 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conv1d_components.py` | `expand_index = torch.zeros([(lmax + 1) ** 2]).long()` | L102 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equi/equi_conditional_unet1d_2.py` | `#         self.conv = torch.nn.Conv1d(len(in_type), len(out_type), kernel_size, padding=kernel_size // 2, stride=stride)` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `self.dim_irrep = (max_lmax + 1) ** 2` | L59 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `max_lmax=2,` | L125 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `self.d_irrep = (max_lmax + 1) ** 2` | L221 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timesteps = torch.tensor([timesteps], dtype=torch.long, device=s2_input.device)` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `d_irrep = (max_lmax + 1) ** 2` | L307 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `expand_index = torch.zeros([(max(self.lmax_list) + 1) ** 2]).long()` | L108 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_edge_weight = x_edge_weight.reshape(-1, (max(self.lmax_list) + 1), 2 * self.sphere_channels)` | L206 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `rotate_inv_rescale = torch.ones((1, (lmax + 1) ** 2, (lmax + 1) ** 2), device=self.device)` | L166 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `(lmax_list[i] + 1) ** 2` | L211 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `num_coefficients = int((self.lmax_list[i] + 1) ** 2)` | L293 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `num_coefficients = int((self.lmax_list[i] + 1) ** 2)` | L362 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `num_coefficients = int((self.lmax_list[i] + 1) ** 2)` | L390 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `size = (end_lmax + 1) ** 2 - (start_lmax) ** 2` | L452 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `expand_index = torch.zeros([(lmax + 1) ** 2]).long()` | L617 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `self.register_buffer('signs', torch.tensor(signs, dtype=torch.float32))` | L662 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so3.py` | `self.register_buffer('signs', torch.tensor(signs, dtype=torch.float32))` | L681 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/layer_norm.py` | `with sphere_basis = (lmax + 1) ** 2.` | L3 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/layer_norm.py` | `expand_index = torch.zeros([(lmax + 1) ** 2]).long()` | L27 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/layer_norm.py` | `balance_degree_weight = torch.zeros((self.lmax + 1) ** 2 - 1, 1)` | L137 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/layer_norm.py` | `num_m_components = (self.lmax + 1) ** 2` | L167 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/layer_norm.py` | `balance_degree_weight = torch.zeros((self.lmax + 1) ** 2, 1)` | L295 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/layer_norm.py` | `def __init__(self, lmax, num_channels, scale_factor=2.0):` | L356 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/activation.py` | ``input_tensors`: shape  [N, (lmax + 1) ** 2, num_channels]` | L121 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/util/misc.py` | `d = torch.tensor(list(self.deque), dtype=torch.float32)` | L65 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/detr_vae.py` | `latent_sample = torch.zeros([bs, self.latent_dim], dtype=torch.float32).to(qpos.device)` | L113 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/tensor_util.py` | `np.ndarray: lambda x: x.astype(np.float32),` | L370 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/position_encoding.py` | `y_embed = not_mask.cumsum(1, dtype=torch.float32)` | L37 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/position_encoding.py` | `x_embed = not_mask.cumsum(2, dtype=torch.float32)` | L38 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/detr/models/position_encoding.py` | `dim_t = torch.arange(self.num_pos_feats, dtype=torch.float32, device=x.device)` | L44 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/normalizer.py` | `dtype=torch.float32,` | L19 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/normalizer.py` | `dtype=torch.float32,` | L107 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/normalizer.py` | `def create_identity(cls, dtype=torch.float32):` | L153 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/common/normalizer.py` | `dtype=torch.float32,` | L182 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/bet/libraries/loss_fn.py` | `dtype=torch.float32,` | L142 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/config/sdp_ddpm_5layer.yaml` | `lmax: 2` | L34 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/config/sdp_ddim_5layer.yaml` | `lmax: 2` | L34 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `).astype(np.float32) / 255.` | L259 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L263 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `], axis=-1).astype(np.float32)` | L291 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L351 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_dataset.py` | `dtype=np.float32` | L451 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `).astype(np.float32) / 255.` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L195 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L198 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L203 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `], axis=-1).astype(np.float32)` | L223 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L283 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_dataset.py` | `dtype=np.float32` | L371 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `).astype(np.float32) / 255.` | L213 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L217 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L222 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `], axis=-1).astype(np.float32)` | L242 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_image_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L298 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env_runner/robomimic_lowdim_runner.py` | `'obs': obs[:,:self.n_obs_steps].astype(np.float32)` | L310 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env_runner/robomimic_lowdim_runner.py` | `:,-(self.n_obs_steps-1):].astype(np.float32)` | L315 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_lowdim_dataset.py` | `raw_actions=demo['actions'][:].astype(np.float32),` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_lowdim_dataset.py` | `], axis=-1).astype(np.float32)` | L145 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_lowdim_dataset.py` | `], axis=-1).astype(np.float32)` | L160 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env_runner/robomimic_image_runner.py` | `:,-(self.n_obs_steps-1):].astype(np.float32)` | L286 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `).astype(np.float32) / 255.` | L259 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L263 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `], axis=-1).astype(np.float32)` | L291 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L351 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_gripper_equal_scale_dataset.py` | `dtype=np.float32` | L439 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `).astype(np.float32) / 255.` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L236 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `# voxels = np.moveaxis(data[key][T_slice].astype(np.float32), [0, 1, 2, 3, 4], [0, 1, 4, 3, 2])` | L239 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L250 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `], axis=-1).astype(np.float32)` | L270 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_voxel_sym_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L330 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `).astype(np.float32) / 255.` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L242 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `obs_dict[key] = data[key][T_slice].astype(np.float32)` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `'action': torch.from_numpy(data['action'].astype(np.float32))` | L250 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `], axis=-1).astype(np.float32)` | L270 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `this_data.append(demo[data_key][:].astype(np.float32))` | L330 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/dataset/robomimic_replay_point_cloud_sym_no_center_dataset.py` | `dtype=np.float32` | L430 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env/robomimic/robomimic_image_wrapper.py` | `dtype=np.float32` | L32 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/env/robomimic/robomimic_image_wrapper.py` | `dtype=np.float32` | L62 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/env_util.py` | `coord = (action / 512 * 96).astype(np.int32)` | L17 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/pymunk_util.py` | `state = np.zeros(6, dtype=np.float32)` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `scale = np.array([1], dtype=np.float32)` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `offset = np.array([0], dtype=np.float32)` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'min': np.array([0], dtype=np.float32),` | L66 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'max': np.array([1], dtype=np.float32),` | L67 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'mean': np.array([0.5], dtype=np.float32),` | L68 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'std': np.array([np.sqrt(1/12)], dtype=np.float32)` | L69 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `scale = np.array(dim*[1], dtype=np.float32)` | L78 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `offset = np.array(dim*[0], dtype=np.float32)` | L79 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'min': np.array(dim*[-1], dtype=np.float32),` | L81 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'max': np.array(dim*[1], dtype=np.float32),` | L82 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'mean': np.array(dim*[0], dtype=np.float32),` | L83 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'std': np.array(dim*[np.sqrt(1/12)], dtype=np.float32)` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `scale = np.array([2], dtype=np.float32)` | L93 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `offset = np.array([-1], dtype=np.float32)` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'min': np.array([0], dtype=np.float32),` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'max': np.array([1], dtype=np.float32),` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'mean': np.array([0.5], dtype=np.float32),` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/common/normalize_util.py` | `'std': np.array([np.sqrt(1/12)], dtype=np.float32)` | L99 |
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "type.*2|type2|l=2|proprio" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies" • 69 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py` | `- No robot proprioception input (object-centric prediction)` | L48 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/configs/sdp_per_skill.yaml` | `lmax: 2                        # Max degree of spherical harmonics (2 = up to l=2)` | L53 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/per_skill_dataset.py` | `selected_jpose = np.concatenate([rbt_states['robot0_joint_pos'][qtraj_indice], rbt_states['robot1_joint_pos'][qtraj_indice]], axis=0).astype(np.float32)` | L391 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/misc.py` | `return torch.tensor(ascii_values, dtype=torch.int32)  # 使用 int32 存储` | L604 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/misc.py` | `selected_ids = np.random.choice(essential_ids, size=traj_len, replace=True).astype(np.int32)` | L886 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/misc.py` | `selected_ids = list(np.sort(selected_ids.astype(np.int32)))` | L891 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/misc.py` | `selected_ids = np.random.choice(remaining_ids, size=other_nums, replace=False).astype(np.int32)` | L897 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/misc.py` | `rendered_image = rendered_image.astype(np.float32) / 255.0  # Normalize to [0, 1]` | L1181 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/train_sdp.py` | `if v.dtype == np.float32 and v.max() <= 1.0:` | L179 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `timesteps = torch.tensor([timesteps], dtype=torch.long, device=s2_input.device)` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/equiformer_v2/so3.py` | `self.register_buffer('signs', torch.tensor(signs, dtype=torch.float32))` | L662 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/equiformer_v2/so3.py` | `self.register_buffer('signs', torch.tensor(signs, dtype=torch.float32))` | L681 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dmg_dataset.py` | `data_slice[f'\{skill_name\}:jpose'] = pre_dual_jpose_all[qtraj_indice].astype(np.float32)` | L146 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dmg_dataset.py` | `eff_dual_jpose= eff_dual_jpose_all[qtraj_indice].astype(np.float32)` | L153 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dmg_dataset.py` | `chosen_ids = np.random.choice(delayed_essential_ids, size=grasp_nums, replace=True).astype(np.int32) # unsorted` | L185 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dmg_dataset.py` | `data_slice[f'\{skill_name\}:jpose'] = pre_dual_jpose_all[qtraj_indice].astype(np.float32)` | L275 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dmg_dataset.py` | `eff_dual_jpose= eff_dual_jpose_all[qtraj_indice].astype(np.float32)` | L282 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dmg_dataset.py` | `selected_jpose = np.concatenate([rbt_states['robot0_joint_pos'][qtraj_indice], rbt_states['robot1_joint_pos'][qtraj_indice]], axis=0).astype(np.float32)` | L419 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/train_skills.py` | `if v.dtype == np.float32 and v.max() <= 1.0:` | L166 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `scale = np.array([1], dtype=np.float32)` | L62 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `offset = np.array([0], dtype=np.float32)` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'min': np.array([0], dtype=np.float32),` | L65 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'max': np.array([1], dtype=np.float32),` | L66 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'mean': np.array([0.5], dtype=np.float32),` | L67 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'std': np.array([np.sqrt(1/12)], dtype=np.float32)` | L68 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `scale = np.array(dim*[1], dtype=np.float32)` | L77 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `offset = np.array(dim*[0], dtype=np.float32)` | L78 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'min': np.array(dim*[-1], dtype=np.float32),` | L80 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'max': np.array(dim*[1], dtype=np.float32),` | L81 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'mean': np.array(dim*[0], dtype=np.float32),` | L82 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'std': np.array(dim*[np.sqrt(1/12)], dtype=np.float32)` | L83 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `scale = np.array([2], dtype=np.float32)` | L92 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `offset = np.array([-1], dtype=np.float32)` | L93 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'min': np.array([0], dtype=np.float32),` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'max': np.array([1], dtype=np.float32),` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'mean': np.array([0.5], dtype=np.float32),` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalize_utils.py` | `'std': np.array([np.sqrt(1/12)], dtype=np.float32)` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalizer.py` | `dtype=torch.float32,` | L19 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalizer.py` | `dtype=torch.float32,` | L107 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalizer.py` | `def create_identity(cls, dtype=torch.float32):` | L153 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/normalizer.py` | `dtype=torch.float32,` | L182 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/train_traj.py` | `if v.dtype == np.float32 and v.max() <= 1.0:` | L124 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/train_abstract.py` | `if v.dtype == np.float32 and v.max() <= 1.0:` | L132 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/train_compaloha.py` | `if v.dtype == np.float32 and v.max() <= 1.0:` | L126 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/eval_dmg.py` | `dtype=np.float32` | L67 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/eval_dmg.py` | `obs_dict_np[k] = np.array([v[0]] * self.n_obs_steps, dtype=np.float32)` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/eval_dmg.py` | `## gather proprio` | L108 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/abstract_dataset.py` | `line_rcd = torch.tensor(jpos_mat[i], dtype=torch.float32) # t, arm_left_6d, arm_right_6d` | L174 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/abstract_dataset.py` | `line_rcd = torch.tensor(jpos_mat[i], dtype=torch.float32) # t, arm_left_6d, arm_right_6d` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/abstract_dataset.py` | `obj_pc = riemann_data['xyz'][j].astype(np.float32)` | L240 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/abstract_dataset.py` | `seg_center = riemann_data['seg_center'][j].astype(np.float32)` | L241 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/abstract_dataset.py` | `axes = riemann_data['axes'][j].astype(np.float32)` | L242 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/abstract_dataset.py` | `obj_point = riemann_data['obj_point'][j].astype(np.float32)` | L244 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/abstract_dataset.py` | `grasp_pose = np.zeros((4, 4)).astype(np.float32)` | L253 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/robosuite_policy_dataset.py` | `data[key] = data[key].astype(np.float32)` | L340 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/robosuite_policy_dataset.py` | `xyz = rotate_around_z(xyz, rot, center, scale).astype(np.float32)` | L381 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/robosuite_policy_dataset.py` | `eef_pos = eef_pos.reshape(eef_pos_shape).astype(np.float32)` | L393 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `self.cache[fn][k] = data[k].astype(np.float32)` | L184 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `xyz = data["pc"].astype(np.float32)` | L193 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `eef_pos = data["eef_pos"].astype(np.float32)` | L195 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `offset = data["offset"].astype(np.float32)` | L213 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `action = data["action"].astype(np.float32)` | L221 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `xyz = rotate_around_z(xyz, rot, center, scale).astype(np.float32)` | L258 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `eef_pos = eef_pos.reshape(eef_pos_shape).astype(np.float32)` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `action = action.flatten().astype(np.float32)` | L303 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `assert ret["pc"].dtype == np.float32` | L308 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `assert ret["eef_pos"].dtype == np.float32` | L311 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/datasets/dataset.py` | `assert ret["action"].dtype == np.float32` | L314 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/media.py` | `or type(v) == np.float32` | L125 |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Found it. Checking the exact usage:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Type-2 (l=2) is used for robot proprioception in the reference code, specifically for gripper joint positions.
+
+## Type-2 Usage in Reference Code
+
+In `EquiFormerEnc` (lines 353-356):
+
+```python
+proprio = torch.zeros_like(s2_feat[..., :4 * self.n_proprio])
+proprio[:, 1:4, :3 * self.n_proprio] = ee_rot_vec  # 3x type1 irrep (rotation)
+proprio[:, 1:4, -self.n_proprio:] = ee_pose        # 1x type1 irrep (position)
+proprio[:, 0, :2 * self.n_proprio] = ee_q          # 2x type2 irrep (gripper joints!)
+```
+
+Where:
+- `ee_q = nobs["robot0_gripper_qpos"]` - gripper joint positions `[(b t) 2]` (2 joint angles)
+
+## Why Type-2 for Gripper Joints?
+
+| Irrep Type | Usage | Why |
+|------------|-------|-----|
+| **Type-0** (l=0) | Scalar values (invariant) | Not used for proprioception |
+| **Type-1** (l=1) | Position & rotation vectors | Rotate with scene (3D vectors) |
+| **Type-2** (l=2) | Gripper joint angles | Higher-order tensor representation |
+
+Gripper joints are represented as type-2 because:
+1. They are not 3D vectors that rotate like positions/rotations
+2. They need equivariant representation (transform correctly under rotations)
+3. Type-2 (l=2) provides 5 coefficients (m=-2,-1,0,1,2) for richer geometric structure
+
+## In Our SDP Implementation
+
+We don't use type-2 because:
+- Object-centric prediction: no robot proprioception input
+- Actions only: position (type-1) + rotation (type-1) + gripper (type-0 scalar)
+
+So in our `IrrepConditionalUnet1D`:
+- Input: 3 type-1 vectors (pos + 2 rot axes) + 1 type-0 scalar (gripper)
+- No type-2 needed since we don't encode robot proprioception
+
+Type-2 is only needed when encoding robot proprioception (gripper joint states) alongside visual observations.
+
+---
+
+_**User (2026-01-24 04:39Z)**_
+
+how is proprio structured?
+
+---
+
+_**Agent (model default, mode Agent)**_
+
+
+
+---
+
+
+Examining how `proprio` is structured:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Tracing the exact structure:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+Tracing the `proprio` tensor structure step by step:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+## Proprioception Tensor Structure
+
+### **Overall Shape**
+```python
+proprio.shape = [B, irrep_dim, 4 * n_proprio]
+```
+Where:
+- `B` = batch size
+- `irrep_dim = (lmax+1)² = 9` (for lmax=2: coefficients for l=0,1,2)
+- `4 * n_proprio` = total channels (4 types × n_proprio timesteps)
+
+### **Input Data Preparation**
+
+```python
+# Input shapes (for n_proprio=2 timesteps):
+ee_quat_xyzw: [(b t) 4]           # Quaternions: [B*T, 4]
+ee_q:         [(b t) 2]           # Gripper joints: [B*T, 2]  
+ee_pose:      [(b t) 3]           # EEF position: [B*T, 3]
+
+# After reshaping:
+ee_q:         [B, 2*n_proprio]    # Flatten: [B, 4] for n_proprio=2
+ee_pose:      [B, 3, n_proprio]  # Reshape: [B, 3, 2] for n_proprio=2
+ee_rot_vec:   [B, 3, 3*n_proprio] # Rotation matrix columns: [B, 3, 6] for n_proprio=2
+```
+
+### **Channel Layout** (for `n_proprio=2`)
+
+```
+proprio: [B, 9, 8]  (irrep_dim=9, channels=4*2=8)
+         │
+         ├─ Channels 0-5: Rotation vectors (3 vectors × 2 timesteps)
+         │  proprio[:, 1:4, :6] = ee_rot_vec  # Type-1 (l=1): [B, 3, 6]
+         │
+         ├─ Channels 6-7: Position (1 vector × 2 timesteps)  
+         │  proprio[:, 1:4, -2:] = ee_pose    # Type-1 (l=1): [B, 3, 2]
+         │
+         └─ Channels 0-3: Gripper joints (2 joints × 2 timesteps)
+            proprio[:, 0, :4] = ee_q          # Type-0 (l=0): [B, 4]
+```
+
+### **Irrep Dimension Layout** (axis 1: `irrep_dim=9`)
+
+```
+Index | l | m | Usage
+------|---|---|------------------
+  0   | 0 | 0 | Gripper joints (scalar, type-0)
+  1   | 1 |-1 | 
+  2   | 1 | 0 | Rotation & Position vectors (type-1)
+  3   | 1 |+1 |
+  4   | 2 |-2 |
+  5   | 2 |-1 |
+  6   | 2 | 0 | (Not used for proprio)
+  7   | 2 |+1 |
+  8   | 2 |+2 |
+```
+
+### **Visual Structure** (for `n_proprio=2`, `lmax=2`)
+
+```
+proprio: [B, 9, 8]
+         ┌─────────────────────────────────────────┐
+         │ irrep │ ch0-3 │ ch4-5 │ ch6-7 │         │
+         │───────┼───────┼───────┼───────│         │
+         │ l=0   │ ee_q  │   -   │   -   │ (scalar)│
+         │ l=1   │rot_vec│rot_vec│ee_pose│ (vector)│
+         │ l=2   │   -   │   -   │   -   │ (tensor)│
+         └─────────────────────────────────────────┘
+         
+Where:
+- ch0-3: Joint1_t0, Joint2_t0, Joint1_t1, Joint2_t1
+- ch4-5: Rot_col1_t0, Rot_col1_t1 (or similar)
+- ch6-7: Pos_t0, Pos_t1
+```
+
+### **Note on "Type-2" Comment**
+
+The comment says `# 2x type2 irrep`, but the code stores it in `proprio[:, 0, ...]` which is **l=0, m=0** (type-0 scalar). This appears to be a comment error. Gripper joints are stored as **scalars (type-0)**, not type-2 tensors.
+
+The structure allows encoding multiple timesteps of proprioception while preserving SO(3) equivariance through the irrep representation.
+
+---
+
+_**User (2026-01-24 04:39Z)**_
+
+in s2_feat, how is rgb encoded? are they type-1 as well?
+
+---
+
+_**Agent (model default, mode Agent)**_
+
+
+
+---
+
+
+Checking how RGB is encoded in the spherical features:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Checking how RGB is encoded in our SDPEncoder:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+RGB is encoded as type-0 (scalar, l=0, m=0), not type-1.
+
+## RGB Encoding in s2_feat
+
+### **Key Code** (lines 337-345):
+
+```python
+# Initialize l=0 coefficients from input features
+offset_res = 0  # ← Starts at irrep index 0 (l=0, m=0)
+if node_feature is not None:  # node_feature = rgb [N, 3]
+    node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)
+    # ↑ Stores RGB in l=0, m=0 coefficient (type-0 scalar)
+```
+
+### **Why Type-0 (Scalar)?**
+
+| Property | Type-0 (l=0) | Type-1 (l=1) |
+|----------|--------------|--------------|
+| **Coefficients** | 1 (m=0 only) | 3 (m=-1,0,1) |
+| **Rotation behavior** | Invariant | Rotates with scene |
+| **Physical meaning** | Scalar values | 3D vectors |
+| **RGB property** | Color is invariant | Color shouldn't rotate |
+
+RGB values are scalars and should be rotationally invariant (a red point stays red). Type-0 (l=0, m=0) is the only irrep coefficient that is rotationally invariant, so it's the correct choice.
+
+### **Visual Structure**
+
+```
+s2_feat: [B, irrep_dim, c_dim] = [B, 9, 128] (for lmax=2)
+
+┌─────────────────────────────────────────┐
+│ irrep │ Usage                            │
+│───────┼──────────────────────────────────│
+│ l=0   │ RGB color (scalar, invariant)   │ ← RGB goes here!
+│       │ + other scalar features          │
+│───────┼──────────────────────────────────│
+│ l=1   │ Geometric features (vectors)     │
+│       │ (from graph convolutions)        │
+│───────┼──────────────────────────────────│
+│ l=2   │ Higher-order geometric features  │
+│       │ (tensors, from graph convs)      │
+└─────────────────────────────────────────┘
+```
+
+### **Processing Flow**
+
+```
+RGB [N, 3] 
+  ↓
+type0_linear (Linear layer: 3 → sphere_channels)
+  ↓
+s2_feat[:, 0, :]  ← l=0, m=0 coefficient (type-0 scalar)
+```
+
+The name `type0_linear` indicates it projects features into the type-0 (l=0) coefficient, which is rotationally invariant—appropriate for color information.
+
+---
+
+_**User (2026-01-24 04:39Z)**_
+
+based on the discussion above, I think the text embedding should be used as a type-0 scalar in IrrepConditionalUnet1D, maybe in global_feature. what do you think?
+
+---
+
+_**Agent (model default, mode Agent)**_
+
+
+
+---
+
+
+Checking how `global_cond` is structured in `IrrepConditionalUnet1D`:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "global_cond|global_feature|language|text|embed" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref" • 821 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `SO3_Embedding,` | L12 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `-> embedded SH graph, where features are in shape (b (lmax+1)**2 c), signal over S2 irreps` | L215 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `node_src = SO3_Embedding(` | L305 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)` | L318 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)[:,` | L320 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `node_dst = SO3_Embedding(` | L327 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `node_dst.set_embedding(node_src.embedding[node_idx])` | L335 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `print('down embedding', node_src.embedding.shape)` | L348 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `node_dst.embedding = self.norm(node_dst.embedding)` | L350 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py` | `s2_feat = node_dst.embedding` | L352 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/shared_memory/shared_ndarray.py` | `>>> mem_mgr.start()  # Better yet, use SharedMemoryManager context manager` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `obs_as_global_cond=True,` | L48 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `diffusion_step_embed_dim=256,` | L49 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond_dim = None` | L93 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `if obs_as_global_cond:` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond_dim = obs_feature_dim` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L99 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond_dim=global_cond_dim,` | L112 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L113 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L131 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `self.obs_as_global_cond = obs_as_global_cond` | L143 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `local_cond=None, global_cond=None,` | L157 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `local_cond=local_cond, global_cond=global_cond)` | L182 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = None` | L228 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `if self.obs_as_global_cond:` | L229 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L235 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = nobs_features.reshape(B, -1)` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond=global_cond,` | L258 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = None` | L303 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `if self.obs_as_global_cond:` | L309 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L317 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L320 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond=global_cond)` | L366 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `obs_as_global_cond=True,` | L24 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `diffusion_step_embed_dim=256,` | L25 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond_dim = None` | L43 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `if obs_as_global_cond:` | L44 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L46 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond_dim=global_cond_dim,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L52 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `self.obs_as_global_cond = obs_as_global_cond` | L75 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `local_cond=None, global_cond=None,` | L85 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L108 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond = None` | L144 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `if self.obs_as_global_cond:` | L145 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L150 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond=global_cond,` | L170 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond = None` | L202 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `if self.obs_as_global_cond:` | L205 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L211 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `diffusion_step_embed_dim=256,` | L36 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L58 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond_dim=global_cond_dim,` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `local_cond=None, global_cond=None,` | L133 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `local_cond=local_cond, global_cond=global_cond)` | L156 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond = nobs_features.reshape(B, -1)` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond=global_cond,` | L201 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L252 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `local_cond=None, global_cond=global_cond)` | L278 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `diffusion_step_embed_dim=256,` | L135 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L163 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond_dim=global_cond_dim,` | L168 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L169 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond=None,` | L218 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `model_output = model(trajectory, t, local_cond=local_cond, global_cond=global_cond)` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond = None` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L276 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `cond_data, cond_mask, local_cond=local_cond, global_cond=global_cond, **self.kwargs` | L283 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond = None` | L315 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L323 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `pred = self.diff(noisy_trajectory, timesteps, local_cond=local_cond, global_cond=global_cond)` | L346 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `obs_as_global_cond=True,` | L36 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `diffusion_step_embed_dim=256,` | L38 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond_dim = None` | L140 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `if obs_as_global_cond:` | L141 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L143 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond_dim=global_cond_dim,` | L148 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L149 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L161 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `self.obs_as_global_cond = obs_as_global_cond` | L174 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `local_cond=None, global_cond=None,` | L188 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L211 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond = None` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `if self.obs_as_global_cond:` | L248 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L253 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond=global_cond,` | L273 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond = None` | L307 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `if self.obs_as_global_cond:` | L310 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L316 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L350 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `diffusion_step_embed_dim=256,` | L35 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L58 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond_dim=global_cond_dim,` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `local_cond=None, global_cond=None,` | L119 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L142 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L177 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond=global_cond,` | L187 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L221 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `local_cond=None, global_cond=global_cond)` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `diffusion_step_embed_dim=256,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L85 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond_dim=global_cond_dim,` | L90 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L91 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `local_cond=None, global_cond=None,` | L149 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L172 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond = None` | L212 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L217 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond=global_cond,` | L227 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond = None` | L269 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L277 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L303 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `lowdim_as_global_cond=True,` | L26 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `diffusion_step_embed_dim=256,` | L27 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond_dim = rgb_feature_dim` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `if lowdim_as_global_cond:` | L86 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond_dim += lowdim_feature_shape[0]` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond_dim=global_cond_dim,` | L105 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L106 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `obs_dim=0 if lowdim_as_global_cond else lowdim_input_dim,` | L117 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `self.lowdim_as_global_cond = lowdim_as_global_cond` | L128 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `local_cond=None, global_cond=None,` | L138 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L161 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = None` | L204 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `if self.lowdim_as_global_cond:` | L207 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = torch.cat([rgb_feature, lowdim_feature], dim=-1)` | L209 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = rgb_feature` | L214 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond=global_cond,` | L225 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = None` | L263 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `if self.lowdim_as_global_cond:` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = torch.cat([rgb_feature, lowdim_feature], dim=-1)` | L268 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = rgb_feature` | L272 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `local_cond=None, global_cond=global_cond)` | L300 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `obs_as_global_cond=True,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `diffusion_step_embed_dim=256,` | L52 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond_dim = None` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `if obs_as_global_cond:` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond_dim = obs_feature_dim` | L100 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L102 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond_dim=global_cond_dim,` | L115 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L116 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L134 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `self.obs_as_global_cond = obs_as_global_cond` | L146 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `local_cond=None, global_cond=None,` | L160 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `local_cond=local_cond, global_cond=global_cond)` | L185 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = None` | L241 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `if self.obs_as_global_cond:` | L242 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L248 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = nobs_features.reshape(B, -1)` | L251 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond=global_cond,` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = None` | L371 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `if self.obs_as_global_cond:` | L377 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L385 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L388 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond=global_cond)` | L434 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `obs_as_global_cond=True,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `diffusion_step_embed_dim=128,` | L52 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim = None` | L122 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if obs_as_global_cond:` | L123 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim = obs_feature_dim` | L125 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L138 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L139 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L152 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L153 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L164 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L165 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L180 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `self.obs_as_global_cond = obs_as_global_cond` | L196 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `local_cond=None, global_cond=None,` | L210 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `local_cond=local_cond, global_cond=global_cond)` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = None` | L279 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if self.obs_as_global_cond:` | L280 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L286 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(B, -1)` | L289 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond=global_cond,` | L309 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = None` | L550 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if self.obs_as_global_cond:` | L554 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L562 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L565 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond=global_cond)` | L604 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `obs_as_global_cond=True,` | L50 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `diffusion_step_embed_dim=256,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond_dim = None` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `if obs_as_global_cond:` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond_dim = obs_feature_dim` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L100 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond_dim=global_cond_dim,` | L110 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L111 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L128 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `self.obs_as_global_cond = obs_as_global_cond` | L140 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `local_cond=None, global_cond=None,` | L153 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `local_cond=local_cond, global_cond=global_cond)` | L175 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = None` | L215 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `if self.obs_as_global_cond:` | L216 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L222 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = nobs_features.reshape(B, -1)` | L225 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond=global_cond,` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = None` | L286 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `if self.obs_as_global_cond:` | L290 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L298 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L301 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond=global_cond)` | L343 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `diffusion_step_embed_dim=256,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond_dim=global_cond_dim,` | L100 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L101 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `local_cond=None, global_cond=None,` | L157 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L180 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond = None` | L220 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L225 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond=global_cond,` | L235 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond = None` | L270 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L278 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L304 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `obs_as_global_cond=True,` | L49 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `diffusion_step_embed_dim=128,` | L50 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L86 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `self.obs_as_global_cond = obs_as_global_cond` | L113 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `#                   global_cond=global_cond)` | L441 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `obs_as_global_cond=False,` | L24 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `assert not (obs_as_local_cond and obs_as_global_cond)` | L30 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `assert obs_as_global_cond` | L32 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `obs_dim=0 if (obs_as_local_cond or obs_as_global_cond) else obs_dim,` | L37 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `self.obs_as_global_cond = obs_as_global_cond` | L49 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `local_cond=None, global_cond=None,` | L61 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond = None` | L120 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `elif self.obs_as_global_cond:` | L129 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond = nobs[:,:To].reshape(nobs.shape[0], -1)` | L131 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond=global_cond,` | L150 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `if not (self.obs_as_local_cond or self.obs_as_global_cond):` | L171 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond = None` | L192 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `elif self.obs_as_global_cond:` | L198 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond = obs[:,:self.n_obs_steps,:].reshape(` | L199 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/act_policy.py` | `e = IPython.embed` | L7 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/act_policy.py` | `"position_embedding": "sine",` | L129 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `from sdp.model.diffusion.positional_embedding import SinusoidalPosEmb` | L10 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `global_cond_dim=128,` | L18 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `cond_dim = global_cond_dim` | L31 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `def forward(self, global_cond):` | L92 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `global_cond: (B,global_cond_dim)` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `B = global_cond.shape[0]` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `x = resnet(x, global_cond)` | L102 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `x = resnet2(x, global_cond)` | L103 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `x = mid_module(x, global_cond)` | L108 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `x = resnet(x, global_cond)` | L112 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/unet/obs_cond_unet1d.py` | `x = resnet2(x, global_cond)` | L113 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `from sdp.model.diffusion.positional_embedding import SinusoidalPosEmb` | L13 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `diffusion_step_embed_dim=256,` | L91 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `dsed = diffusion_step_embed_dim` | L100 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conv1d_components.py` | `# input_embedding (B, (Cin, irrep), 1)` | L110 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `from sdp.model.diffusion.positional_embedding import SinusoidalPosEmb` | L12 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `SO3_Embedding,` | L18 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `embed = self.cond_encoder(cond).reshape(bs, 2 * self.out_channels, -1, 1)  # (B, 2*Cout, irrep, n_pts)` | L79 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `l_scale, l_bias = embed[:, ::2, l_start:l_end, :], embed[:, 1::2, l_start:l_end, :]` | L87 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `embed = self.cond_encoder(cond).reshape(bs, 2 * self.out_channels, -1, 1)  # (B, 2*Cout, irrep, n_pts)` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `l_scale, l_bias = embed[:, ::2, 0:1, :], embed[:, 1::2, :, :]` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `embed = self.cond_encoder(cond)` | L101 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `embed = embed.reshape(bs, -1, self.dim_irrep, 1)  # (B, 2*Cout, irrep, n_pts)` | L102 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `out = out * embed[:, ::2, ...] + embed[:, 1::2, ...]` | L104 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond_dim=None,` | L116 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `diffusion_step_embed_dim=128,` | L117 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `dsed = diffusion_step_embed_dim` | L132 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `if global_cond_dim is not None:` | L140 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `cond_dim += global_cond_dim` | L141 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `self.diffusion_step_embed_dim = diffusion_step_embed_dim` | L222 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `local_cond=None, global_cond=None):` | L228 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond: (B, (C, irrep))` | L234 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_feature = torch.zeros(bs, self.diffusion_step_embed_dim, self.d_irrep).to(s2_input.device)` | L253 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_feature[:, :, 0] = self.diffusion_step_encoder(timesteps)  # (B, dsed, irrep)` | L254 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `if global_cond is not None:` | L256 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_feature = torch.cat((global_feature, global_cond.reshape(bs, -1, self.d_irrep)), dim=1)` | L257 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_feature = global_feature.reshape(bs, -1, 1)` | L258 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = resnet(x, global_feature)` | L268 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = resnet2(x, global_feature)` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = mid_module(x, global_feature)` | L276 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = resnet(x, global_feature)` | L280 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = resnet2(x, global_feature)` | L281 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond_dim=condition_dim,` | L318 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `diffusion_step_embed_dim=condition_dim,` | L319 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond=condition.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L330 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond=condition_tfm.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L342 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `from sdp.model.diffusion.positional_embedding import SinusoidalPosEmb` | L14 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `SO3_Embedding,` | L20 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `global_cond_dim=None,` | L34 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `diffusion_step_embed_dim=256,` | L35 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `global_cond_dim=global_cond_dim * self.d_irrep,` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L48 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `local_cond=None, global_cond=None):` | L58 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `global_cond: (B, (C, irrep))` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `out = self.unet(sample, timestep, local_cond, global_cond.reshape(bs, -1))` | L68 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `from sdp.model.diffusion.positional_embedding import SinusoidalPosEmb` | L14 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `SO3_Embedding,` | L20 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond_dim=None,` | L34 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `diffusion_step_embed_dim=256,` | L35 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond_dim=global_cond_dim,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `diffusion_step_embed_dim=diffusion_step_embed_dim,` | L52 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `local_cond=None, global_cond=None):` | L106 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond: (B, (C, irrep))` | L112 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `reg_global_cond = self.irrep2reg(global_cond.reshape(bs, 1, -1, self.d_irrep))` | L124 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `reg_global_cond = einops.rearrange(reg_global_cond, 'b t c f -> (b f t) c')` | L125 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `reg_out = self.unet(reg_input, timestep, local_cond, reg_global_cond)` | L129 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond_dim=condition_dim,` | L168 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `diffusion_step_embed_dim=condition_dim,` | L169 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond=condition.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L180 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond=condition_tfm.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L192 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `from .so3 import SO3_Embedding` | L7 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `edge_channels_list (list:int):  List of sizes of invariant edge embedding. For example, [input_channels, hidden_channels, hidden_channels].` | L75 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `extra_m0_output_channels (int): If not None, return `out_embedding` (SO3_Embedding) and `extra_m0_features` (Tensor).` | L76 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `# Embedding function of distance` | L128 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `x_0 = x.embedding.narrow(1, 0, self.mappingReduced.m_size[0])` | L150 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `x_m = x.embedding.narrow(1, offset, 2 * self.mappingReduced.m_size[m])` | L171 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `out_embedding = SO3_Embedding(` | L186 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `out_embedding.set_embedding(out)` | L193 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `out_embedding.set_lmax_mmax(self.lmax_list.copy(), self.mmax_list.copy())` | L194 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `out_embedding._l_primary(self.mappingReduced)` | L197 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `return out_embedding, x_0_extra` | L200 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `return out_embedding` | L202 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `edge_channels_list (list:int):  List of sizes of invariant edge embedding. For example, [input_channels, hidden_channels, hidden_channels].` | L216 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `# Embedding function of distance` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `batch_size = x.embedding.shape[0]` | L276 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `x_0 = x.embedding.narrow(1, 0, self.mappingReduced.m_size[0])` | L288 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `x_m = x.embedding.narrow(1, offset, 2 * self.mappingReduced.m_size[m])` | L302 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `out_embedding = SO3_Embedding(` | L318 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `out_embedding.set_embedding(out)` | L325 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `out_embedding.set_lmax_mmax(self.lmax_list.copy(), self.mmax_list.copy())` | L326 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `out_embedding._l_primary(self.mappingReduced)` | L329 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/so2_ops.py` | `return out_embedding` | L331 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `from sdp.model.equiformer_v2.so3 import SO3_Embedding, SO3_LinearV2` | L9 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `SO3_rotation (ModuleList,list:SO3_Rotation): Class to calculate Wigner-D matrices and rotate embeddings` | L40 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `mappingReduced (CoefficientMappingModule): Class to convert l and m indices once node embedding is rotated` | L41 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `edge_channels_list (list:int):  List of sizes of invariant edge embedding. For example, [input_channels, hidden_channels, hidden_channels].` | L44 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `self.source_embedding, self.target_embedding = None, None` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `length = len(x_dst.embedding)` | L184 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_message_data = torch.cat((output_src.embedding, output_dst.embedding), dim=2)` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_message = SO3_Embedding(` | L193 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_message.set_embedding(x_message_data)` | L200 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_message.embedding = x_message.embedding * x_edge_weight` | L209 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_message.embedding = self.s2_act(x_0_gating, x_message.embedding, self.SO3_grid)` | L224 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_message.embedding = self.s2_act(x_message.embedding, self.SO3_grid)` | L227 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `attn = x_message.embedding` | L244 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_message.embedding = attn` | L248 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `out_embedding = self.proj(x_message)` | L257 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `return out_embedding` | L259 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `def forward(self, input_embedding):` | L332 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `gating_scalars = self.scalar_mlp(input_embedding.embedding.narrow(1, 0, 1))` | L337 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `gating_scalars = self.gating_linear(input_embedding.embedding.narrow(1, 0, 1))` | L340 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `input_embedding = self.so3_linear_1(input_embedding)` | L342 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `input_embedding_grid = input_embedding.to_grid(self.SO3_grid, lmax=self.max_lmax)` | L346 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `input_embedding_grid = self.grid_mlp(input_embedding_grid)` | L348 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `input_embedding._from_grid(input_embedding_grid, self.SO3_grid, lmax=self.max_lmax)` | L350 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `input_embedding.embedding = torch.cat(` | L353 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `(gating_scalars, input_embedding.embedding.narrow(1, 1, input_embedding.embedding.shape[1] - 1)),` | L354 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `input_embedding.embedding = self.s2_act(gating_scalars, input_embedding.embedding, self.SO3_grid)` | L359 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `input_embedding.embedding = self.s2_act(input_embedding.embedding, self.SO3_grid)` | L361 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `input_embedding = self.so3_linear_2(input_embedding)` | L363 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `return input_embedding` | L365 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `SO3_rotation (list,ModuleList): Class to calculate Wigner-D matrices and rotate embeddings` | L383 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `mappingReduced (CoefficientMappingModule): Class to convert l and m indices once node embedding is rotated` | L384 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `edge_channels_list (list:int):  List of sizes of invariant edge embedding. For example, [input_channels, hidden_channels, hidden_channels].` | L387 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_src,  # SO3_Embedding` | L485 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_dst,  # SO3_Embedding` | L486 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `x_res = output_dst.embedding` | L494 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `output_src.embedding = self.norm_1_src(output_src.embedding)` | L495 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equiformer_v2/equiformerv2_block.py` | `output_dst.embedding = self.norm_1_dst(output_dst.embedding)` | L496 |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Checking how `global_cond` is processed:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+The current code incorrectly spreads language embeddings across all irrep dimensions. Checking the expected structure:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "cond.*shape|global_feature.*shape|IrrepConv1dBlock" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion" • 16 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/__init__.py` | `from .irreps_conv1d_components import Downsample1d, Upsample1d, IrrepConv1dBlock, IrrepLinear` | L5 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conv1d_components.py` | `class IrrepConv1dBlock(nn.Module):` | L28 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `Downsample1d, Upsample1d, IrrepConv1dBlock, IrrepLinear)` | L11 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `IrrepConv1dBlock(in_channels, out_channels, kernel_size, SO3_grid, norm=norm, max_lmax=max_lmax),` | L42 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `IrrepConv1dBlock(out_channels, out_channels, kernel_size, SO3_grid, norm=norm, max_lmax=max_lmax),` | L43 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `self.cond_encoder = IrrepConv1dBlock(cond_dim, 2 * out_channels, 1, SO3_grid,` | L54 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `self.residual_conv = IrrepConv1dBlock(in_channels, out_channels, 1, SO3_grid, norm=False,` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `embed = self.cond_encoder(cond).reshape(bs, 2 * self.out_channels, -1, 1)  # (B, 2*Cout, irrep, n_pts)` | L79 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `embed = self.cond_encoder(cond).reshape(bs, 2 * self.out_channels, -1, 1)  # (B, 2*Cout, irrep, n_pts)` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `IrrepConv1dBlock(dim_out, dim_out, 3, self.SO3_grid,` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `IrrepConv1dBlock(dim_in, dim_in, 3, self.SO3_grid,` | L210 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `final_conv = IrrepConv1dBlock(start_dim, input_dim, 3, self.SO3_grid,` | L214 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `global_feature = torch.cat((global_feature, global_cond.reshape(bs, -1, self.d_irrep)), dim=1)` | L257 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `global_feature = global_feature.reshape(bs, -1, 1)` | L258 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `global_cond=condition.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L330 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py` | `global_cond=condition_tfm.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L342 |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Language embeddings are invariant (scalar) and should only be in the l=0, m=0 coefficient. Updating the code accordingly:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating the code to place language embeddings only in the l=0, m=0 coefficient:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating `IrrepConditionalUnet1D` to place language embeddings only in the l=0, m=0 coefficient:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: 1
+
+```diff
+@@ -124,5 +124,6 @@
+                   cond_predict_scale=True,
+                   max_lmax=2,
+-                  grid_resolution=14
++                  grid_resolution=14,
++                  obs_feature_dim=None  # Dimension of equivariant obs features (for splitting invariant language features)
+                   ):
+          super().__init__()
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+**Chunk 1**
+Lines added: 1, lines removed: undefined
+
+```diff
+@@ -222,4 +222,5 @@
+          self.d_irrep = (max_lmax + 1) ** 2
+          self.diffusion_step_embed_dim = diffusion_step_embed_dim
++         self.obs_feature_dim = obs_feature_dim  # For splitting equivariant vs invariant features
+  
+  
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+**Chunk 1**
+Lines added: 27, lines removed: 4
+
+```diff
+@@ -254,10 +254,33 @@
+  
+          global_feature = torch.zeros(bs, self.diffusion_step_embed_dim, self.d_irrep).to(s2_input.device)
+-         global_feature[:, :, 0] = self.diffusion_step_encoder(timesteps)  # (B, dsed, irrep)
++         global_feature[:, :, 0] = self.diffusion_step_encoder(timesteps)  # (B, dsed, irrep) - timestep in l=0, m=0
+  
+          if global_cond is not None:
+-             global_feature = torch.cat((global_feature, global_cond.reshape(bs, -1, self.d_irrep)), dim=1)
+-             global_feature = global_feature.reshape(bs, -1, 1)
+-             # ToDo: check the feature
++             # Split global_cond into equivariant (obs) and invariant (language) features
++             if self.obs_feature_dim is not None and global_cond.shape[-1] &gt; self.obs_feature_dim:
++                 # Split: [obs_features (equivariant), language_features (invariant)]
++                 obs_features = global_cond[:, :self.obs_feature_dim]  # (B, obs_feature_dim)
++                 language_features = global_cond[:, self.obs_feature_dim:]  # (B, lang_dim)
++                 
++                 # Obs features (equivariant): spread across all irrep dimensions
++                 # Reshape to (B, obs_feature_dim, d_irrep) - each channel gets all irrep coefficients
++                 obs_features_irrep = obs_features.unsqueeze(-1).expand(-1, -1, self.d_irrep)  # (B, obs_feature_dim, d_irrep)
++                 
++                 # Language features (invariant): only in l=0, m=0 (index 0)
++                 # Reshape to (B, lang_dim, 1) and place in l=0, m=0 only
++                 language_features_irrep = torch.zeros(bs, language_features.shape[-1], self.d_irrep, 
++                                                       device=global_cond.device, dtype=global_cond.dtype)
++                 language_features_irrep[:, :, 0] = language_features  # Only l=0, m=0 coefficient
++                 
++                 # Concatenate obs and language features
++                 global_cond_irrep = torch.cat([obs_features_irrep, language_features_irrep], dim=1)  # (B, obs_feature_dim + lang_dim, d_irrep)
++             else:
++                 # Fallback: treat all as equivariant (spread across all irreps)
++                 # This maintains backward compatibility
++                 global_cond_irrep = global_cond.reshape(bs, -1, self.d_irrep)
++             
++             # Concatenate with timestep embedding
++             global_feature = torch.cat((global_feature, global_cond_irrep), dim=1)  # (B, dsed + cond_dim, d_irrep)
++             global_feature = global_feature.reshape(bs, -1, 1)  # Flatten for FiLM conditioning
+  
+          # encode local features
+```
+
+</details>
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating `SDPPolicy` to pass `obs_feature_dim` to `IrrepConditionalUnet1D`:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 2, lines removed: 1
+
+```diff
+@@ -214,5 +214,6 @@
+                  n_groups=self.n_groups,
+                  FiLM_type=diffusion_cfg.get('FiLM_type', 'SFiLM'),
+-                 grid_resolution=d_grid_resolution
++                 grid_resolution=d_grid_resolution,
++                 obs_feature_dim=obs_feature_dim * self.obs_horizon  # For splitting equivariant vs invariant features
+              )
+          else:
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="read_lints">
+<details>
+          <summary>Tool use: **read_lints** • Read lints for 2 files</summary>
+      
+Lint paths:
+
+- `equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py`
+- `equibot/policies/agents/sdp_policy.py`
+
+Lint results
+
+Lint errors for `equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py`
+
+
+| Message | Range | Severity |
+|-------|-------|----------|
+| Import "Rearrange" is not accessed | 8:33-8:42 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "pytorch3d_transforms" is not accessed | 9:32-9:52 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "Downsample1d" is not accessed | 11:5-11:17 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "Upsample1d" is not accessed | 11:19-11:29 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "FeedForwardNetwork" is not accessed | 13:70-13:88 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "CoefficientMappingModule" is not accessed | 17:5-17:29 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "SO3_Embedding" is not accessed | 18:5-18:18 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "SO3_Rotation" is not accessed | 20:5-20:17 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "SO3_LinearV2" is not accessed | 21:5-21:17 | DIAGNOSTIC_SEVERITY_HINT |
+| Variable "c" is not accessed | 239:21-239:22 | DIAGNOSTIC_SEVERITY_HINT |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updated the code to handle language embeddings as type-0 scalars. Summary:
+
+## Updated Architecture
+
+### **Before (Incorrect)**
+```python
+# Language spread across ALL irrep dimensions (wrong!)
+global_cond.reshape(bs, -1, d_irrep)  # Language in all l=0,1,2 coefficients
+```
+
+### **After (Correct)**
+```python
+# Split global_cond into equivariant (obs) and invariant (language)
+obs_features = global_cond[:, :obs_feature_dim]      # Equivariant
+language_features = global_cond[:, obs_feature_dim:]  # Invariant
+
+# Obs features: spread across ALL irrep dimensions (l=0,1,2)
+obs_features_irrep = obs_features.unsqueeze(-1).expand(-1, -1, d_irrep)
+
+# Language features: ONLY in l=0, m=0 (type-0 scalar)
+language_features_irrep = torch.zeros(..., d_irrep)
+language_features_irrep[:, :, 0] = language_features  # ← Only index 0!
+```
+
+## Why This Matters
+
+| Feature Type | Irrep Type | Storage Location | Rotation Behavior |
+|-------------|------------|------------------|-------------------|
+| **Obs features** | Equivariant | All irrep dims (l=0,1,2) | Rotate with scene |
+| **Language** | Invariant | Only l=0, m=0 (index 0) | Stay unchanged |
+| **Timestep** | Invariant | Only l=0, m=0 (index 0) | Stay unchanged |
+
+This preserves equivariance: visual features rotate correctly, while language (and timestep) remain invariant scalars, similar to how RGB color is encoded in the encoder.
+
+The code now properly separates equivariant and invariant features in the conditioning, matching the physical properties of each.
+
+---
+
+_**User (2026-01-24 04:39Z)**_
+
+check the code_ref, tell me how the feature of proprio, pc, and timesteps in the global_feature. I think in my case, the text_embedding should be positioned similarly to gripper_joints (type-0 scalar)
+
+---
+
+_**Agent (model default, mode Plan)**_
+
+
+
+---
+
+
+Checking the reference code to see how `global_feature` is structured:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "global_feature|global_cond|timestep|proprio" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion" • 64 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `timestep: Union[torch.Tensor, float, int],` | L184 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `timestep: (B,) or int, diffusion step` | L192 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `# 1. encode timestep` | L202 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `timesteps = timestep` | L203 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `if not torch.is_tensor(timesteps):` | L204 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `# TODO: this requires sync between CPU and GPU. So try to pass timesteps as tensors if you can` | L205 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `timesteps = torch.tensor(` | L206 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `[timesteps], dtype=torch.long, device=sample.device` | L207 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `elif torch.is_tensor(timesteps) and len(timesteps.shape) == 0:` | L209 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `timesteps = timesteps[None].to(sample.device)` | L210 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `timesteps = timesteps.expand(sample.shape[0])` | L212 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/vn_conditional_unet1d.py` | `scalar_feature = self.diffusion_step_encoder(timesteps)  # (B, dsed)` | L217 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond_dim=None,` | L34 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond_dim=global_cond_dim,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `timestep: Union[torch.Tensor, float, int],` | L105 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `local_cond=None, global_cond=None):` | L106 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `timestep: (B,) or int, diffusion step` | L110 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond: (B, (C, irrep))` | L112 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `reg_global_cond = self.irrep2reg(global_cond.reshape(bs, 1, -1, self.d_irrep))` | L124 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `reg_global_cond = einops.rearrange(reg_global_cond, 'b t c f -> (b f t) c')` | L125 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `if type(timestep) == torch.Tensor and len(timestep.shape) == 1:` | L126 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `timestep = timestep.repeat_interleave(self.reg_order)` | L127 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `reg_out = self.unet(reg_input, timestep, local_cond, reg_global_cond)` | L129 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond_dim=condition_dim,` | L168 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `timestep=0,` | L179 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond=condition.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L180 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `timestep=0,` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/reg_rep_conditional_unet1d.py` | `global_cond=condition_tfm.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L192 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond_dim=None,` | L116 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `if global_cond_dim is not None:` | L140 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `cond_dim += global_cond_dim` | L141 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timestep: Union[torch.Tensor, float, int],` | L227 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `local_cond=None, global_cond=None):` | L228 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timestep: (B,) or int, diffusion step` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond: (B, (C, irrep))` | L234 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timesteps = timestep` | L244 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `if not torch.is_tensor(timesteps):` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `# TODO: this requires sync between CPU and GPU. So try to pass timesteps as tensors if you can` | L246 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timesteps = torch.tensor([timesteps], dtype=torch.long, device=s2_input.device)` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `elif torch.is_tensor(timesteps) and len(timesteps.shape) == 0:` | L248 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timesteps = timesteps[None].to(s2_input.device)` | L249 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timesteps = timesteps.expand(s2_input.shape[0])` | L251 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_feature = torch.zeros(bs, self.diffusion_step_embed_dim, self.d_irrep).to(s2_input.device)` | L253 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_feature[:, :, 0] = self.diffusion_step_encoder(timesteps)  # (B, dsed, irrep)` | L254 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `if global_cond is not None:` | L256 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_feature = torch.cat((global_feature, global_cond.reshape(bs, -1, self.d_irrep)), dim=1)` | L257 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_feature = global_feature.reshape(bs, -1, 1)` | L258 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = resnet(x, global_feature)` | L268 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = resnet2(x, global_feature)` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = mid_module(x, global_feature)` | L276 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = resnet(x, global_feature)` | L280 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `x = resnet2(x, global_feature)` | L281 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond_dim=condition_dim,` | L318 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timestep=0,` | L329 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond=condition.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L330 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `timestep=0,` | L341 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/irreps_conditional_unet1d.py` | `global_cond=condition_tfm.reshape(-1, d_irrep))  # (B, T, (C, irrep))` | L342 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `global_cond_dim=None,` | L34 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `global_cond_dim=global_cond_dim * self.d_irrep,` | L47 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `timestep: Union[torch.Tensor, float, int],` | L57 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `local_cond=None, global_cond=None):` | L58 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `timestep: (B,) or int, diffusion step` | L62 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `global_cond: (B, (C, irrep))` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_diffusion/non_equ_irrep_conditional_unet1d.py` | `out = self.unet(sample, timestep, local_cond, global_cond.reshape(bs, -1))` | L68 |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+
+---
+
+
+Checking how the policy constructs `global_cond` with PC and proprio features:
+
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "global_cond|obs_feature|proprio|EquiFormerEnc" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy" • 329 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `obs_as_global_cond=True,` | L48 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `obs_feature_dim = obs_encoder.output_shape()` | L91 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `input_dim = action_dim + obs_feature_dim` | L92 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond_dim = None` | L93 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `if obs_as_global_cond:` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond_dim = obs_feature_dim` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L99 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond_dim=global_cond_dim,` | L112 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L131 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `self.obs_feature_dim = obs_feature_dim` | L139 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `self.obs_as_global_cond = obs_as_global_cond` | L143 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `local_cond=None, global_cond=None,` | L157 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `local_cond=local_cond, global_cond=global_cond)` | L182 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `Do = self.obs_feature_dim` | L219 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = None` | L228 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `if self.obs_as_global_cond:` | L229 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `nobs_features = self.obs_encoder(this_nobs)` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L235 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = nobs_features.reshape(B, -1)` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `nobs_features = self.obs_encoder(this_nobs)` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `nobs_features = nobs_features.reshape(B, To, -1)` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `cond_data[:,:To,Da:] = nobs_features` | L250 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond=global_cond,` | L258 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = None` | L303 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `if self.obs_as_global_cond:` | L309 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `nobs_features = self.obs_encoder(this_nobs)` | L313 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L317 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L320 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `nobs_features = self.obs_encoder(this_nobs)` | L327 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `nobs_features = nobs_features.reshape(batch_size, horizon, -1)` | L329 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `cond_data = torch.cat([nactions, nobs_features], dim=-1)` | L330 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_center.py` | `global_cond=global_cond)` | L366 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `obs_as_global_cond=False,` | L24 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `assert not (obs_as_local_cond and obs_as_global_cond)` | L30 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `assert obs_as_global_cond` | L32 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `obs_dim=0 if (obs_as_local_cond or obs_as_global_cond) else obs_dim,` | L37 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `self.obs_as_global_cond = obs_as_global_cond` | L49 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `local_cond=None, global_cond=None,` | L61 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond = None` | L120 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `elif self.obs_as_global_cond:` | L129 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond = nobs[:,:To].reshape(nobs.shape[0], -1)` | L131 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond=global_cond,` | L150 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `if not (self.obs_as_local_cond or self.obs_as_global_cond):` | L171 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond = None` | L192 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `elif self.obs_as_global_cond:` | L198 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `global_cond = obs[:,:self.n_obs_steps,:].reshape(` | L199 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_lowdim_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `obs_as_global_cond=True,` | L24 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `obs_feature_dim = obs_encoder.output_shape()[0]` | L39 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `input_dim = action_dim + obs_feature_dim` | L42 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond_dim = None` | L43 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `if obs_as_global_cond:` | L44 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L46 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond_dim=global_cond_dim,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L64 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `self.obs_feature_dim = obs_feature_dim` | L71 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `self.obs_as_global_cond = obs_as_global_cond` | L75 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `local_cond=None, global_cond=None,` | L85 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L108 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `Do = self.obs_feature_dim` | L135 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond = None` | L144 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `if self.obs_as_global_cond:` | L145 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L148 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L150 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L157 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `nobs_features = nobs_features.reshape(B, To, -1)` | L159 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `cond_data[:,:To,Da:] = nobs_features` | L162 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond=global_cond,` | L170 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond = None` | L202 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `if self.obs_as_global_cond:` | L205 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L209 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L211 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L215 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `nobs_features = nobs_features.reshape(batch_size, horizon, -1)` | L217 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `cond_data = torch.cat([nactions, nobs_features], dim=-1)` | L218 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_image_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `lowdim_as_global_cond=True,` | L26 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond_dim = rgb_feature_dim` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `if lowdim_as_global_cond:` | L86 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond_dim += lowdim_feature_shape[0]` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond_dim=global_cond_dim,` | L105 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `obs_dim=0 if lowdim_as_global_cond else lowdim_input_dim,` | L117 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `self.lowdim_as_global_cond = lowdim_as_global_cond` | L128 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `local_cond=None, global_cond=None,` | L138 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L161 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = None` | L204 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `if self.lowdim_as_global_cond:` | L207 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = torch.cat([rgb_feature, lowdim_feature], dim=-1)` | L209 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = rgb_feature` | L214 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond=global_cond,` | L225 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = None` | L263 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `if self.lowdim_as_global_cond:` | L266 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = torch.cat([rgb_feature, lowdim_feature], dim=-1)` | L268 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `global_cond = rgb_feature` | L272 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_video_policy.py` | `local_cond=None, global_cond=global_cond)` | L300 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `obs_as_global_cond=True,` | L49 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `# self.obs_feature_dim = obs_feature_dim` | L109 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `self.obs_as_global_cond = obs_as_global_cond` | L113 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/equibot.py` | `#                   global_cond=global_cond)` | L441 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `obs_as_global_cond=True,` | L36 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `obs_feature_dim = obs_encoder.output_shape()[0]` | L138 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `input_dim = action_dim + obs_feature_dim` | L139 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond_dim = None` | L140 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `if obs_as_global_cond:` | L141 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L143 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond_dim=global_cond_dim,` | L148 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L161 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `self.obs_feature_dim = obs_feature_dim` | L170 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `self.obs_as_global_cond = obs_as_global_cond` | L174 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `local_cond=None, global_cond=None,` | L188 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L211 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `Do = self.obs_feature_dim` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond = None` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `if self.obs_as_global_cond:` | L248 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L251 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L253 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L260 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `nobs_features = nobs_features.reshape(B, To, -1)` | L262 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `cond_data[:,:To,Da:] = nobs_features` | L265 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond=global_cond,` | L273 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond = None` | L307 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `if self.obs_as_global_cond:` | L310 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L314 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L316 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L320 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `nobs_features = nobs_features.reshape(batch_size, horizon, -1)` | L322 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `cond_data = torch.cat([nactions, nobs_features], dim=-1)` | L323 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_hybrid_image_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L350 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `obs_feature_dim = enc_n_hidden * 2 + 9` | L162 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L163 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond_dim=global_cond_dim,` | L168 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `self.obs_feature_dim = obs_feature_dim` | L190 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond=None,` | L218 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `model_output = model(trajectory, t, local_cond=local_cond, global_cond=global_cond)` | L238 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `Do = self.obs_feature_dim` | L262 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond = None` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `nobs_features = self.enc(nobs)` | L274 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L276 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `cond_data, cond_mask, local_cond=local_cond, global_cond=global_cond, **self.kwargs` | L283 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond = None` | L315 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `nobs_features = self.enc(nobs)` | L321 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L323 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_unet_voxel_policy.py` | `pred = self.diff(noisy_trajectory, timesteps, local_cond=local_cond, global_cond=global_cond)` | L346 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `obs_feature_dim = obs_encoder.output_shape()[0]` | L125 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `in_obs_channels = obs_feature_dim * n_obs_steps` | L127 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `self.obs_feature_dim = obs_feature_dim` | L147 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `Do = self.obs_feature_dim` | L182 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L193 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `nobs_features = nobs_features.reshape(B,To,-1)` | L195 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `logits = self.forward(nobs_features, samples)` | L214 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `logits = self.forward(nobs_features, samples)` | L226 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `logits = self.forward(nobs_features, samples) # (B, N)` | L236 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `Do = self.obs_feature_dim` | L265 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L276 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `nobs_features = nobs_features.reshape(B,To,-1)` | L278 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `logits = self.forward(nobs_features, action_samples)` | L307 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/ibc_dfo_hybrid_image_policy.py` | `logits = self.forward(nobs_features, action_samples)` | L314 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `obs_feature_dim = enc_n_hidden` | L84 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L85 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond_dim=global_cond_dim,` | L90 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `self.obs_feature_dim = obs_feature_dim` | L118 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `local_cond=None, global_cond=None,` | L149 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L172 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `Do = self.obs_feature_dim` | L203 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond = None` | L212 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `nobs_features = self.enc(nobs)` | L215 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L217 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond=global_cond,` | L227 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond = None` | L269 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `nobs_features = self.enc(nobs)` | L275 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L277 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_rel_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L303 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `obs_feature_dim = obs_encoder.output_shape()[0]` | L142 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `input_dim = action_dim if obs_as_cond else (obs_feature_dim + action_dim)` | L143 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `cond_dim = obs_feature_dim if obs_as_cond else 0` | L145 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `obs_dim=0 if (obs_as_cond) else obs_feature_dim,` | L169 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `self.obs_feature_dim = obs_feature_dim` | L176 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `Do = self.obs_feature_dim` | L239 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L252 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `cond = nobs_features.reshape(B, To, -1)` | L254 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L263 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `nobs_features = nobs_features.reshape(B, To, -1)` | L265 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `cond_data[:,:To,Da:] = nobs_features` | L269 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L335 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `cond = nobs_features.reshape(batch_size, To, -1)` | L337 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `nobs_features = self.obs_encoder(this_nobs)` | L345 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `nobs_features = nobs_features.reshape(batch_size, horizon, -1)` | L347 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_transformer_hybrid_image_policy.py` | `trajectory = torch.cat([nactions, nobs_features], dim=-1).detach()` | L348 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `obs_feature_dim = enc_n_hidden` | L57 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L58 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond_dim=global_cond_dim,` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `self.obs_feature_dim = obs_feature_dim` | L90 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `local_cond=None, global_cond=None,` | L119 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L142 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `nobs_features = self.enc(nobs)` | L175 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L177 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond=global_cond,` | L187 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `nobs_features = self.enc(nobs)` | L219 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L221 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy.py` | `local_cond=None, global_cond=global_cond)` | L247 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `obs_as_global_cond=True,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `obs_feature_dim = obs_encoder.output_shape()` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `input_dim = action_dim + obs_feature_dim` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond_dim = None` | L96 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `if obs_as_global_cond:` | L97 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond_dim = obs_feature_dim` | L100 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L102 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond_dim=global_cond_dim,` | L115 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L134 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `self.obs_feature_dim = obs_feature_dim` | L142 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `self.obs_as_global_cond = obs_as_global_cond` | L146 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `local_cond=None, global_cond=None,` | L160 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `local_cond=local_cond, global_cond=global_cond)` | L185 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `Do = self.obs_feature_dim` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = None` | L241 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `if self.obs_as_global_cond:` | L242 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `nobs_features = self.obs_encoder(this_nobs)` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L248 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = nobs_features.reshape(B, -1)` | L251 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `nobs_features = self.obs_encoder(this_nobs)` | L258 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `nobs_features = nobs_features.reshape(B, To, -1)` | L260 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `cond_data[:,:To,Da:] = nobs_features` | L263 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond=global_cond,` | L271 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = None` | L371 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `if self.obs_as_global_cond:` | L377 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `nobs_features = self.obs_encoder(this_nobs)` | L381 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L385 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L388 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `nobs_features = self.obs_encoder(this_nobs)` | L395 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `nobs_features = nobs_features.reshape(batch_size, horizon, -1)` | L397 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `cond_data = torch.cat([nactions, nobs_features], dim=-1)` | L398 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3_cano.py` | `global_cond=global_cond)` | L434 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `obs_as_global_cond=True,` | L50 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `obs_feature_dim = obs_encoder.output_shape()` | L92 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `input_dim = action_dim + obs_feature_dim` | L93 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond_dim = None` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `if obs_as_global_cond:` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond_dim = obs_feature_dim` | L98 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L100 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond_dim=global_cond_dim,` | L110 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L128 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `self.obs_feature_dim = obs_feature_dim` | L136 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `self.obs_as_global_cond = obs_as_global_cond` | L140 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `local_cond=None, global_cond=None,` | L153 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `local_cond=local_cond, global_cond=global_cond)` | L175 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `Do = self.obs_feature_dim` | L206 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = None` | L215 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `if self.obs_as_global_cond:` | L216 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `nobs_features = self.obs_encoder(this_nobs)` | L219 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L222 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = nobs_features.reshape(B, -1)` | L225 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `nobs_features = self.obs_encoder(this_nobs)` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `nobs_features = nobs_features.reshape(B, To, -1)` | L234 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `cond_data[:, :To, Da:] = nobs_features` | L237 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond=global_cond,` | L245 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = None` | L286 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `if self.obs_as_global_cond:` | L290 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `nobs_features = self.obs_encoder(this_nobs)` | L294 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L298 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L301 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `nobs_features = self.obs_encoder(this_nobs)` | L308 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `nobs_features = nobs_features.reshape(batch_size, horizon, -1)` | L310 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `cond_data = torch.cat([nactions, nobs_features], dim=-1)` | L311 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/dp3.py` | `global_cond=global_cond)` | L343 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `obs_feature_dim = enc_n_hidden` | L94 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L95 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond_dim=global_cond_dim,` | L100 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `self.obs_feature_dim = obs_feature_dim` | L128 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `local_cond=None, global_cond=None,` | L157 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L180 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `Do = self.obs_feature_dim` | L211 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond = None` | L220 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `nobs_features = self.enc(nobs)` | L223 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond = nobs_features.reshape(B, -1)` | L225 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond=global_cond,` | L235 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond = None` | L270 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `nobs_features = self.enc(nobs)` | L276 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L278 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_voxel_policy.py` | `local_cond=local_cond, global_cond=global_cond)` | L304 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `obs_feature_dim = enc_n_hidden` | L57 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond_dim = obs_feature_dim * n_obs_steps` | L58 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond_dim=global_cond_dim,` | L63 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `self.obs_feature_dim = obs_feature_dim` | L90 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `local_cond=None, global_cond=None,` | L133 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `local_cond=local_cond, global_cond=global_cond)` | L156 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `nobs_features = self.enc(nobs)` | L189 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond = nobs_features.reshape(B, -1)` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond=global_cond,` | L201 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `nobs_features = self.enc(nobs)` | L250 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L252 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/diffusion_equi_unet_cnn_enc_policy_se2.py` | `local_cond=None, global_cond=global_cond)` | L278 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `from sdp.model.equivariant_vision.equiformer_enc import EquiFormerEnc` | L17 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `obs_as_global_cond=True,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `obs_encoder = EquiFormerEnc(c_dim=encoder_output_dim,` | L99 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `n_proprio=n_obs_steps)  # number of proprio info` | L117 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `obs_feature_dim = obs_encoder.output_shape()` | L120 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `input_dim = action_dim + obs_feature_dim` | L121 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim = None` | L122 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if obs_as_global_cond:` | L123 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim = obs_feature_dim` | L125 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L138 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L152 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L164 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L180 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `self.obs_feature_dim = obs_feature_dim` | L192 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `self.obs_as_global_cond = obs_as_global_cond` | L196 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `local_cond=None, global_cond=None,` | L210 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `local_cond=local_cond, global_cond=global_cond)` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `Do = self.obs_feature_dim` | L270 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = None` | L279 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if self.obs_as_global_cond:` | L280 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = self.obs_encoder(this_nobs)` | L283 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L286 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(B, -1)` | L289 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = self.obs_encoder(this_nobs)` | L296 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = nobs_features.reshape(B, To, -1)` | L298 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `cond_data[:, :To, Da:] = nobs_features` | L301 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond=global_cond,` | L309 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `# # Visualize the proprio pose` | L489 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = None` | L550 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if self.obs_as_global_cond:` | L554 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = self.obs_encoder(this_nobs)` | L558 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L562 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L565 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = self.obs_encoder(this_nobs)` | L570 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = nobs_features.reshape(batch_size, horizon, -1)` | L572 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `cond_data = torch.cat([nactions, nobs_features], dim=-1)` | L573 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond=global_cond)` | L604 |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Checking how EquiFormerEnc outputs features and how they're structured:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Checking how the policy passes `global_cond` to the model:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "global_cond|obs_features|reshape.*irrep" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py" • 29 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `obs_as_global_cond=True,` | L51 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim = None` | L122 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if obs_as_global_cond:` | L123 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim = obs_feature_dim` | L125 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L138 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L152 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond_dim=global_cond_dim,` | L164 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `obs_dim=0 if obs_as_global_cond else obs_feature_dim,` | L180 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `self.obs_as_global_cond = obs_as_global_cond` | L196 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `local_cond=None, global_cond=None,` | L210 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `local_cond=local_cond, global_cond=global_cond)` | L232 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = None` | L279 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if self.obs_as_global_cond:` | L280 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = self.obs_encoder(this_nobs)` | L283 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(B, self.n_obs_steps, -1)` | L286 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(B, -1)` | L289 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = self.obs_encoder(this_nobs)` | L296 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = nobs_features.reshape(B, To, -1)` | L298 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `cond_data[:, :To, Da:] = nobs_features` | L301 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond=global_cond,` | L309 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = None` | L550 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `if self.obs_as_global_cond:` | L554 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = self.obs_encoder(this_nobs)` | L558 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(batch_size, self.n_obs_steps, -1)` | L562 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond = nobs_features.reshape(batch_size, -1)` | L565 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = self.obs_encoder(this_nobs)` | L570 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `nobs_features = nobs_features.reshape(batch_size, horizon, -1)` | L572 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `cond_data = torch.cat([nactions, nobs_features], dim=-1)` | L573 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/policy/step.py` | `global_cond=global_cond)` | L604 |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Reviewing the current implementation to understand the structure:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/utils/sdp_diffusion/irreps_conditional_unet1d.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Creating a plan based on the reference code:
+
+
+---
+
+Cancelled
+
+---
+
+_**User (2026-01-24 04:39Z)**_
+
+maybe put the language embedding into the @equibot/policies/vision/sdp_encoder.py is a better choice?
+
+---
+
+_**Agent (model default, mode Plan)**_
+
+
+
+---
+
+
+Checking how proprioception is added in the reference encoder to see if language embeddings can follow the same pattern:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="codebase_search">
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+In the reference code, proprioception is added in the encoder before flattening, with proper irrep structure. Asking a clarifying question:
+
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="ask_question">
+<details>
+<summary>Tool use: **ask_question**</summary>
+
+
+Parameters:
+
+```json
+{
+  "questions": [
+    {
+      "id": "encoder_vs_unet",
+      "prompt": "Where should language embeddings be added?",
+      "options": [
+        {
+          "id": "encoder",
+          "label": "In SDPEncoder (like proprioception in reference) - add before flattening s2_feat, with proper irrep structure (type-0 in l=0,m=0 only)"
+        },
+        {
+          "id": "unet",
+          "label": "In IrrepConditionalUnet1D (current plan) - structure global_cond to place language in l=0,m=0"
+        },
+        {
+          "id": "both",
+          "label": "Both approaches are valid, you decide"
+        }
+      ]
+    }
+  ]
+}
+```
+Additional data:
+
+```json
+{
+  "status": "submitted",
+  "currentSelections": {
+    "encoder_vs_unet": [
+      "both"
+    ]
+  }
+}
+```
+Result:
+
+```json
+{
+  "answers": [
+    {
+      "questionId": "encoder_vs_unet",
+      "selectedOptionIds": [
+        "both"
+      ]
+    }
+  ]
+}
+```
+User decision: **accepted**
+
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating the plan to add language embeddings in the encoder, following the reference pattern for proprioception:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/code_ref/Spherical_Diffusion_Policy/sdp/model/equivariant_vision/equiformer_enc.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating the plan to add language embeddings in the encoder, following the reference proprioception pattern:
+
+
+---
+
+Could not find file '/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/.cursor/plans/structure_global_cond_with_proper_irrep_types_c7591c21.plan.md' in the workspace.
+
+---
+
+
+
+---
+
+
+
+
+
+---
+
+<tool-use data-tool-type="unknown" data-tool-name="create_plan">
+<details>
+<summary>Tool use: **create_plan**</summary>
+
+
+Parameters:
+
+```json
+{
+  "plan": "# Add language embeddings in SDPEncoder\n\n## Approach\n\nFollowing the reference code pattern in &#96;equiformer_enc.py&#96; (lines 353-357), where proprioception features are added to &#96;s2_feat&#96; **before flattening**, with proper irrep structure:\n- Type-0 scalars (gripper joints): &#96;proprio[:, 0, ...]&#96; (l=0, m=0)\n- Type-1 vectors (rotation/position): &#96;proprio[:, 1:4, ...]&#96; (l=1, m=-1,0,1)\n\nLanguage embeddings are **invariant scalars** (type-0), so they should be added similarly to gripper joints.\n\n## Implementation\n\n### 1. Modify &#96;SDPEncoder.forward()&#96; in [&#96;equibot/policies/vision/sdp_encoder.py&#96;](equibot/policies/vision/sdp_encoder.py)\n\n**Changes:**\n- Add optional parameter &#96;language_emb=None&#96; to &#96;forward()&#96; method signature\n- Before flattening &#96;s2_feat&#96; (line 389), when it's still &#96;[B*T, irrep_dim, c_dim]&#96;:\n  - If &#96;language_emb&#96; is provided:\n    - Reshape &#96;language_emb&#96; from &#96;[B*T, lang_dim]&#96; to &#96;[B*T, 1, lang_dim]&#96;\n    - Create &#96;lang_feat&#96; tensor: &#96;torch.zeros(B*T, irrep_dim, lang_dim, device=..., dtype=...)&#96;\n    - Place language embeddings only in l=0, m=0: &#96;lang_feat[:, 0, :] = language_emb&#96;\n    - Concatenate: &#96;s2_feat = torch.cat([s2_feat, lang_feat], dim=-1)&#96; along channel dimension\n  - Then flatten as usual: &#96;einops.rearrange(s2_feat, 'bt irrep c -&gt; bt (c irrep)')&#96;\n\n**Key code location:** After line 386 (&#96;s2_feat = node_dst.embedding&#96;), before line 389 (flattening)\n\n### 2. Update &#96;SDPEncoder.output_dim()&#96; in [&#96;equibot/policies/vision/sdp_encoder.py&#96;](equibot/policies/vision/sdp_encoder.py)\n\n**Changes:**\n- Add optional parameter &#96;language_dim=0&#96; to &#96;output_dim()&#96; method\n- Return &#96;self.c_dim * self.irrep_dim + language_dim * self.irrep_dim&#96;\n- Or better: return &#96;(self.c_dim + language_dim) * self.irrep_dim&#96;\n\n### 3. Modify &#96;SDPPolicy.__init__()&#96; in [&#96;equibot/policies/agents/sdp_policy.py&#96;](equibot/policies/agents/sdp_policy.py)\n\n**Changes:**\n- After creating &#96;language_encoder&#96;, compute &#96;language_dim = 2 * output_size&#96; (skill + task)\n- Pass &#96;language_dim&#96; to encoder's &#96;output_dim()&#96; when computing &#96;obs_feature_dim&#96;\n- Update &#96;global_cond_dim&#96; calculation to account for language being in encoder output\n\n### 4. Modify &#96;SDPPolicy.pred_unimanual_traj()&#96; in [&#96;equibot/policies/agents/sdp_policy.py&#96;](equibot/policies/agents/sdp_policy.py)\n\n**Changes:**\n- Get language embeddings: &#96;language_emb = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)&#96;\n- Reshape to match encoder batch: &#96;language_emb = language_emb.unsqueeze(1).expand(-1, self.obs_horizon, -1).reshape(-1, -1)&#96; to get &#96;[B*T, lang_dim]&#96;\n- Pass to encoder: &#96;encoder_output = self.proc_pc(pc_data, language_emb=language_emb, ema_nets=ema_nets)&#96;\n- Remove language concatenation from &#96;global_cond&#96; (it's now in encoder output)\n\n### 5. Update &#96;SDPPolicy.proc_pc()&#96; in [&#96;equibot/policies/agents/sdp_policy.py&#96;](equibot/policies/agents/sdp_policy.py)\n\n**Changes:**\n- Add &#96;language_emb=None&#96; parameter\n- Pass &#96;language_emb&#96; to &#96;encoder_handle()&#96; call\n- Return only &#96;obs_vec&#96; (which now includes language features)\n\n## Benefits\n\n1. **Follows reference pattern**: Same approach as proprioception in &#96;equiformer_enc.py&#96;\n2. **Proper irrep structure**: Language embeddings correctly placed in l=0, m=0 only\n3. **Cleaner architecture**: All features properly structured from encoder output\n4. **No U-Net changes needed**: &#96;IrrepConditionalUnet1D&#96; can use &#96;global_cond&#96; as-is\n\n## Key Insight\n\nLanguage embeddings are **invariant scalars** (type-0), just like:\n- Gripper joints in proprioception: &#96;proprio[:, 0, ...]&#96; (l=0, m=0)\n- They should be added to encoder output **before flattening**, with only l=0, m=0 coefficient filled\n",
+  "name": "Add language embeddings in SDPEncoder",
+  "overview": "Add language embeddings to SDPEncoder output following the reference pattern for proprioception: create language feature tensor with proper irrep structure (type-0 scalars in l=0,m=0 only) and concatenate before flattening s2_feat."
+}
+```
+Additional data:
+
+```json
+{
+  "reviewData": {
+    "status": "Requested",
+    "selectedOption": "none",
+    "isShowingInput": false
+  },
+  "planUri": "file:///c%3A/Users/Joseph/.cursor/plans/add_language_embeddings_in_sdpencoder_f909f6bb.plan.md",
+  "hasOpenedEditor": true,
+  "pinnedName": "Add language embeddings in SDPEncoder"
+}
+```
+Result:
+
+```json
+{
+  "accepted": {},
+  "planUri": "c:\\Users\\Joseph\\.cursor\\plans\\add_language_embeddings_in_sdpencoder_f909f6bb.plan.md"
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+---
+
+_**User (2026-01-24 04:39Z)**_
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+_**Agent (model default, mode Agent)**_
+
+
+
+---
+
+
+Implementing the plan. Starting with the first task: modifying `SDPEncoder.forward()` to add language embeddings.
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Implementing the changes, starting with modifying `SDPEncoder.forward()`:
+
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -242,5 +242,5 @@
+          print(f"SDPEncoder initialized with {self.num_params} parameters, lmax={lmax}")
+      
+-     def forward(self, pcl, target_norm=1.0):
++     def forward(self, pcl, target_norm=1.0, language_emb=None):
+          """
+          Forward pass for object-centric point cloud encoding.
+```
+
+**Chunk 2**
+Lines added: 5, lines removed: 4
+
+```diff
+@@ -251,13 +251,14 @@
+                  - If use_color=True: last dim is xyzrgb (xyz + rgb), mirroring EquiFormerEnc.
+              target_norm: Target scale for normalization
++             language_emb: Optional language embeddings [B*T, lang_dim] (invariant scalars, type-0)
++                 - If provided, added to s2_feat with proper irrep structure (l=0, m=0 only)
++                 - Following reference pattern for proprioception features
+              
+          Returns:
+              dict with:
+-                 - 's2_feat': Spherical Fourier features [B, T, c_dim * irrep_dim]
++                 - 's2_feat': Spherical Fourier features [B, T, (c_dim + lang_dim) * irrep_dim] if language_emb provided
++                            or [B, T, c_dim * irrep_dim] otherwise
+                  - 'scale': Scale factor [B, T, 1, 1]
+                  - 'center': Center offset [B, T, 1, 3]
+-                 
+-         Note: Language embeddings should be concatenated to global_cond in the policy,
+-         NOT fused here. Language is invariant (scalar), encoder output is equivariant.
+          """
+          B, T, N, D = pcl.shape
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 12, lines removed: 1
+
+```diff
+@@ -387,5 +387,16 @@
+          s2_feat = node_dst.embedding
+          
+-         # Flatten: [B*T, irrep_dim, c_dim] -&gt; [B*T, c_dim * irrep_dim]
++         # Add language embeddings if provided (following reference pattern for proprioception)
++         # Language embeddings are invariant scalars (type-0), placed only in l=0, m=0
++         if language_emb is not None:
++             lang_dim = language_emb.shape[-1]  # [B*T, lang_dim]
++             # Create language feature tensor with proper irrep structure
++             lang_feat = torch.zeros(batch_size, self.irrep_dim, lang_dim, device=device, dtype=dtype)
++             # Place language embeddings only in l=0, m=0 (index 0)
++             lang_feat[:, 0, :] = language_emb  # [B*T, lang_dim] -&gt; [B*T, 1, lang_dim] placed at irrep index 0
++             # Concatenate along channel dimension: [B*T, irrep_dim, c_dim + lang_dim]
++             s2_feat = torch.cat([s2_feat, lang_feat], dim=-1)
++         
++         # Flatten: [B*T, irrep_dim, c_dim] or [B*T, irrep_dim, c_dim + lang_dim] -&gt; [B*T, (c_dim + lang_dim) * irrep_dim]
+          s2_feat = einops.rearrange(s2_feat, 'bt irrep c -&gt; bt (c irrep)')
+          
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 11, lines removed: 3
+
+```diff
+@@ -412,7 +412,15 @@
+          }
+      
+-     def output_dim(self):
+-         """Return total output feature dimension: c_dim * irrep_dim."""
+-         return self.c_dim * self.irrep_dim
++     def output_dim(self, language_dim=0):
++         """
++         Return total output feature dimension.
++         
++         Args:
++             language_dim: Dimension of language embeddings (default 0)
++         
++         Returns:
++             Total dimension: (c_dim + language_dim) * irrep_dim
++         """
++         return (self.c_dim + language_dim) * self.irrep_dim
+      
+      @property
+```
+
+</details>
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating `SDPPolicy.__init__()` to compute language_dim and update calculations:
+
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 12, lines removed: 8
+
+```diff
+@@ -175,24 +175,28 @@
+          
+          self.encoder_out_dim = encoder_output_dim
+-         # Get obs_feature_dim from encoder output_dim: c_dim * irrep_dim
+-         obs_feature_dim = net_dict['obj_encoder'].output_dim()
+-         self.obs_feature_dim = obs_feature_dim
+          
+          # 2. Language encoder for text conditioning
+-         # Language is invariant (scalar) - concatenated to global_cond, NOT fused in encoder
++         # Language is invariant (scalar) - added to encoder output with proper irrep structure
+          language_encoder_cfg = cfg.model.language_encoder_cfg
+          output_size = language_encoder_cfg.hidden_size
+          self.language_encoder = self._setup_language_encoder(output_size=output_size, **language_encoder_cfg)
+          net_dict['language_encoder'] = self.language_encoder
++         
++         # Language dimension: skill + task embeddings
++         language_dim = 2 * output_size
++         self.language_dim = language_dim
++         
++         # Get obs_feature_dim from encoder output_dim: (c_dim + language_dim) * irrep_dim
++         obs_feature_dim = net_dict['obj_encoder'].output_dim(language_dim=language_dim)
++         self.obs_feature_dim = obs_feature_dim
+          
+          # Calculate input_dim and global_cond_dim following reference pattern
+-         # global_cond = [obs_features (equivariant), language_features (invariant)]
++         # Language is now included in encoder output, so global_cond = obs_features only
+          input_dim = self.action_dim + obs_feature_dim
+          global_cond_dim = None
+          if self.obs_as_global_cond:
+              input_dim = self.action_dim
+-             # obs_features: obs_feature_dim * obs_horizon (equivariant spherical features)
+-             # language_features: 2 * output_size (skill + task embeddings, invariant scalars)
+-             global_cond_dim = obs_feature_dim * self.obs_horizon + 2 * output_size
++             # obs_features: obs_feature_dim * obs_horizon (includes language features in encoder output)
++             global_cond_dim = obs_feature_dim * self.obs_horizon
+          
+          # 3. SDTU (Spherical Denoising Temporal U-net) - following reference
+```
+
+</details>
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating `SDPPolicy.proc_pc()` to accept and pass `language_emb`:
+
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "def proc_pc" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py" • 1 match</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py` | `def proc_pc(self, pc, ema_nets=None):` | L308 |
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+
+
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 1, lines removed: 1
+
+```diff
+@@ -306,5 +306,5 @@
+      
+      # ==================== Point Cloud Processing ====================
+-     def proc_pc(self, pc, ema_nets=None):
++     def proc_pc(self, pc, language_emb=None, ema_nets=None):
+          """
+          Process point cloud through SDPEncoder.
+```
+
+**Chunk 2**
+Lines added: 5, lines removed: 4
+
+```diff
+@@ -314,15 +314,16 @@
+          - Normalizes point cloud
+          - Passes through encoder to get spherical features
++         - Adds language embeddings with proper irrep structure (type-0 in l=0, m=0 only)
+          - Returns obs_vec (conditioning), center, and scale for canonicalization
+-         
+-         Note: Language embeddings are NOT fused here - they are invariant (scalar)
+-         and should be concatenated to global_cond separately in pred_unimanual_traj.
+          
+          Args:
+              pc: (B, obs_horizon, N, D) point cloud (D=3 or 6)
++             language_emb: Optional language embeddings [B, lang_dim] (invariant scalars)
++                 - If provided, reshaped to [B*obs_horizon, lang_dim] and passed to encoder
+              ema_nets: optional EMA networks for inference
+              
+          Returns:
+-             obs_vec: (B, obs_horizon * c_dim * irrep_dim) spherical conditioning features
++             obs_vec: (B, obs_horizon * (c_dim + lang_dim) * irrep_dim) if language_emb provided
++                     or (B, obs_horizon * c_dim * irrep_dim) otherwise
+              center: (B, pred_horizon, 1, 3) canonicalization center
+              scale: (B, pred_horizon, 1, 1) canonicalization scale
+```
+
+</details>
+
+</tool-use>
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 10, lines removed: 2
+
+```diff
+@@ -344,8 +344,16 @@
+          
+          pc_scale = self.statistics['pc_scale']
+-         feat_dict = encoder_handle(pc, target_norm=pc_scale)
++         
++         # Prepare language embeddings for encoder if provided
++         # Reshape from [B, lang_dim] to [B*obs_horizon, lang_dim] to match encoder batch
++         language_emb_reshaped = None
++         if language_emb is not None:
++             language_emb_reshaped = language_emb.unsqueeze(1).expand(-1, self.obs_horizon, -1).reshape(-1, -1)
++         
++         feat_dict = encoder_handle(pc, target_norm=pc_scale, language_emb=language_emb_reshaped)
+          
+          # Extract outputs
+-         # s2_feat: [B, obs_horizon, c_dim * irrep_dim]
++         # s2_feat: [B, obs_horizon, (c_dim + lang_dim) * irrep_dim] if language_emb provided
++         #          or [B, obs_horizon, c_dim * irrep_dim] otherwise
+          s2_feat = feat_dict['s2_feat']
+          
+```
+
+</details>
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating `SDPPolicy.pred_unimanual_traj()` to get language embeddings and pass them to the encoder:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+
+
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+**Chunk 1**
+Lines added: 3, lines removed: 3
+
+```diff
+@@ -480,7 +480,7 @@
+          
+          Architecture:
+-         - obs_vec: equivariant spherical features from point cloud encoder
+-         - language_emb: invariant scalar features from language encoder
+-         - global_cond = concat([obs_vec, language_emb]) - NOT fused in encoder!
++         - obs_vec: equivariant spherical features from point cloud encoder (includes language embeddings)
++         - Language embeddings are added in encoder with proper irrep structure (type-0 in l=0, m=0 only)
++         - global_cond = obs_vec (language already included in encoder output)
+          
+          Denoising process (from paper Eq. 2):
+```
+
+**Chunk 2**
+Lines added: 9, lines removed: 10
+
+```diff
+@@ -492,21 +492,20 @@
+          ema_nets = self.ema.averaged_model
+          
+-         # 1. Encode point cloud to spherical features (equivariant)
+-         obs_vec, center, scale = self.proc_pc(pc_data, ema_nets=ema_nets)
+-         
+-         # 2. Get language embeddings (invariant scalars)
++         # 1. Get language embeddings (invariant scalars)
+          language_emb = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
+          
+-         # 3. Prepare global_cond: concatenate obs_vec (equivariant) + language_emb (invariant)
+-         # Language is invariant (scalar) so it's concatenated AFTER encoder, not fused inside
++         # 2. Encode point cloud to spherical features (equivariant) with language embeddings
++         # Language embeddings are added in encoder with proper irrep structure (type-0 in l=0, m=0 only)
++         obs_vec, center, scale = self.proc_pc(pc_data, language_emb=language_emb, ema_nets=ema_nets)
++         
++         # 3. Prepare global_cond: obs_vec already includes language features from encoder
+          if self.obs_as_global_cond:
+              if "cross_attention" in self.condition_type:
+                  # For cross-attention, keep separate (not implemented yet)
+                  global_cond = obs_vec
+              else:
+-                 # Concatenate: [obs_vec, language_emb]
+-                 # obs_vec: (B, obs_horizon * c_dim * irrep_dim)
+-                 # language_emb: (B, 2 * hidden_size) for skill + task
+-                 global_cond = torch.cat([obs_vec, language_emb], dim=-1)
++                 # obs_vec: (B, obs_horizon * (c_dim + lang_dim) * irrep_dim)
++                 # Language features are already included in encoder output
++                 global_cond = obs_vec
+          else:
+              global_cond = None
+```
+
+</details>
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+Checking for linting errors:
+
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="read_lints">
+<details>
+          <summary>Tool use: **read_lints** • Read lints for 2 files</summary>
+      
+Lint paths:
+
+- `equibot/policies/vision/sdp_encoder.py`
+- `equibot/policies/agents/sdp_policy.py`
+
+Lint results
+
+Lint errors for `equibot/policies/agents/sdp_policy.py`
+
+
+| Message | Range | Severity |
+|-------|-------|----------|
+| Import "einops" is not accessed | 35:8-35:14 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "MLPEncoder" is not accessed | 42:46-42:56 | DIAGNOSTIC_SEVERITY_HINT |
+| Import "render_trajectory" is not accessed | 47:28-47:45 | DIAGNOSTIC_SEVERITY_HINT |
+| Variable "unnormed_eefpos_xyz" is not accessed | 560:22-560:41 | DIAGNOSTIC_SEVERITY_HINT |
+| Variable "rot6d_batch" is not accessed | 560:43-560:54 | DIAGNOSTIC_SEVERITY_HINT |
+
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Updating the class docstring in `sdp_encoder.py` to reflect the new behavior:
+
+
+---
+
+<tool-use data-tool-type="write" data-tool-name="search_replace">
+
+<details><summary>Tool use: **search_replace** • Edit file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+**Chunk 1**
+Lines added: 4, lines removed: 2
+
+```diff
+@@ -49,7 +49,9 @@
+      - Input format adapted for per_skill_dataset
+      - Returns both spherical features and canonicalization info (scale, center)
++     - Optional language embeddings added with proper irrep structure (type-0 in l=0, m=0 only)
+      
+-     Note: Language embeddings are NOT fused here - they are invariant (scalar)
+-     and should be concatenated to global_cond in the policy, not in the encoder.
++     Language embeddings (if provided) are added to s2_feat before flattening,
++     following the reference pattern for proprioception features. They are invariant
++     scalars (type-0) and placed only in the l=0, m=0 coefficient of the irrep dimension.
+      """
+      
+```
+
+</details>
+
+</tool-use>
+
+---
+
+
+
+---
+
+
+Checking for other calls to `proc_pc` that might need updating:
+
+
+---
+
+<tool-use data-tool-type="search" data-tool-name="grep">
+<details>
+<summary>Tool use: **grep** • Grep for "proc_pc\(" in "/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents" • 18 matches</summary>
+
+Output mode: content
+
+
+| File | Content | Line |
+|------|------|------|
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py` | `def proc_pc(self, pc, language_emb=None, ema_nets=None):` | L308 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py` | `obs_vec, center, scale = self.proc_pc(pc_data, language_emb=language_emb, ema_nets=ema_nets)` | L499 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_agent.py` | `global_cond, center, scale = self.actor.proc_pc(n_data_dict['pc'], language_emb=task_skill_condition)` | L132 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/per_skill_agent.py` | `obs_vec,  center, scale = self.actor.proc_pc(n_data_dict['pc'])` | L108 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/per_skill_policy.py` | `def proc_pc(self, pc,  ema_nets = None):` | L239 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/per_skill_policy.py` | `obs_vec,  center, scale = self.proc_pc(pc_data, ema_nets = ema_nets)` | L342 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/dmg_policy.py` | `def proc_pc(self, pc, skill_name, ema_nets = None):` | L262 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/dmg_policy.py` | `obs_vec, center, scale = self.proc_pc(pc_data, skill_name, ema_nets = ema_nets)` | L369 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/dmg_agent.py` | `obs_vec, center, scale = self.actor.proc_pc(n_data_dict[f'\{skill_name\}:pc'], skill_name)` | L133 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/traj_agent.py` | `left_obs_vec, left_center, left_scale = self.actor.proc_pc(left_pc, 'left_pc')` | L134 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/traj_agent.py` | `right_obs_vec, right_center, right_scale = self.actor.proc_pc(right_pc, 'right_pc')` | L135 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/traj_policy.py` | `def proc_pc(self, pc, key, ema_nets = None):` | L191 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/traj_policy.py` | `obs_vec, center, scale = self.proc_pc(pc_data, side + '_pc', ema_nets = ema_nets)` | L282 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/compaloha_agent.py` | `left_obs_vec, left_center, left_scale = self.actor.proc_pc(left_pc, 'left_pc')` | L131 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/compaloha_agent.py` | `right_obs_vec, right_center, right_scale = self.actor.proc_pc(right_pc, 'right_pc')` | L132 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/compaloha_policy.py` | `def proc_pc(self, pc, key, ema_nets = None):` | L212 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/compaloha_policy.py` | `left_obs_vec, left_center, left_scale = self.proc_pc(left_pc, 'left_pc', ema_nets = ema_nets)` | L264 |
+| `/home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/compaloha_policy.py` | `right_obs_vec, right_center, right_scale = self.proc_pc(right_pc, 'right_pc', ema_nets = ema_nets)` | L265 |
+
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="generic" data-tool-name="read_lints">
+<details>
+          <summary>Tool use: **read_lints** • Read lints for 1 file</summary>
+      
+Lint paths:
+
+- `equibot/policies/vision/sdp_encoder.py`
+
+Lint results
+
+
+**No lint errors found**
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+Checking `sdp_agent.py` to ensure it's compatible:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_agent.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+The implementation is complete. Verifying the key changes are correct:
+
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/vision/sdp_encoder.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+<tool-use data-tool-type="read" data-tool-name="read_file">
+<details><summary>Tool use: **read_file** • Read file: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/equibot/policies/agents/sdp_policy.py</summary>
+
+</details>
+</tool-use>
+
+---
+
+
+
+---
+
+
+## Summary of Changes
+
+### 1. **SDPEncoder.forward()** (`equibot/policies/vision/sdp_encoder.py`)
+- Added optional `language_emb` parameter
+- Before flattening `s2_feat`, if `language_emb` is provided:
+  - Creates `lang_feat` tensor with shape `[B*T, irrep_dim, lang_dim]`
+  - Places language embeddings only in `lang_feat[:, 0, :]` (l=0, m=0, type-0 scalar)
+  - Concatenates with `s2_feat` along channel dimension
+- Updated docstring to reflect new behavior
+
+### 2. **SDPEncoder.output_dim()** (`equibot/policies/vision/sdp_encoder.py`)
+- Added optional `language_dim=0` parameter
+- Returns `(self.c_dim + language_dim) * self.irrep_dim`
+
+### 3. **SDPPolicy.__init__()** (`equibot/policies/agents/sdp_policy.py`)
+- Computes `language_dim = 2 * output_size` (skill + task)
+- Stores `self.language_dim`
+- Updates `obs_feature_dim` calculation to include language: `encoder.output_dim(language_dim=language_dim)`
+- Updates `global_cond_dim` calculation (language now included in encoder output)
+
+### 4. **SDPPolicy.proc_pc()** (`equibot/policies/agents/sdp_policy.py`)
+- Added optional `language_emb=None` parameter
+- Reshapes `language_emb` from `[B, lang_dim]` to `[B*obs_horizon, lang_dim]` for encoder
+- Passes `language_emb` to encoder call
+- Updated docstring
+
+### 5. **SDPPolicy.pred_unimanual_traj()** (`equibot/policies/agents/sdp_policy.py`)
+- Gets language embeddings first
+- Passes them to `proc_pc()`
+- Removes language concatenation from `global_cond` (now included in encoder output)
+- Updated docstring
+
+## Key Features
+
+- Follows reference pattern: same approach as proprioception in `equiformer_enc.py`
+- Proper irrep structure: language embeddings placed only in l=0, m=0 (type-0 scalar)
+- Backward compatible: `language_emb` is optional, existing code still works
+- Cleaner architecture: all features properly structured from encoder output
+
+Implementation complete. Language embeddings are now added in the encoder with proper irrep structure, matching the reference pattern for type-0 scalar features.
 
 ---
 

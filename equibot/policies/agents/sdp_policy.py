@@ -1,12 +1,15 @@
 """
 Spherical Diffusion Policy (SDP) for object-centric trajectory prediction.
 
-Reference: paper_ref/sdp/example_paper.tex
+Reference: paper_ref/sdp/example_paper.tex, code_ref/Spherical_Diffusion_Policy/
 
 Architecture:
-1. EquiformerV2 Encoder - Point cloud to spherical Fourier features (SO(3) equivariant)
-2. Language Encoder - Text conditioning for skill/task
-3. SDTU (Spherical Denoising Temporal U-net) - Noise estimation with SFiLM conditioning
+1. SDPEncoder (EquiformerV2) - Point cloud to spherical Fourier features (SO(3) equivariant)
+2. Language Encoder (MLP) - Text conditioning for skill/task (invariant scalars)
+3. global_cond = concat([obs_features, language_features])
+   - obs_features: equivariant spherical harmonics from encoder
+   - language_features: invariant scalars, concatenated AFTER encoder (NOT fused inside)
+4. SDTU (IrrepConditionalUnet1D) - Noise estimation with SFiLM conditioning
 
 Key equations from paper:
 - Mixing channel temporal convolution (Eq. 4):
@@ -21,7 +24,7 @@ Key equations from paper:
 IrrepConditionalUnet1D interface:
 - Input sample: (B, T, 10) - 9D for pos/rot (3 vectors x 3) + 1D for gripper
 - Output: (B, T, 10) - same format (noise prediction)
-- global_cond: (B, C * irrep_dim) - flattened spherical conditioning
+- global_cond: (B, obs_dim + lang_dim) - obs features + language features
 """
 
 import copy
@@ -50,13 +53,21 @@ class SDPPolicy(nn.Module):
     Spherical Diffusion Policy for object-centric trajectory prediction.
     
     Inputs (from per_skill_dataset):
-        - pc: Point cloud [B, 1, N, 3] (first-sight observation)
-        - skill_name: Text embedding for skill conditioning
-        - task_name: Text embedding for task conditioning
+        - pc: Point cloud [B, 1, N, 3 or 6] (xyz or xyzrgb)
+        - skill_name: Text for skill conditioning
+        - task_name: Text for task conditioning
     
     Outputs:
         - eefpos: SE(3) trajectory [B, T, 4, 4]
         - gripper: Gripper actions [B, T, 1]
+        
+    Architecture:
+        1. SDPEncoder (EquiformerV2): pc → equivariant spherical features [B, c_dim * irrep_dim]
+        2. LanguageEncoder (MLP): skill/task text → invariant scalar features [B, 2 * hidden_size]
+        3. global_cond = concat([obs_features, language_features])
+           - obs_features are EQUIVARIANT (spherical harmonics)
+           - language_features are INVARIANT (scalars) - NOT fused in encoder!
+        4. SDTU (IrrepConditionalUnet1D): denoising with SFiLM conditioning
         
     Key differences from EquiBot (Vector Neurons):
         - Uses spherical harmonics (degree L) vs vector neurons (degree 1)
@@ -134,20 +145,11 @@ class SDPPolicy(nn.Module):
         
         # 1. SDPEncoder (EquiformerV2) for point cloud - following reference initialization
         encoder_output_dim = encoder_cfg.get('encoder_output_dim', encoder_cfg.c_dim)
-        use_color = cfg.model.get('use_pc_color', False)  
-        
-        # Language encoder config (needed for encoder language fusion)
-        language_encoder_cfg = cfg.model.language_encoder_cfg
-        language_embed_dim = language_encoder_cfg.hidden_size * 2  # skill + task embeddings
-        
-        # Language fusion dimension: use hidden_size from language encoder (can be overridden in encoder_cfg)
-        language_fusion_dim = encoder_cfg.get('language_fusion_dim', language_encoder_cfg.hidden_size)
+        use_color = cfg.data.dataset.get('use_pc_color', False)  
         
         net_dict['obj_encoder'] = SDPEncoder(
             c_dim=encoder_output_dim,
             use_color=use_color,
-            language_embed_dim=language_embed_dim,  # Input: skill + task embeddings (hidden_size * 2)
-            language_fusion_dim=language_fusion_dim,  # Output: fused dimension (defaults to hidden_size)
             lmax=self.lmax,
             mmax=self.mmax,
             max_neighbors=tuple(encoder_cfg.get('max_neighbors', (16, 16, 16, 16))),
@@ -172,24 +174,33 @@ class SDPPolicy(nn.Module):
         )
         
         self.encoder_out_dim = encoder_output_dim
-        # Get obs_feature_dim from encoder output_shape (following reference)
-        # For SDPEncoder with language fusion, output_dim() returns (c_dim + lang_dim) * irrep_dim
-        obs_feature_dim = net_dict['obj_encoder'].output_shape()
-        self.obs_feature_dim = obs_feature_dim
         
-        # Calculate input_dim and global_cond_dim following reference pattern
-        input_dim = self.action_dim + obs_feature_dim
-        global_cond_dim = None
-        if self.obs_as_global_cond:
-            input_dim = self.action_dim
-            # Language embeddings are now fused into encoder output, so no need to add separately
-            global_cond_dim = obs_feature_dim * self.obs_horizon
-        
-        # 2. Language encoder for text conditioning (used for encoder fusion)
+        # 2. Language encoder for text conditioning
+        # Language is invariant (scalar) - added to encoder output with proper irrep structure
         language_encoder_cfg = cfg.model.language_encoder_cfg
         output_size = language_encoder_cfg.hidden_size
         self.language_encoder = self._setup_language_encoder(output_size=output_size, **language_encoder_cfg)
         net_dict['language_encoder'] = self.language_encoder
+        
+        # Language dimension: skill + task embeddings
+        language_dim = 2 * output_size
+        self.language_dim = language_dim
+        
+        # Get obs_feature_dim from encoder output_dim (channel dimension, before irrep flattening)
+        # This matches reference: output_shape() returns channel_dim, not flattened_dim
+        obs_feature_dim = net_dict['obj_encoder'].output_dim(language_dim=language_dim)
+        self.obs_feature_dim = obs_feature_dim
+        
+        # Calculate input_dim and global_cond_dim following reference pattern
+        # Language is now included in encoder output, so global_cond = obs_features only
+        # obs_feature_dim is channel_dim (c_dim + lang_dim), actual output is (c_dim + lang_dim) * irrep_dim
+        obs_feature_dim_flattened = obs_feature_dim * self.irrep_dim
+        input_dim = self.action_dim + obs_feature_dim_flattened
+        global_cond_dim = None
+        if self.obs_as_global_cond:
+            input_dim = self.action_dim
+            # For obs_horizon timesteps, total channel_dim = (c_dim + lang_dim) * obs_horizon
+            global_cond_dim = obs_feature_dim * self.obs_horizon
         
         # 3. SDTU (Spherical Denoising Temporal U-net) - following reference
         diffusion_cfg = cfg.model.get('diffusion', {})
@@ -260,20 +271,24 @@ class SDPPolicy(nn.Module):
     
     # ==================== Text Encoding ====================
     def get_encoding_from_name_batch(self, name_batch, batch_size, mapping_dict):
-        if batch_size == 1:
-            emb_tensor = mapping_dict[name_batch]
+        # Handle both single string and list of strings
+        # name_batch can be: "skill_name" (string) or ["skill_name"] (list with one element)
+        if isinstance(name_batch, str):
+            # Single string case
+            names = [name_batch]
+        else:
+            # List case
+            names = name_batch
+        
+            emb_tensor_batch = []
+        for name in names:
+            emb_tensor = mapping_dict[name]
             if isinstance(emb_tensor, np.ndarray):
                 emb_tensor = torch.tensor(emb_tensor).to(self.device)
-            emb_batch = self.encode_bert_emb(emb_tensor, batch_size)
-        else:
-            emb_tensor_batch = []
-            for skill_name in name_batch:
-                emb_tensor = mapping_dict[skill_name]
-                if isinstance(emb_tensor, np.ndarray):
-                    emb_tensor = torch.tensor(emb_tensor).to(self.device)
-                emb_tensor_batch.append(emb_tensor)
-            emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
-            emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
+            emb_tensor_batch.append(emb_tensor)
+    
+        emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
+        emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
         return emb_batch
     
     def encode_bert_emb(self, bert_emb, batch_size):
@@ -295,21 +310,24 @@ class SDPPolicy(nn.Module):
     # ==================== Point Cloud Processing ====================
     def proc_pc(self, pc, language_emb=None, ema_nets=None):
         """
-        Process point cloud through SDPEncoder with optional language fusion.
+        Process point cloud through SDPEncoder.
         
         Following reference step.py pattern:
         - Strips color if use_pc_color=False
         - Normalizes point cloud
-        - Passes through encoder to get spherical features (with language fused)
+        - Passes through encoder to get spherical features
+        - Adds language embeddings with proper irrep structure (type-0 in l=0, m=0 only)
         - Returns obs_vec (conditioning), center, and scale for canonicalization
         
         Args:
             pc: (B, obs_horizon, N, D) point cloud (D=3 or 6)
-            language_emb: Optional (B, language_embed_dim) language embeddings to fuse
+            language_emb: Optional language embeddings [B, lang_dim] (invariant scalars)
+                - If provided, reshaped to [B*obs_horizon, lang_dim] and passed to encoder
             ema_nets: optional EMA networks for inference
             
         Returns:
-            obs_vec: (B, obs_horizon * (c_dim + lang_dim) * irrep_dim) spherical conditioning features
+            obs_vec: (B, obs_horizon * (c_dim + lang_dim) * irrep_dim) if language_emb provided
+                    or (B, obs_horizon * c_dim * irrep_dim) otherwise
             center: (B, pred_horizon, 1, 3) canonicalization center
             scale: (B, pred_horizon, 1, 1) canonicalization scale
         """
@@ -328,20 +346,21 @@ class SDPPolicy(nn.Module):
             encoder_handle = ema_nets[encoder_key]
         
         pc_scale = self.statistics['pc_scale']
-        # Pass language embeddings to encoder for fusion
+        
+        # Prepare language embeddings for encoder if provided
         feat_dict = encoder_handle(pc, target_norm=pc_scale, language_emb=language_emb)
         
         # Extract outputs
-        # s2_feat: [B, obs_horizon, (c_dim + lang_dim) * irrep_dim] (with language fused)
+        # s2_feat: [B, obs_horizon, (c_dim + lang_dim) * irrep_dim] if language_emb provided
         s2_feat = feat_dict['s2_feat']
         
         # Reshape for conditioning following reference pattern
         if self.obs_as_global_cond:
             if "cross_attention" in self.condition_type:
-                # Treat as sequence: (B, obs_horizon, (c_dim + lang_dim) * irrep_dim)
+                # Treat as sequence: (B, obs_horizon, c_dim * irrep_dim)
                 obs_vec = s2_feat
             else:
-                # Flatten: (B, obs_horizon * (c_dim + lang_dim) * irrep_dim)
+                # Flatten: (B, obs_horizon * c_dim * irrep_dim)
                 obs_vec = s2_feat.reshape(batch_size, -1)
         else:
             # Not used as global cond, return as-is
@@ -456,6 +475,11 @@ class SDPPolicy(nn.Module):
         Following reference step.py pattern for inference.
         Uses IrrepConditionalUnet1D for equivariant denoising.
         
+        Architecture:
+        - obs_vec: equivariant spherical features from point cloud encoder (includes language embeddings)
+        - Language embeddings are added in encoder with proper irrep structure (type-0 in l=0, m=0 only)
+        - global_cond = obs_vec (language already included in encoder output)
+        
         Denoising process (from paper Eq. 2):
         A_t^{k-1} = alpha * (A_t^k - gamma * epsilon_theta(S_t, A_t^k, k) + z)
         """
@@ -464,23 +488,23 @@ class SDPPolicy(nn.Module):
         
         ema_nets = self.ema.averaged_model
         
-        # Get text conditioning (for fusion into encoder)
-        task_skill_condition = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
+        # 1. Get language embeddings (invariant scalars)
+        language_emb = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
         
-        # Encode point cloud to spherical features with language fusion
-        obs_vec, center, scale = self.proc_pc(pc_data, language_emb=task_skill_condition, ema_nets=ema_nets)
+        # 2. Encode point cloud to spherical features (equivariant) with language embeddings
+        # Language embeddings are added in encoder with proper irrep structure (type-0 in l=0, m=0 only)
+        obs_vec, center, scale = self.proc_pc(pc_data, language_emb=language_emb, ema_nets=ema_nets)
         
-        # Prepare global_cond following reference pattern
-        # Language is now fused into obs_vec, so no need to concatenate separately
+        # 3. Prepare global_cond: obs_vec already includes language features from encoder
         if self.obs_as_global_cond:
             if "cross_attention" in self.condition_type:
-                # obs_vec is already (B, obs_horizon, (c_dim + lang_dim) * irrep_dim)
+                # For cross-attention, keep separate (not implemented yet)
                 global_cond = obs_vec
             else:
-                # obs_vec is (B, obs_horizon * (c_dim + lang_dim) * irrep_dim)
-                global_cond = obs_vec
+                # obs_vec: (B, obs_horizon * (c_dim + lang_dim) * irrep_dim)
+                # Reshape directly to (B * obs_horizon * channel_dim, irrep_dim) to match reference format
+                global_cond = obs_vec.reshape(-1, self.irrep_dim)
         else:
-            # Not used as global cond
             global_cond = None
         
         # Initialize noise following reference pattern
@@ -541,22 +565,22 @@ class SDPPolicy(nn.Module):
             "gripper": gripper_batch,
         }
         eval_metrics = {}
-
+        
         if gt_batch is not None:
             if self.eef_representation == "4pts":
                 gt_4pts = self.eef_proc_fn(gt_batch["eefpos"], "eefpos", center, scale)
                 pred_4pts = pred_eef_z
                 eval_metrics["pts_error"] = torch.nn.functional.mse_loss(pred_4pts, gt_4pts)
-
+            
             pred_xyz = trans_batch[:, :, :3, 3]
             gt_xyz = gt_batch["eefpos"][:, :, :3, 3]
             eval_metrics["xyz_l1"] = torch.nn.functional.l1_loss(pred_xyz, gt_xyz)
-
+            
             gt_Rs = gt_batch["eefpos"][:, :, :3, :3]
             pred_Rs = trans_batch[:, :, :3, :3]
             diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
             eval_metrics["rot_diff"] = diff_theta * 180 / torch.pi
-
+        
         return action_dict, eval_metrics
     
     # ==================== Forward Pass ====================

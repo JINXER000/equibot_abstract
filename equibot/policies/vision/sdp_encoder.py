@@ -41,21 +41,24 @@ class SDPEncoder(nn.Module):
     SDP Encoder for object-centric trajectory prediction.
     
     Adapts EquiformerV2 to work with per_skill_dataset format:
-    - Input: Point cloud [B, T, N, 3] (object-centric, already centered)
+    - Input: Point cloud [B, T, N, 3 or 6] (object-centric, xyzrgb if color)
     - Output: Spherical Fourier features for diffusion conditioning
     
     Key differences from original EquiFormerEnc:
     - No robot proprioception input (object-centric prediction)
     - Input format adapted for per_skill_dataset
     - Returns both spherical features and canonicalization info (scale, center)
+    - Optional language embeddings added with proper irrep structure (type-0 in l=0, m=0 only)
+    
+    Language embeddings (if provided) are added to s2_feat before flattening,
+    following the reference pattern for proprioception features. They are invariant
+    scalars (type-0) and placed only in the l=0, m=0 coefficient of the irrep dimension.
     """
     
     def __init__(
         self,
         c_dim=128,
         use_color=False,
-        language_embed_dim=0,  # Dimension of language embeddings (0 = disabled)
-        language_fusion_dim=None,  # Output dimension for language fusion (None = use c_dim)
         max_neighbors=(16, 16, 16, 16),
         max_radius=(0.05, 0.2, 0.8, 3),
         pool_ratio=(0.25, 0.25, 0.25),
@@ -94,9 +97,6 @@ class SDPEncoder(nn.Module):
         self.pcd_noise = pcd_noise
         self.deterministic = deterministic
         self.use_color = use_color
-        self.language_embed_dim = language_embed_dim
-        # Language fusion dimension: if None, use c_dim; otherwise use specified dimension
-        self.language_fusion_dim = language_fusion_dim if language_fusion_dim is not None else c_dim
         
         # Sphere channels (last channel is c_dim) 
         assert len(max_neighbors) == len(sphere_channels)
@@ -237,34 +237,29 @@ class SDPEncoder(nn.Module):
         # Input linear layer (project xyz features to sphere channels)
         self.type0_linear = nn.Linear(self.pcd_channels, self.sphere_channels_all, bias=True)
         
-        # Language embedding projection (for fusing into spherical representation)
-        # Language embeddings are scalar (invariant), so they go into l=0, m=0 coefficients
-        if self.language_embed_dim > 0:
-            self.language_proj = nn.Linear(self.language_embed_dim, self.language_fusion_dim, bias=True)
-        else:
-            self.language_proj = None
-        
         # Weight initialization
         self.apply(self._init_weights)
         self.apply(self._uniform_init_rad_func_linear_weights)
         
-        print(f"SDPEncoder initialized with {self.num_params} parameters, lmax={lmax}, language_embed_dim={language_embed_dim}")
+        print(f"SDPEncoder initialized with {self.num_params} parameters, lmax={lmax}")
     
     def forward(self, pcl, target_norm=1.0, language_emb=None):
         """
-        Forward pass for object-centric point cloud encoding with optional language fusion.
+        Forward pass for object-centric point cloud encoding.
         
         Args:
             pcl: Point cloud tensor [B, T, N, 3] or [B, T, N, 6]
                 - If use_color=False: last dim is xyz.
                 - If use_color=True: last dim is xyzrgb (xyz + rgb), mirroring EquiFormerEnc.
             target_norm: Target scale for normalization
-            language_emb: Optional language embeddings [B, T, language_embed_dim] or [B, language_embed_dim]
-                         If provided, fused into spherical representation (l=0 coefficients)
+            language_emb: Optional language embeddings [B*T, lang_dim] (invariant scalars, type-0)
+                - If provided, added to s2_feat with proper irrep structure (l=0, m=0 only)
+                - Following reference pattern for proprioception features
             
         Returns:
             dict with:
-                - 's2_feat': Spherical Fourier features [B, T, (c_dim + lang_dim) * irrep_dim]
+                - 's2_feat': Spherical Fourier features [B, T, (c_dim + lang_dim) * irrep_dim] if language_emb provided
+                           or [B, T, c_dim * irrep_dim] otherwise
                 - 'scale': Scale factor [B, T, 1, 1]
                 - 'center': Center offset [B, T, 1, 3]
         """
@@ -393,30 +388,18 @@ class SDPEncoder(nn.Module):
         # Output spherical features: [B*T, irrep_dim, c_dim]
         s2_feat = node_dst.embedding
         
-        # Fuse language embeddings into spherical representation (following EquiFormerEnc pattern)
-        # Language embeddings are scalar (invariant), so they go into l=0, m=0 coefficients
-        if self.language_proj is not None and language_emb is not None:
-            # Handle language_emb shape: [B, T, lang_dim] or [B, lang_dim]
-            if language_emb.dim() == 2:
-                # [B, lang_dim] -> expand to [B, T, lang_dim]
-                language_emb = language_emb.unsqueeze(1).expand(B, T, -1)
-            
-            # Reshape: [B, T, lang_dim] -> [B*T, lang_dim]
-            lang_flat = language_emb.view(B * T, -1)
-            
-            # Project to fusion dimension: [B*T, lang_dim] -> [B*T, language_fusion_dim]
-            lang_proj = self.language_proj(lang_flat)  # [B*T, language_fusion_dim]
-            
-            # Create language features in spherical format: [B*T, irrep_dim, language_fusion_dim]
-            # Only l=0, m=0 (first irrep) gets language features
-            lang_feat = torch.zeros(B * T, self.irrep_dim, self.language_fusion_dim, 
-                                   device=s2_feat.device, dtype=s2_feat.dtype)
-            lang_feat[:, 0, :] = lang_proj  # l=0, m=0 coefficients
-            
-            # Concatenate along channel dimension (following EquiFormerEnc pattern)
-            s2_feat = torch.cat([s2_feat, lang_feat], dim=-1)  # [B*T, irrep_dim, c_dim + language_fusion_dim]
+        # Add language embeddings if provided (following reference pattern for proprioception)
+        # Language embeddings are invariant scalars (type-0), placed only in l=0, m=0
+        if language_emb is not None:
+            lang_dim = language_emb.shape[-1]  # [B*T, lang_dim]
+            # Create language feature tensor with proper irrep structure
+            lang_feat = torch.zeros(batch_size, self.irrep_dim, lang_dim, device=device, dtype=dtype)
+            # Place language embeddings only in l=0, m=0 (index 0)
+            lang_feat[:, 0, :] = language_emb  # [B*T, lang_dim] -> [B*T, 1, lang_dim] placed at irrep index 0
+            # Concatenate along channel dimension: [B*T, irrep_dim, c_dim + lang_dim]
+            s2_feat = torch.cat([s2_feat, lang_feat], dim=-1)
         
-        # Flatten: [B*T, irrep_dim, c_dim] or [B*T, irrep_dim, 2*c_dim]
+        # Flatten: [B*T, irrep_dim, c_dim] or [B*T, irrep_dim, c_dim + lang_dim] -> [B*T, (c_dim + lang_dim) * irrep_dim]
         s2_feat = einops.rearrange(s2_feat, 'bt irrep c -> bt (c irrep)')
         
         # Reshape outputs to [B, T, ...]
@@ -425,16 +408,23 @@ class SDPEncoder(nn.Module):
         z_center = z_center.view(B, T, 1, 3)
         
         return {
-            's2_feat': s2_feat,  # [B, T, C * irrep_dim] or [B, T, 2*C * irrep_dim] with language
+            's2_feat': s2_feat,  # [B, T, c_dim * irrep_dim]
             'scale': z_scale,    # [B, T, 1, 1]
             'center': z_center,  # [B, T, 1, 3]
         }
     
-    def output_shape(self):
-        """Return output feature dimension per irrep (matches EquiFormerEnc semantics)."""
-        # If language fusion is enabled, output includes both pc and language features
-        lang_dim = self.language_fusion_dim if self.language_embed_dim > 0 else 0
-        return self.c_dim + lang_dim
+    def output_dim(self, language_dim=0):
+        """
+        Return output feature dimension (channel dimension, before irrep flattening).
+        This matches the reference equiformer_enc.py output_shape() convention.
+        
+        Args:
+            language_dim: Dimension of language embeddings (default 0)
+        
+        Returns:
+            Channel dimension: c_dim + language_dim
+        """
+        return self.c_dim + language_dim
     
     @property
     def num_params(self):
