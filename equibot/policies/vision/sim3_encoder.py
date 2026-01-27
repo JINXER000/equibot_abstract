@@ -56,9 +56,11 @@ class SIM3Vec4Latent(nn.Module):
 
         #     print(f"Preload encoder from {preload_path}")
 
-    def forward(self, pcl, ret_perpoint_feat=False, target_norm=1.0):
+    def forward(self, pcl, ret_perpoint_feat=False, target_norm=1.0, rgb=None):
         B, T, N, _ = pcl.shape
         pcl = pcl.view(B * T, -1, 3).transpose(1, 2)  # [BT, 3, N]
+        if rgb is not None:
+            rgb = rgb.view(B * T, -1, 3).transpose(1, 2)  # [BT, 3, N]
 
         centroid = pcl.mean(-1, keepdim=True)  # B,3,1
         input_pcl = pcl - centroid
@@ -74,7 +76,7 @@ class SIM3Vec4Latent(nn.Module):
             z_so3 = so3_feat
 
         else:
-            x, x_perpoint = self.backbone(input_pcl)  # B,C,3
+            x, x_perpoint = self.backbone(input_pcl, rgb)  # B,C,3
 
             z_so3 = x
             z_inv_dual, _ = self.fc_inv(x[..., None])

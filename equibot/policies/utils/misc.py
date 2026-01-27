@@ -1126,6 +1126,8 @@ def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction',
     ## add eefpos for a broader range
     for t, pose in enumerate(eef_poses):
         pos = pose[:3, 3]
+        if pc.shape[-1] == 6:
+            pos = np.concatenate([pos, [0,0, 0]], axis=0)
         pc = np.concatenate([pc, pos[None]], axis=0)
 
     # Get the data ranges
