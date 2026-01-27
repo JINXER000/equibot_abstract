@@ -1,0 +1,140 @@
+# SDP (Spherical Diffusion Policy) Configuration for Real ALOHA
+# Based on sdp_per_skill.yaml but adapted for real ALOHA data format
+
+defaults:
+  - base
+
+use_wandb: true
+wandb_note: "SDP training on real ALOHA data"
+
+training:
+  eval_interval: 50
+  num_epochs: 2000
+
+env:
+  env_class: 'sdp_real_aloha'
+  num_eef: 1
+  dof: 7
+  max_episode_length: 50
+
+agent:
+  agent_name: sdp
+
+model:
+  obs_mode: 'pc'
+  ac_mode: 'traj'
+  use_torch_compile: false
+  
+  # Horizons
+  obs_horizon: 1
+  pred_horizon: 4
+  ac_horizon: 4
+  
+  # Policy parameters (following reference sdp_ddpm_5layer.yaml)
+  canonicalize: false               # Canonicalize point cloud and actions
+  obs_as_global_cond: true         # Use observations as global conditioning
+  condition_type: "film"           # Conditioning type: "film" or "cross_attention"
+  denoise_nn: "irrep"              # Denoising network type: "irrep", "reg", or "nn"
+  norm: false                      # Use normalization in encoder/diffusion
+  rot_aug: [5, 5, 180]            # Rotation augmentation (degrees): [x, y, z]
+  rad_aug: 0                       # Radial augmentation (translation noise)
+  pcd_noise: 0                     # Point cloud noise augmentation
+  n_groups: 8                      # Number of groups for convolution
+  
+  # Encoder config (EquiformerV2) - following reference sdp_ddpm_5layer.yaml (5-layer architecture)
+  encoder:
+    encoder_output_dim: 128        # Output channel dimension (alias: c_dim)
+    c_dim: 128                     # Same as encoder_output_dim (for compatibility)
+    lmax: 2                        # Max degree of spherical harmonics (2 = up to l=2)
+    mmax: 2                        # Max order (usually same as lmax)
+    max_neighbors: [16, 16, 16, 16, 128]   # KNN neighbors at each scale (5 layers, reference)
+    max_radius: [3, 3, 3, 3, 3]   # Graph radius at each scale (reference: all 3)
+    pool_ratio: [0.5, 0.5, 0.5, 0.5]    # FPS pooling ratio (4 ratios, last is adaptive)
+    sphere_channels: [16, 32, 64, 128, 256]    # Channels at each scale (5 layers, reference)
+    attn_hidden_channels: [16, 32, 64, 128, 256]  # (5 layers, reference)
+    attn_alpha_channels: [4, 8, 16, 32, 64]  # (5 layers, reference)
+    attn_value_channels: [2, 4, 8, 16, 32]  # (5 layers, reference)
+    ffn_hidden_channels: [32, 64, 128, 256, 512]  # (5 layers, reference)
+    edge_channels: [8, 16, 32, 64, 128]  # (5 layers, reference)
+    num_distance_basis: [128, 128, 128, 128, 128]  # (5 layers, all 128, reference)
+    num_heads: 4
+    v_grid_resolution: 
+    d_grid_resolution:
+    grid_resolution: 12            # Alias for v_grid_resolution (for compatibility, used as default)
+    pool_method: "fpsknn"          # Pooling method: "fps" or "fpsknn"
+    deterministic: false
+    alpha_drop: 0.1
+    drop_path_rate: 0.0
+    proj_drop: 0.1
+  
+  # Diffusion config (SDTU) - following reference
+  diffusion:
+    diffusion_step_embed_dim: 128
+    down_dims: [200, 400, 800]      # U-net channel dimensions
+    kernel_size: 5                 # Kernel size 
+    FiLM_type: 'SFiLM'             # Spherical FiLM (from paper Eq. 6)
+    
+  # Language encoder (for skill/task text conditioning)
+  language_encoder_cfg:
+    network_name: MLPEncoder
+    input_size: 768               # BERT embedding size
+    hidden_size: 128              # Should match encoder c_dim
+    num_layers: 1
+  
+  # Noise scheduler
+  noise_scheduler:
+    _target_: diffusers.schedulers.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small
+    clip_sample: true
+    prediction_type: epsilon
+
+data:
+  dataset:
+    path: null  # Set via command line, e.g., data/handoff_cup
+    task_name: null  # Set via command line, e.g., handoff_cup
+    num_points: 512               # Number of points in point cloud
+    num_workers: 4
+    
+    # uniskills: ['grasp', 'place']  # Skills to extract from data
+    uniskills: ['grasp']
+    dataset_type: 'real_aloha_traj'  # Use real ALOHA dataset
+    
+    is_obj_centric: true
+    is_add_bottom: true
+    downsample_method: 'fps'
+    rot_aug: true
+    shuffle_pc: true
+    traj_nums: 4                  # Number of trajectory samples per episode
+    
+    embedding_cache_dir: "./data/bert"
+    
+    # Action representation
+    # 3vec: position + 2 rotation vectors (equivariant)
+    # 4pts: 4 keypoints on gripper
+    eef_representation: "3vec"
+    
+    normalization_method: "all"
+    
+    original_gripper_pcd: [[0.10, 0.01, 0], 
+                            [0.03, -0.04, 0],
+                            [0.02, 0.05, 0],
+                            [0, 0, 0]]
+
+    use_pc_color: true               # Use RGB color in point cloud 
+
+# Shape metadata (for reference)
+shape_meta: &shape_meta
+  obs:
+    point_cloud:
+      shape: [512, 6]  # xyz + rgb if use_pc_color is true
+      type: point_cloud
+  action: 
+    shape: [13]  # 3 pos + 6 rot (2x3 vectors) + 1 gripper + 3 pos
+
+eval:
+  history_bid: 10
+

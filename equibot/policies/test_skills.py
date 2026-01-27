@@ -70,7 +70,7 @@ def main(cfg):
 
     # get eval datase
     # cfg.data.dataset.path=os.path.join(EQUIBOT_PATH, 'data/mj_peg_hole/')
-    from equibot.policies.datasets.per_skill_dataset import collate_fn
+    from equibot.policies.utils.misc import collate_fn
     eval_dataset = get_dataset(cfg, "test")
     num_workers = cfg.data.dataset.num_workers
     test_loader = torch.utils.data.DataLoader(

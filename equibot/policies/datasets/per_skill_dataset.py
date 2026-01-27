@@ -17,45 +17,6 @@ from equibot.policies.utils.normalize_utils import to_torch_stats, get_torch_ran
 
 from equibot.policies.utils.normalizer import LinearNormalizer
 
-
-def collate_fn(batch):
-    """
-    Custom collate function to handle variable-length skill name tensors.
-    Pads skill_name tensors to the same length for batching.
-    """
-    if "skill_name" not in batch[0]:
-        return torch.utils.data.dataloader.default_collate(batch)
-    
-    # Ensure both name tensors are 1-D integer tensors with a consistent dtype
-    for item in batch:
-        if not torch.is_tensor(item['skill_name']):
-            item['skill_name'] = torch.tensor(item['skill_name'], dtype=torch.long)
-        else:
-            item['skill_name'] = item['skill_name'].to(dtype=torch.long)
-        if not torch.is_tensor(item['task_name']):
-            item['task_name'] = torch.tensor(item['task_name'], dtype=torch.long)
-        else:
-            item['task_name'] = item['task_name'].to(dtype=torch.long)
-    
-    # Find the maximum length of skill_name/task_name tensors in the batch
-    max_skill_name_len = max(len(item['skill_name']) for item in batch)
-    max_task_name_len = max(len(item['task_name']) for item in batch)
-    
-    # Pad all skill_name/task_name tensors to the same length
-    for item in batch:
-        skill_name_len = len(item['skill_name'])
-        if skill_name_len < max_skill_name_len:
-            padding = torch.zeros(max_skill_name_len - skill_name_len, dtype=torch.long)
-            item['skill_name'] = torch.cat([item['skill_name'], padding])
-
-        task_name_len = len(item['task_name'])
-        if task_name_len < max_task_name_len:
-            padding = torch.zeros(max_task_name_len - task_name_len, dtype=torch.long)
-            item['task_name'] = torch.cat([item['task_name'], padding])
-    
-    # Use default collate for the rest
-    return torch.utils.data.dataloader.default_collate(batch)
-
 def get_libero_task_emb(task_suite_name, cache_dir):
     from libero.libero import benchmark
     

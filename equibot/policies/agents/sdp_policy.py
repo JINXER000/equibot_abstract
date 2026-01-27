@@ -82,12 +82,10 @@ class SDPPolicy(nn.Module):
         self.device = device
         self.use_torch_compile = cfg.model.use_torch_compile
         
-        # Horizons (following reference: horizon, n_action_steps, n_obs_steps)
+        # Horizons (following reference: horizon,  n_obs_steps)
         self.pred_horizon = cfg.model.pred_horizon
         self.obs_horizon = cfg.model.obs_horizon
-        self.action_horizon = cfg.model.ac_horizon
         self.horizon = self.pred_horizon  # Alias for reference compatibility
-        self.n_action_steps = self.action_horizon
         self.n_obs_steps = self.obs_horizon
         
         # Diffusion parameters
@@ -565,22 +563,61 @@ class SDPPolicy(nn.Module):
             "gripper": gripper_batch,
         }
         eval_metrics = {}
-        
-        if gt_batch is not None:
-            if self.eef_representation == "4pts":
-                gt_4pts = self.eef_proc_fn(gt_batch["eefpos"], "eefpos", center, scale)
-                pred_4pts = pred_eef_z
-                eval_metrics["pts_error"] = torch.nn.functional.mse_loss(pred_4pts, gt_4pts)
-            
-            pred_xyz = trans_batch[:, :, :3, 3]
-            gt_xyz = gt_batch["eefpos"][:, :, :3, 3]
-            eval_metrics["xyz_l1"] = torch.nn.functional.l1_loss(pred_xyz, gt_xyz)
-            
-            gt_Rs = gt_batch["eefpos"][:, :, :3, :3]
-            pred_Rs = trans_batch[:, :, :3, :3]
-            diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
-            eval_metrics["rot_diff"] = diff_theta * 180 / torch.pi
-        
+
+        if batch_size == 1:
+            # Single sample inference - return indexed results
+            action_dict["eefpos"] = trans_batch[0]
+            action_dict["gripper"] = gripper_batch[0]
+        else:
+            # Batch evaluation - compute metrics
+            if gt_batch is not None:
+                if self.eef_representation == "4pts":
+                    gt_4pts = self.eef_proc_fn(gt_batch["eefpos"], "eefpos", center, scale)
+                    pred_4pts = pred_eef_z
+                    eval_metrics["pts_error"] = torch.nn.functional.mse_loss(pred_4pts, gt_4pts)
+
+                pred_xyz = trans_batch[:, :, :3, 3]
+                gt_xyz = gt_batch["eefpos"][:, :, :3, 3]
+                eval_metrics["xyz_l1"] = torch.nn.functional.l1_loss(pred_xyz, gt_xyz)
+
+                gt_Rs = gt_batch["eefpos"][:, :, :3, :3]
+                pred_Rs = trans_batch[:, :, :3, :3]
+                diff_theta = geodestDist(gt_Rs, pred_Rs).mean()
+                eval_metrics["rot_diff"] = diff_theta * 180 / torch.pi
+
+            # Plot trajectories (following per_skill_policy.py pattern)
+            plotted_titles = []
+            for i in range(batch_size):
+                skill_name = skill_name_batch[i]
+                if task_name_batch is not None:
+                    task_name = task_name_batch[i]
+                else:
+                    task_name = ''
+                title = f'{skill_name}-{task_name}-prediction'
+                if title not in plotted_titles:
+                    plotted_titles.append(title)
+                else:
+                    continue
+
+                # Get point cloud data - handle both xyz-only and xyz+color formats
+                pc_full = agent_obs['pc'][i, 0].detach().cpu().numpy()  # Shape: (N, 3) or (N, 6)
+                if pc_full.shape[-1] > 3:
+                    # Has color information
+                    pc_xyz = pc_full[:, :3]
+                    pc_color = pc_full[:, 3:6]  # RGB color
+                else:
+                    pc_xyz = pc_full
+                    pc_color = None
+
+                trajectory = trans_batch[i].detach().cpu().numpy()  # Shape: (T, 4, 4)
+                gripper_values = gripper_batch[i]  # Shape: (T,)
+                rendered_img = render_trajectory(
+                    pc_xyz, trajectory, gripper_values, title=title, pc_color=pc_color
+                )
+
+                # Store the rendered image in eval_metrics
+                eval_metrics[f"{title}-image"] = rendered_img
+
         return action_dict, eval_metrics
     
     # ==================== Forward Pass ====================

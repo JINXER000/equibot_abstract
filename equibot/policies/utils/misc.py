@@ -10,6 +10,44 @@ EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.parent.absolute()
 
 def to_torch(batch, device):    return {k: v.to(device) for k, v in batch.items()}
 
+def collate_fn(batch):
+    """
+    Custom collate function to handle variable-length skill name tensors.
+    Pads skill_name tensors to the same length for batching.
+    """
+    if "skill_name" not in batch[0]:
+        return torch.utils.data.dataloader.default_collate(batch)
+    
+    # Ensure both name tensors are 1-D integer tensors with a consistent dtype
+    for item in batch:
+        if not torch.is_tensor(item['skill_name']):
+            item['skill_name'] = torch.tensor(item['skill_name'], dtype=torch.long)
+        else:
+            item['skill_name'] = item['skill_name'].to(dtype=torch.long)
+        if not torch.is_tensor(item['task_name']):
+            item['task_name'] = torch.tensor(item['task_name'], dtype=torch.long)
+        else:
+            item['task_name'] = item['task_name'].to(dtype=torch.long)
+    
+    # Find the maximum length of skill_name/task_name tensors in the batch
+    max_skill_name_len = max(len(item['skill_name']) for item in batch)
+    max_task_name_len = max(len(item['task_name']) for item in batch)
+    
+    # Pad all skill_name/task_name tensors to the same length
+    for item in batch:
+        skill_name_len = len(item['skill_name'])
+        if skill_name_len < max_skill_name_len:
+            padding = torch.zeros(max_skill_name_len - skill_name_len, dtype=torch.long)
+            item['skill_name'] = torch.cat([item['skill_name'], padding])
+
+        task_name_len = len(item['task_name'])
+        if task_name_len < max_task_name_len:
+            padding = torch.zeros(max_task_name_len - task_name_len, dtype=torch.long)
+            item['task_name'] = torch.cat([item['task_name'], padding])
+    
+    # Use default collate for the rest
+    return torch.utils.data.dataloader.default_collate(batch)
+
 def to_tensor(obs):
     return {k: torch.tensor(v).float() for k, v in obs.items()}
 
@@ -149,6 +187,9 @@ def get_dataset(cfg, mode="train"):
     elif "per_skill" in dataset_type:
         from equibot.policies.datasets.per_skill_dataset import PerSkillDataset
         return PerSkillDataset(cfg.data.dataset, mode)
+    elif dataset_type == "real_aloha_traj":
+        from equibot.policies.datasets.real_aloha_dataset import RealAlohaDataset
+        return RealAlohaDataset(cfg.data.dataset, mode)
     else:
         raise ValueError(f"Dataset type [{dataset_type}] not supported.")
 
@@ -1027,7 +1068,7 @@ def choose_ids_rdp(traj, target_len, idx_list, essential_ids=None):
     return selected_ids
 
 
-def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction', max_resolution=400, dpi=100):
+def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction', max_resolution=400, dpi=100, pc_color=None):
     """
     Render point cloud and full trajectory of end-effector poses using matplotlib.
     
@@ -1038,6 +1079,7 @@ def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction',
         title: Title for the plot
         max_resolution: Maximum resolution (width or height) of the output image
         dpi: Dots per inch for the figure
+        pc_color: Optional point cloud colors (N, 3) in range [0, 1] or [0, 255]. If None, uses red.
         
     Returns:
         rendered_image: RGB image as numpy array
@@ -1058,8 +1100,14 @@ def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction',
     fig = plt.figure(figsize=(fig_width, fig_height), dpi=dpi)
     ax = fig.add_subplot(111, projection='3d')
     
-    # Plot point cloud
-    ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c='red', s=max_fig_size, alpha=0.6, label='Point Cloud')
+    # Plot point cloud with optional color
+    if pc_color is not None:
+        # Normalize color to [0, 1] if in [0, 255] range
+        if pc_color.max() > 1.0:
+            pc_color = pc_color / 255.0
+        ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c=pc_color, s=max_fig_size, alpha=0.6, label='Point Cloud')
+    else:
+        ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c='red', s=max_fig_size, alpha=0.6, label='Point Cloud')
     
     # Plot trajectory
     trajectory_points = []

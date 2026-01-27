@@ -108,7 +108,7 @@ def main(cfg):
     num_workers = cfg.data.dataset.num_workers
     batch_size = cfg.training.batch_size
     
-    from equibot.policies.datasets.per_skill_dataset import collate_fn
+    from equibot.policies.utils.misc import collate_fn
     
     test_loader = torch.utils.data.DataLoader(
         full_dataset,
