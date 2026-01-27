@@ -90,7 +90,7 @@ data:
     #                         [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00]]
 
     use_pc_color: True
-    traj_nums: 10
+    aug_traj_nums: 10
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim

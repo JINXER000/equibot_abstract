@@ -24,6 +24,7 @@ from equibot.policies.utils.normalize_utils import to_torch_stats, get_torch_ran
 from equibot.policies.utils.normalizer import LinearNormalizer
 
 
+
 class RealAlohaDataset(Dataset):
     """
     Dataset for real ALOHA robot data with unimanual trajectory training.
@@ -97,6 +98,22 @@ class RealAlohaDataset(Dataset):
             sample = self.transform(sample)
         return sample
 
+    def get_pc_of_phase(self, obj_grp, phase = 'start'):
+
+        # Get point cloud data
+        pc = obj_grp[f'{phase}_pc'][()]
+        
+        # Handle color data
+        if self.use_pc_color and f'{phase}_colors' in obj_grp:
+            pc_colors = obj_grp[f'{phase}_colors'][()]
+            # Combine xyz and colors
+            obj_pc_raw = np.concatenate([pc, pc_colors], axis=-1)
+        else:
+            obj_pc_raw = pc
+
+        return obj_pc_raw
+
+
     def process_select(self, cfg, **kwargs):
         if self.dataset_type == 'real_aloha_traj':
             self.data = self.process_real_aloha_traj(cfg, **kwargs)
@@ -115,7 +132,7 @@ class RealAlohaDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = cfg.traj_nums if hasattr(cfg, 'traj_nums') else 64
+        aug_traj_nums = cfg.aug_traj_nums if hasattr(cfg, 'aug_traj_nums') else 64
         
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir) if hasattr(cfg, 'embedding_cache_dir') else None
         
@@ -143,27 +160,20 @@ class RealAlohaDataset(Dataset):
                     obj_grp = f[obj_name]
                     
                     # Get point cloud data
-                    start_pc = obj_grp['start_pc'][()]
-                    
-                    # Handle color data
-                    if self.use_pc_color and 'start_colors' in obj_grp:
-                        start_colors = obj_grp['start_colors'][()]
-                        # Combine xyz and colors
-                        obj_pc_raw = np.concatenate([start_pc, start_colors], axis=-1)
-                    else:
-                        obj_pc_raw = start_pc
+                    start_pc = self.get_pc_of_phase(obj_grp, phase = 'start')
+                    end_pc = self.get_pc_of_phase(obj_grp, phase = 'end')
                     
                     # Get grasp poses and indices
                     grasp_poses = obj_grp['grasp_poses'][()]
                     grasp_ids = obj_grp['grasp_ids'][()]
                     
-                    # Get joint poses for determining which arm is active
-                    if 'joint_poses' in obj_grp:
-                        joint_poses = obj_grp['joint_poses'][()]
-                        holding_ids = obj_grp['holding_ids'][()]
-                    else:
-                        joint_poses = None
-                        holding_ids = None
+                    # # Get joint poses for determining which arm is active
+                    # if 'joint_poses' in obj_grp:
+                    #     joint_poses = obj_grp['joint_poses'][()]
+                    #     holding_ids = obj_grp['holding_ids'][()]
+                    # else:
+                    #     joint_poses = None
+                    #     holding_ids = None
                     
                     # Get release poses if available (for place skill)
                     has_release = 'release_poses' in obj_grp
@@ -172,12 +182,12 @@ class RealAlohaDataset(Dataset):
                         release_ids = obj_grp['release_ids'][()]
                     
                     # Create data samples for grasp skill
-                    for _ in range(traj_nums):
+                    for _ in range(aug_traj_nums):
                         # Process grasp skill
                         if 'grasp' in primitive_kws and len(grasp_poses) > 0:
                             skill_name = f'grasp_{obj_name}'
                             data_slice = self.get_dataslice_unimanual_real(
-                                obj_pc_raw=obj_pc_raw,
+                                obj_pc_raw=start_pc,
                                 eef_poses=grasp_poses,
                                 pose_ids=grasp_ids,
                                 skill_name=skill_name,
@@ -194,7 +204,7 @@ class RealAlohaDataset(Dataset):
                         if has_release and 'place' in primitive_kws and len(release_poses) > 0:
                             skill_name = f'place_{obj_name}'
                             data_slice = self.get_dataslice_unimanual_real(
-                                obj_pc_raw=obj_pc_raw,
+                                obj_pc_raw=end_pc,
                                 eef_poses=release_poses,
                                 pose_ids=release_ids,
                                 skill_name=skill_name,

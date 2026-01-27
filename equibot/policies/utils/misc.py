@@ -1068,18 +1068,17 @@ def choose_ids_rdp(traj, target_len, idx_list, essential_ids=None):
     return selected_ids
 
 
-def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction', max_resolution=400, dpi=100, pc_color=None):
+def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction', max_resolution=400, dpi=100):
     """
     Render point cloud and full trajectory of end-effector poses using matplotlib.
     
     Args:
-        pc: Point cloud data (N, 3)
+        pc: Point cloud data (N, 3) or (N, 6)
         eef_poses: End-effector poses for all timesteps (T, 4, 4)
         gripper_values: Gripper values for each timestep (T,) - if provided, colors trajectory based on gripper state
         title: Title for the plot
         max_resolution: Maximum resolution (width or height) of the output image
         dpi: Dots per inch for the figure
-        pc_color: Optional point cloud colors (N, 3) in range [0, 1] or [0, 255]. If None, uses red.
         
     Returns:
         rendered_image: RGB image as numpy array
@@ -1101,7 +1100,8 @@ def render_trajectory(pc, eef_poses,  gripper_values=None, title = 'prediction',
     ax = fig.add_subplot(111, projection='3d')
     
     # Plot point cloud with optional color
-    if pc_color is not None:
+    if pc.shape[-1] == 6:
+        pc_color = pc[:, 3:]
         # Normalize color to [0, 1] if in [0, 255] range
         if pc_color.max() > 1.0:
             pc_color = pc_color / 255.0

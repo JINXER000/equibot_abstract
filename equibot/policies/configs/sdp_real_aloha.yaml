@@ -99,8 +99,8 @@ data:
     num_points: 512               # Number of points in point cloud
     num_workers: 4
     
-    # uniskills: ['grasp', 'place']  # Skills to extract from data
-    uniskills: ['grasp']
+    uniskills: ['grasp', 'place']  # Skills to extract from data
+    # uniskills: ['grasp']
     dataset_type: 'real_aloha_traj'  # Use real ALOHA dataset
     
     is_obj_centric: true
@@ -108,7 +108,7 @@ data:
     downsample_method: 'fps'
     rot_aug: true
     shuffle_pc: true
-    traj_nums: 4                  # Number of trajectory samples per episode
+    aug_traj_nums: 4                  # Number of trajectory samples per episode
     
     embedding_cache_dir: "./data/bert"
     

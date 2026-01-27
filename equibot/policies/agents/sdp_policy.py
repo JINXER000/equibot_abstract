@@ -601,18 +601,11 @@ class SDPPolicy(nn.Module):
 
                 # Get point cloud data - handle both xyz-only and xyz+color formats
                 pc_full = agent_obs['pc'][i, 0].detach().cpu().numpy()  # Shape: (N, 3) or (N, 6)
-                if pc_full.shape[-1] > 3:
-                    # Has color information
-                    pc_xyz = pc_full[:, :3]
-                    pc_color = pc_full[:, 3:6]  # RGB color
-                else:
-                    pc_xyz = pc_full
-                    pc_color = None
 
                 trajectory = trans_batch[i].detach().cpu().numpy()  # Shape: (T, 4, 4)
                 gripper_values = gripper_batch[i]  # Shape: (T,)
                 rendered_img = render_trajectory(
-                    pc_xyz, trajectory, gripper_values, title=title, pc_color=pc_color
+                    pc_full, trajectory, gripper_values, title=title
                 )
 
                 # Store the rendered image in eval_metrics

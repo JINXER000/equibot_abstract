@@ -126,7 +126,7 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = cfg.traj_nums
+        aug_traj_nums = cfg.aug_traj_nums
         primitive_kws = cfg.uniskills
         task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
@@ -198,7 +198,7 @@ class PerSkillDataset(Dataset):
                     rbt_action = get_rbt_actions(action_arr, robot_names)
 
 
-                    for _ in range(traj_nums):
+                    for _ in range(aug_traj_nums):
                 
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
@@ -237,7 +237,7 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 32
+        aug_traj_nums = 32
         primitive_kws = cfg.uniskills
         # task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
@@ -304,7 +304,7 @@ class PerSkillDataset(Dataset):
                     action_arr = f[f'data/{demos[demo_id]}/actions'][()]
                     rbt_action = get_rbt_actions(action_arr, robot_names)
 
-                    for _ in range(traj_nums):
+                    for _ in range(aug_traj_nums):
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
 
@@ -362,7 +362,7 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums =168
+        aug_traj_nums =168
         primitive_kws = cfg.uniskills
         # task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
@@ -429,7 +429,7 @@ class PerSkillDataset(Dataset):
                     action_arr = f[f'data/{demos[demo_id]}/actions'][()]
                     rbt_action = get_rbt_actions(action_arr, robot_names)
 
-                    for _ in range(traj_nums):
+                    for _ in range(aug_traj_nums):
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
 

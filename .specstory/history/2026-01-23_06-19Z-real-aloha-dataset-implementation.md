@@ -585,7 +585,7 @@ Lines added: 390, lines removed: 6
 +         data_list = []
 +         raw_files = self.raw_file_names
 +         traj_len = cfg.pred_horizon
-+         traj_nums = cfg.traj_nums if hasattr(cfg, 'traj_nums') else 64
++         aug_traj_nums = cfg.aug_traj_nums if hasattr(cfg, 'aug_traj_nums') else 64
 +         
 +         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir) if hasattr(cfg, 'embedding_cache_dir') else None
 +         
@@ -642,7 +642,7 @@ Lines added: 390, lines removed: 6
 +                         release_ids = obj_grp['release_ids'][()]
 +                     
 +                     # Create data samples for grasp skill
-+                     for _ in range(traj_nums):
++                     for _ in range(aug_traj_nums):
 +                         # Process grasp skill
 +                         if 'grasp' in primitive_kws and len(grasp_poses) &gt; 0:
 +                             skill_name = f'grasp_{obj_name}'
@@ -1057,7 +1057,7 @@ Lines added: 139, lines removed: 1
 +     downsample_method: 'fps'
 +     rot_aug: true
 +     shuffle_pc: true
-+     traj_nums: 64                  # Number of trajectory samples per episode
++     aug_traj_nums: 64                  # Number of trajectory samples per episode
 +     
 +     embedding_cache_dir: "./data/bert"
 +     
@@ -1201,7 +1201,7 @@ cfg = OmegaConf.create({
     'dataset_type': 'real_aloha_traj',
     'uniskills': ['grasp', 'place'],
     'pred_horizon': 8,
-    'traj_nums': 8,  # Small for testing
+    'aug_traj_nums': 8,  # Small for testing
     'embedding_cache_dir': './data/bert',
     'eef_representation': '3vec',
     'rot_aug': False,
@@ -1242,7 +1242,7 @@ cfg = OmegaConf.create({
     'dataset_type': 'real_aloha_traj',
     'uniskills': ['grasp', 'place'],
     'pred_horizon': 8,
-    'traj_nums': 8,  # Small for testing
+    'aug_traj_nums': 8,  # Small for testing
     'embedding_cache_dir': './data/bert',
     'eef_representation': '3vec',
     'rot_aug': False,
@@ -1303,7 +1303,7 @@ cfg = OmegaConf.create({
     'dataset_type': 'real_aloha_traj',
     'uniskills': ['grasp', 'place'],
     'pred_horizon': 8,
-    'traj_nums': 8,  # Small for testing
+    'aug_traj_nums': 8,  # Small for testing
     'embedding_cache_dir': './data/bert',
     'eef_representation': '3vec',
     'rot_aug': False,
@@ -1344,7 +1344,7 @@ cfg = OmegaConf.create({
     'dataset_type': 'real_aloha_traj',
     'uniskills': ['grasp', 'place'],
     'pred_horizon': 8,
-    'traj_nums': 8,  # Small for testing
+    'aug_traj_nums': 8,  # Small for testing
     'embedding_cache_dir': './data/bert',
     'eef_representation': '3vec',
     'rot_aug': False,
@@ -1403,7 +1403,7 @@ cfg = OmegaConf.create({
     'dataset_type': 'real_aloha_traj',
     'uniskills': ['grasp', 'place'],
     'pred_horizon': 8,
-    'traj_nums': 8,  # Small for testing
+    'aug_traj_nums': 8,  # Small for testing
     'embedding_cache_dir': './data/bert',
     'eef_representation': '3vec',
     'rot_aug': False,
@@ -1444,7 +1444,7 @@ cfg = OmegaConf.create({
     'dataset_type': 'real_aloha_traj',
     'uniskills': ['grasp', 'place'],
     'pred_horizon': 8,
-    'traj_nums': 8,  # Small for testing
+    'aug_traj_nums': 8,  # Small for testing
     'embedding_cache_dir': './data/bert',
     'eef_representation': '3vec',
     'rot_aug': False,

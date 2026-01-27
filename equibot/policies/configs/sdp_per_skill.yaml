@@ -110,7 +110,7 @@ data:
     is_add_bottom: true
     downsample_method: 'fps'
 
-    traj_nums: 1
+    aug_traj_nums: 1
     rot_aug: false
     shuffle_pc: true
     
