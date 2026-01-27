@@ -31,15 +31,23 @@ model:
 
   fuse_inv_feat: True
 
-### use VDGCNN and transfer from pretrained model
-  use_pc_color: False
+## use vec_pointnet and train from scratch
   hidden_dim: 256
   encoder:
-    backbone_type: VDGCNN
+    backbone_type: vn_pointnet
     backbone_args: 
       num_layers: 7
-      # preload_path: "pretrained/mugs.pt"
-      preload_path: "pretrained/kit4cates.pt"
+      preload_path: "pretrained/mugs.pt"
+
+
+# ### use VDGCNN and transfer from pretrained model
+#   hidden_dim: 256
+#   encoder:
+#     backbone_type: VDGCNN
+#     backbone_args: 
+#       num_layers: 7
+#       # preload_path: "pretrained/mugs.pt"
+#       preload_path: "pretrained/kit4cates.pt"
 
   language_encoder_cfg:
     network_name: MLPEncoder
@@ -80,6 +88,10 @@ data:
     #                         [ 3.48747446e-04,  4.88699045e-02, -2.86211470e-02],
     #                         [ 8.89648299e-05, -5.10463244e-02, -2.45325339e-02],
     #                         [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00]]
+
+    use_pc_color: True
+    traj_nums: 10
+
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
   obs:
