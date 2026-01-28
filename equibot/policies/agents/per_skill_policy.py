@@ -1,5 +1,6 @@
 import copy
 import hydra
+from omegaconf import OmegaConf
 import torch
 from torch import nn
 import numpy as np
@@ -52,8 +53,26 @@ class EquiSkillPolicy(nn.Module):
 
         self.obs_dim = self.encoder_out_dim
 
+        # Get use_pc_color flag from config (check both model and dataset configs)
+        self.use_pc_color = cfg.model.get('use_pc_color', False) or cfg.data.dataset.get('use_pc_color', False)
+
         net_dict = {}
-        net_dict['obj_encoder'] = SIM3Vec4Latent(**cfg.model.encoder)
+        # Pass use_rgb to encoder backbone args if using color
+        # Safely copy encoder config (OmegaConf can be in struct mode)
+        encoder_cfg = OmegaConf.to_container(cfg.model.encoder, resolve=True)
+        encoder_cfg = copy.deepcopy(encoder_cfg)
+        backbone_type = encoder_cfg.get('backbone_type', 'vn_pointnet')
+        
+        # VDGCNN backbone does not support RGB (preloaded weights don't expect it)
+        if self.use_pc_color and "VDGCNN" in backbone_type:
+            print(f"[EquiSkillPolicy] Warning: use_pc_color=True but backbone_type={backbone_type} does not support RGB. Disabling RGB.")
+            self.use_pc_color = False
+        
+        backbone_args = copy.deepcopy(encoder_cfg.get('backbone_args', {}))
+        if self.use_pc_color:
+            backbone_args['use_rgb'] = True
+        encoder_cfg['backbone_args'] = backbone_args
+        net_dict['obj_encoder'] = SIM3Vec4Latent(**encoder_cfg)
 
         # self.eef_dims = {}
 
@@ -241,6 +260,12 @@ class EquiSkillPolicy(nn.Module):
         pc = self.normalize_from_key(pc_key, pc)
         batch_size = pc.shape[0]
 
+        ## Extract RGB from point cloud if using color
+        if self.use_pc_color and pc.shape[-1] >= 6:
+            pc, rgb = pc[..., :3], pc[..., 3:6]
+        else:
+            rgb = None
+
         ## in training
         encoder_key = 'obj_encoder'
         if ema_nets is None:
@@ -249,7 +274,7 @@ class EquiSkillPolicy(nn.Module):
             encoder_handle = ema_nets[encoder_key]
         pc_scale = self.statistics['pc_scale']
 
-        feat_dict = encoder_handle(pc, target_norm=pc_scale)
+        feat_dict = encoder_handle(pc, target_norm=pc_scale, rgb=rgb)
 
         center = (
             feat_dict["center"].reshape(batch_size, self.obs_horizon, 1, 3)[:, [-1]].repeat(1, self.pred_horizon, 1, 1)
@@ -265,6 +290,12 @@ class EquiSkillPolicy(nn.Module):
         in_hand_pc = self.normalize_from_key(in_hand_kw, in_hand_pc)
         batch_size = in_hand_pc.shape[0]
 
+        ## Extract RGB from point cloud if using color
+        if self.use_pc_color and in_hand_pc.shape[-1] >= 6:
+            in_hand_pc, rgb = in_hand_pc[..., :3], in_hand_pc[..., 3:6]
+        else:
+            rgb = None
+
         ## in training
         encoder_key = 'obj_encoder'
         if ema_nets is None:
@@ -277,7 +308,7 @@ class EquiSkillPolicy(nn.Module):
         else:
             pc_scale = self.statistics['pc_scale']
 
-        feat_dict = encoder_handle(in_hand_pc, target_norm=pc_scale)
+        feat_dict = encoder_handle(in_hand_pc, target_norm=pc_scale, rgb=rgb)
 
         inv_feat = feat_dict["inv"].reshape(batch_size, -1)
 

@@ -17,53 +17,14 @@ from equibot.policies.utils.normalize_utils import to_torch_stats, get_torch_ran
 
 from equibot.policies.utils.normalizer import LinearNormalizer
 
-
-def collate_fn(batch):
-    """
-    Custom collate function to handle variable-length skill name tensors.
-    Pads skill_name tensors to the same length for batching.
-    """
-    if "skill_name" not in batch[0]:
-        return torch.utils.data.dataloader.default_collate(batch)
-    
-    # Ensure both name tensors are 1-D integer tensors with a consistent dtype
-    for item in batch:
-        if not torch.is_tensor(item['skill_name']):
-            item['skill_name'] = torch.tensor(item['skill_name'], dtype=torch.long)
-        else:
-            item['skill_name'] = item['skill_name'].to(dtype=torch.long)
-        if not torch.is_tensor(item['task_name']):
-            item['task_name'] = torch.tensor(item['task_name'], dtype=torch.long)
-        else:
-            item['task_name'] = item['task_name'].to(dtype=torch.long)
-    
-    # Find the maximum length of skill_name/task_name tensors in the batch
-    max_skill_name_len = max(len(item['skill_name']) for item in batch)
-    max_task_name_len = max(len(item['task_name']) for item in batch)
-    
-    # Pad all skill_name/task_name tensors to the same length
-    for item in batch:
-        skill_name_len = len(item['skill_name'])
-        if skill_name_len < max_skill_name_len:
-            padding = torch.zeros(max_skill_name_len - skill_name_len, dtype=torch.long)
-            item['skill_name'] = torch.cat([item['skill_name'], padding])
-
-        task_name_len = len(item['task_name'])
-        if task_name_len < max_task_name_len:
-            padding = torch.zeros(max_task_name_len - task_name_len, dtype=torch.long)
-            item['task_name'] = torch.cat([item['task_name'], padding])
-    
-    # Use default collate for the rest
-    return torch.utils.data.dataloader.default_collate(batch)
-
-def get_libero_task_emb(task_suite_names, cache_dir):
+def get_libero_task_emb(task_suite_name, cache_dir):
     from libero.libero import benchmark
     
     benchmark_dict = benchmark.get_benchmark_dict()
 
     task_emb_dict = {}
-    for task_suite_name in task_suite_names:
-        task_suite = benchmark_dict[task_suite_name]()
+    for suite_name in task_suite_name:
+        task_suite = benchmark_dict[suite_name]()
 
         descriptions = []
         for task_id in range(task_suite.n_tasks):
@@ -107,7 +68,10 @@ class PerSkillDataset(Dataset):
         self.pre_filter = pre_filter
         self.composed_inference = False
 
-        self.pc_shape = (cfg.num_points, 3)
+        self.use_pc_color = cfg.use_pc_color
+        # Update pc_shape based on whether color is used
+        pc_channels = 6 if self.use_pc_color else 3
+        self.pc_shape = (cfg.num_points, pc_channels)
         # self.has_eff_list = cfg.has_eff_list
         # self.has_eff = True in self.has_eff_list
 
@@ -180,11 +144,11 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 128
-        primitive_kws = cfg.primitive_kws
-        task_suite_names = cfg.task_suite_names
+        aug_traj_nums = cfg.aug_traj_nums
+        primitive_kws = cfg.uniskills
+        task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
-        task_emb_dict = get_libero_task_emb(task_suite_names, cache_dir)
+        task_emb_dict = get_libero_task_emb(task_suite_name, cache_dir)
 
         self.involved_skill_names = set()
         skill_embs_all_tasks = {}
@@ -217,15 +181,14 @@ class PerSkillDataset(Dataset):
                 demos = demos[:n_use]
                 inds = inds[:n_use]
                 ## record the skillwise_sgs
-                matched_action_sgs[task_name] = f[f'data/demo_{inds[0]}/matched_actions_json'][()]
+                matched_action_sgs[task_name] = f[f'data/{demos[0]}/matched_actions_json'][()]
 
                 ## interested objs and skills for each task
                 interested_objs = set()
                 interested_skills = set()
                 ## get all skill names
-                for i in range(n_use):
-                    demo_id = inds[i]
-                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/{demos[demo_id]}/sg_info']
 
                     for skill_name in sg_info.keys():
                         for skill_key in primitive_kws:
@@ -242,18 +205,17 @@ class PerSkillDataset(Dataset):
                 skill_embs_all_tasks.update(skill_name_to_emb)
                 self.involved_skill_names = self.involved_skill_names.union(interested_skills)
 
-                for i in range(n_use):
-                    demo_id = inds[i]
-                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/{demos[demo_id]}/sg_info']
                 
-                    obs_grp = f[f'data/demo_{demo_id}/obs']
+                    obs_grp = f[f'data/{demos[demo_id]}/obs']
                     rbt_states = get_rbt_states(obs_grp, robot_names)
                     obj_pcds = get_pc_instances(obs_grp, interested_objs)
-                    action_arr = f[f'data/demo_{demo_id}/actions'][()]
+                    action_arr = f[f'data/{demos[demo_id]}/actions'][()]
                     rbt_action = get_rbt_actions(action_arr, robot_names)
                     obj_visibility = get_obj_visibility(obs_grp, interested_objs)
 
-                    for _ in range(traj_nums):
+                    for _ in range(aug_traj_nums):
                 
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
@@ -292,8 +254,9 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 32
-        primitive_kws = cfg.primitive_kws
+        aug_traj_nums = cfg.aug_traj_nums
+        primitive_kws = cfg.uniskills
+        # task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
 
         self.involved_skill_names = set()
@@ -338,9 +301,8 @@ class PerSkillDataset(Dataset):
                 ## interested objs and skills for each task
                 interested_objs = set()
                 interested_skills = set()
-                for i in range(n_use):
-                    demo_id = inds[i]
-                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/{demos[demo_id]}/sg_info']
                     for skill_name in sg_info.keys():
                         if 'bi' in skill_name:
                             interested_skills.add(skill_name)
@@ -355,17 +317,16 @@ class PerSkillDataset(Dataset):
                 skill_embs_all_tasks.update(skill_name_to_emb)
                 self.involved_skill_names = self.involved_skill_names.union(interested_skills)
 
-                for i in range(n_use):
-                    demo_id = inds[i]
-                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/{demos[demo_id]}/sg_info']
                 
-                    obs_grp = f[f'data/demo_{demo_id}/obs']
+                    obs_grp = f[f'data/{demos[demo_id]}/obs']
                     rbt_states = get_rbt_states(obs_grp, robot_names)
                     obj_pcds = get_pc_instances(obs_grp, interested_objs)
-                    action_arr = f[f'data/demo_{demo_id}/actions'][()]
+                    action_arr = f[f'data/{demos[demo_id]}/actions'][()]
                     rbt_action = get_rbt_actions(action_arr, robot_names)
 
-                    for _ in range(traj_nums):
+                    for _ in range(aug_traj_nums):
                         # Create separate data slices for each skill name
                         for skill_name, skill_info in sg_info.items():
 
@@ -422,9 +383,9 @@ class PerSkillDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 64
-        primitive_kws = cfg.primitive_kws
-
+        aug_traj_nums = cfg.aug_traj_nums
+        primitive_kws = cfg.uniskills
+        # task_suite_name = cfg.task_suite_name
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
 
         self.involved_skill_names = set()
@@ -469,9 +430,8 @@ class PerSkillDataset(Dataset):
                 interested_objs = set()
                 interested_skills = set()
                 ## get all skill names
-                for i in range(n_use):
-                    demo_id = inds[i]
-                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/{demos[demo_id]}/sg_info']
                     for skill_name in sg_info.keys():
                         for skill_key in primitive_kws:
                             if skill_key in skill_name:
@@ -487,18 +447,17 @@ class PerSkillDataset(Dataset):
                 skill_embs_all_tasks.update(skill_name_to_emb)
                 self.involved_skill_names = self.involved_skill_names.union(interested_skills)
 
-                for i in range(n_use):
-                    demo_id = inds[i]
-                    sg_info = f[f'data/demo_{demo_id}/sg_info']
+                for demo_id in range(len(demos)):
+                    sg_info = f[f'data/{demos[demo_id]}/sg_info']
                 
-                    obs_grp = f[f'data/demo_{demo_id}/obs']
+                    obs_grp = f[f'data/{demos[demo_id]}/obs']
                     rbt_states = get_rbt_states(obs_grp, robot_names)
                     obj_pcds = get_pc_instances(obs_grp, interested_objs)
-                    action_arr = f[f'data/demo_{demo_id}/actions'][()]
+                    action_arr = f[f'data/{demos[demo_id]}/actions'][()]
                     rbt_action = get_rbt_actions(action_arr, robot_names)
                     obj_visibility = get_obj_visibility(obs_grp, interested_objs)
 
-                    for _ in range(traj_nums):
+                    for _ in range(aug_traj_nums):
                         # Create separate data slices for each skill name
                         for skill_name in interested_skills:
                             skill_info = sg_info[skill_name]
@@ -614,24 +573,21 @@ class PerSkillDataset(Dataset):
 
         return data_slice
 
-    def get_obj_pc_tensor(self, obj_pc, num_points):
-        # obj_pc = obj_pc_list[pre_sg_idx][:, :3]
-        # # unique points by XYZ; warn if too few unique
-        obj_pc_unique = np.unique(obj_pc[:, :3], axis=0)
-        if obj_pc_unique.shape[0] < 10:
-            print(f"No valid object visibility found")
-        # nxt_cnt = 0
-        # while obj_pc_unique.shape[0] < 10 and nxt_cnt < 8:
-        #     obj_pc_idx = pre_sg_idx + nxt_cnt
-        #     obj_pc = obj_pc_list[obj_pc_idx][:, :3]
-        #     obj_pc_unique = np.unique(obj_pc, axis=0)
-        #     nxt_cnt += 1
-
-        # obj_pc = obj_pc_unique
-        obj_pc = obj_pc[:, :3]
+    def get_obj_pc_tensor(self, obj_pc_raw, num_points):
         
-        obj_pc_n, obj_offset = centralize_downsample(obj_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
-        obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32).reshape(1, num_points, 3)
+        pc_dim = obj_pc_raw.shape[1]
+
+        obj_pc_n, obj_offset = centralize_downsample(
+            obj_pc_raw, 
+            (num_points, pc_dim),
+            obj_centric=self.is_obj_centric, 
+            add_bottom=self.is_add_bottom, 
+            method=self.downsample_method, 
+            debug_visualize=False
+        )
+        
+        # Reshape to (1, num_points, channels)
+        obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32)
         return obj_pc_tensor, obj_offset
 
     # def decide_in_hand_obj(self,  cur_sg, obj_pcds, obj_name):
@@ -728,16 +684,32 @@ class PerSkillDataset(Dataset):
 
         return data_slice
 
-
-
-    def get_normalizer_and_statistics(self, data_list, mode = 'traj'):
+    
+    def get_normalizer_and_statistics(self, data_list, mode = 'unimanual'):
         normalizer = LinearNormalizer()
 
-        if mode == 'jpose':
+        if mode == 'bimanual':
             jpose_arr = np.concatenate([data['jpose'].reshape(2, -1) for data in data_list], axis=0)
             jpose_stats = to_torch_stats(jpose_arr.reshape(-1, jpose_arr.shape[-1]))
             normalizer['jpose'] = get_torch_range_symmetric_normalizer_from_stat(jpose_stats)
             return normalizer
+
+        ### normalize pc
+        pc_arr = np.concatenate([data['pc'] for data in data_list], axis=0)
+        
+        # If using color, compute stats only on xyz (first 3 channels) for normalization
+        # The normalizer will be applied to all channels, but we compute stats on xyz only
+        if self.use_pc_color and pc_arr.shape[-1] == 6:
+            # Compute stats on xyz only for proper normalization
+            pc_xyz = pc_arr[..., :3]
+        elif pc_arr.shape[-1] == 3:
+            pc_xyz = pc_arr
+        else:
+            raise ValueError(f"Invalid pc shape: {pc_arr.shape}")
+        
+        pcd_stats = to_torch_stats(pc_xyz.reshape(-1, 3))
+        normalizer['pc'] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
+
 
 
         ## normalize eefpos. first convert to 3vec or 4pts
@@ -761,33 +733,31 @@ class PerSkillDataset(Dataset):
         gripper_stats = to_torch_stats(gripper_arr.reshape(-1, gripper_arr.shape[-1]))
         normalizer['gripper'] = get_torch_range_symmetric_normalizer_from_stat(gripper_stats)
 
+        ## set_scale. 
+        # For scale computation, use only xyz (first 3 channels) even if color is present
+        pc_arr_for_scale = pc_arr[..., :3] if pc_arr.shape[-1] == 6 else pc_arr
+        pc_scale = self.get_pc_scale(pc_arr_for_scale, eef_stats["max"].max())
+        self.statistics['pc_scale'] = pc_scale
 
-        ### normalize pc
-        for kw in data_list[0].keys():
-            if 'pc' in kw:
-                pc_arr = np.concatenate([data[kw] for data in data_list], axis=0)
-                pcd_stats = to_torch_stats(pc_arr.reshape(-1, pc_arr.shape[-1]))
+        if 'in_hand_pc' in data_list[0]:
+            in_hand_pc_arr = np.concatenate([data['in_hand_pc'] for data in data_list], axis=0)
+            # If using color, compute stats only on xyz
+            if self.use_pc_color and in_hand_pc_arr.shape[-1] == 6:
+                in_hand_pc_xyz = in_hand_pc_arr[..., :3]
+            elif in_hand_pc_arr.shape[-1] == 3:
+                in_hand_pc_xyz = in_hand_pc_arr
+            else:
+                raise ValueError(f"Invalid in_hand_pc shape: {in_hand_pc_arr.shape}")
 
-                normalizer[kw] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
+            in_hand_pcd_stats = to_torch_stats(in_hand_pc_xyz.reshape(-1, 3))
+            normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
 
-                scale_kw = kw.replace('pc', 'pc_scale')
-                self.statistics[scale_kw] = self.get_pc_scale(pc_arr, eef_stats["max"].max())
-
-        # ## set_scale. 
-        # pc_scale = self.get_pc_scale(pc_arr, eef_stats["max"].max())
-        # self.statistics['pc_scale'] = pc_scale
-
-        # if 'in_hand_pc' in data_list[0]:
-        #     in_hand_pc_arr = np.concatenate([data['in_hand_pc'] for data in data_list], axis=0)
-        #     in_hand_pcd_stats = to_torch_stats(in_hand_pc_arr.reshape(-1, in_hand_pc_arr.shape[-1]))
-        #     normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
-
-        #     # in_hand_pc_scale = self.get_pc_scale(in_hand_pc_arr, eef_stats["max"].max())
-        #     # self.statistics['in_hand_pc_scale'] = in_hand_pc_scale
+            # in_hand_pc_scale = self.get_pc_scale(in_hand_pc_arr, eef_stats["max"].max())
+            # self.statistics['in_hand_pc_scale'] = in_hand_pc_scale
 
         return normalizer
 
-    
+
     def get_pc_scale(self, pc_data, ac_scale):
         """
         pc_data: (N_demos*demo_len, num_points, 3)
