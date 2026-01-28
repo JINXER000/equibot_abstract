@@ -182,16 +182,19 @@ class DualAbsDataset(ALOHAPoseDataset):
                                    'dual_jpose': []}
                     # list all keys
                     dual_jpose_data = []
-                    sides = list(f.keys())
-                    for side in sides:
-                        start_pc = f[side]['start_pc'][()]
-                        pred_grasp_poses = f[side]['grasp_poses'][()]
+                    objs = list(f.keys())
+                    sides = ['left', 'right']
+                    for i,obj in enumerate(objs):
+                        id_in_mapping = cfg.obj_side_mapping.index(obj)
+                        side = sides[id_in_mapping]
+                        start_pc = f[obj]['start_pc'][()]
+                        pred_grasp_poses = f[obj]['grasp_poses'][()]
                         ## NOTE: joint data in each object should be the same! e.g., 14 dof for aloha
-                        joint_data_tmp = f[side]['joint_poses'][()]
+                        joint_data_tmp = f[obj]['joint_poses'][()]
                         if len(joint_data_tmp) != 0:
                             dual_jpose_data = joint_data_tmp   
                         if self.has_eff_dict[side]:
-                            end_pc = f[side]['end_pc'][()]
+                            end_pc = f[obj]['end_pc'][()]
                             if est_effpose:
                                 # end_pc = rotate_around_z(end_pc, np.pi)
                                 R_cuda, t_cuda = solve_pairwise_registration(self.pretrained_encoder, torch.tensor\
@@ -200,7 +203,7 @@ class DualAbsDataset(ALOHAPoseDataset):
                             else:
                                 end_offset = np.min(end_pc, axis=0)
 
-                            eff_grasp_poses = f[side]['release'][()]
+                            eff_grasp_poses = f[obj]['release'][()]
 
                         conditional_pc, start_offset = self.centralize_cond_pc(start_pc, self.is_obj_centric)
 

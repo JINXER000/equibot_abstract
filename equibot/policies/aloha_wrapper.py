@@ -67,13 +67,13 @@ class pddl_wrapper(object):
         return data_batch
 
     ## do not use it during training
-    def centralize_obs(self, obs, **kwargs):
+    def centralize_obs(self, obs, is_add_bottom = False, **kwargs):
         centralized_obs = obs.copy()
         offset_dict = {}
         for k, v in obs.items():
             if 'pc' in k:
                 pc = v.numpy().reshape(-1, 3)
-                centered_pc, offset = centralize_downsample(pc, self.dataset.pc_shape, add_bottom = self.dataset.is_add_bottom, **kwargs)
+                centered_pc, offset = centralize_downsample(pc, self.dataset.pc_shape, add_bottom = is_add_bottom, **kwargs)
                 centralized_obs[k] = torch.tensor(centered_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
                 
                 grasp_key = k.replace('pc', 'grasp')
@@ -119,9 +119,9 @@ class pddl_wrapper(object):
                 dict_numpy[k] = v
         return dict_numpy
     
-    def infer_real(self, obs, **kwargs):
+    def infer_real(self, obs, is_add_bottom = False, **kwargs):
         obs_tensor = to_tensor(obs)
-        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric)
+        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, is_add_bottom = is_add_bottom)
         action_dict = self.predict_action(obs_c, offset_dict, **kwargs)
         return action_dict
     
@@ -180,7 +180,7 @@ class pddl_wrapper(object):
             return new_action_output
         
         obs_tensor = to_tensor(agent_obs)
-        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method)
+        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method, is_add_bottom = True)
         obs_c = to_tensor(obs_c)
         obs_gpu = to_torch(obs_c, self.cfg.device)
         

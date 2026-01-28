@@ -15,7 +15,11 @@ from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
 from equibot.policies.agents.compaloha_agent import CompALOHAAgent
 from equibot.policies.agents.aloha_agent import ALOHAAgent
 
-from test_compaloha import run_eval
+try:
+    from .test_compaloha import run_eval
+except ImportError:
+    from test_compaloha import run_eval
+    
 # from torch.utils.tensorboard import SummaryWriter
 # import pathlib
 # EQUIBOT_PATH = pathlib.Path(__file__).parent.parent.parent.absolute()

@@ -99,12 +99,6 @@ def main(cfg):
                     step=global_step,
                 )
                 wandb.log({"train/epoch": epoch_ix}, step=global_step)
-
-            # # # to tensorboard
-            # for k, v in train_metrics.items():
-            #     v_ts_cpu = torch.tensor(v)
-            #     agent.actor.writer.add_scalar(f"train/{k}", v_ts_cpu, epoch_ix)
-            # agent.actor.writer.flush()
             
             del train_metrics
             global_step += 1
@@ -146,12 +140,6 @@ def main(cfg):
                 min_eval_rot_error = rot_error
                 agent.save_snapshot(os.path.join(log_dir, "ckpt_best.pth"))
 
-            # # # to tensorboard
-            # train_step = epoch_ix * len(train_loader)+batch_ix
-            # for k, v in eval_metrics.items():
-            #     v_ts_cpu = torch.tensor(v)
-            #     agent.actor.writer.add_scalar(f"train/{k}", v_ts_cpu, train_step)
-            # agent.actor.writer.flush()
 
         # save ckpt
         if log_dir is not None and (

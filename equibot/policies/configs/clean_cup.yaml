@@ -46,10 +46,11 @@ data:
     # symb_mask: [None, 'qpose_right', None, 'grasp_right', None]
     # symb_mask: [None, None, None, 'grasp_right', None]
     tamp_type: 'precondition'
-    dataset_type: 'hdf5_mini'
-    # dataset_type: 'mj_insertion_pred'
+    dataset_type: 'dual_hdf5_mini'
+    obj_side_mapping: ['cup', 'sponge']
     has_eff_list: [false, false]
     is_obj_centric: True
+    is_add_bottom: True 
 
 
 eval:

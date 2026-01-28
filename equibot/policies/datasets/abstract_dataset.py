@@ -9,7 +9,7 @@ from equibot.policies.utils.constants import qpos_to_eepose
 
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_around_z, to_tensor, rotate_vec_grasp
+from equibot.policies.utils.misc import to_torch, rotate_observation, rotate_around_z, to_tensor, rotate_vec_grasp, centralize_downsample
 
 
 import hydra
@@ -57,6 +57,8 @@ class ALOHAPoseDataset(Dataset):
         # self.is_mj = ('mj' in cfg.dataset_type)
 
         self.is_obj_centric = cfg.is_obj_centric
+        self.is_add_bottom = cfg.is_add_bottom
+        self.downsample_method = 'random'
 
         self.num_eef = cfg.num_eef
         self.dof = cfg.dof
@@ -520,8 +522,10 @@ class ALOHAPoseDataset(Dataset):
                         joint_pose = np.vstack((left_jpose, right_jpose)).reshape(1, -1, self.dof)
 
                         ## if obj_centric, cond_pc = raw_pc - offset; otherwise cond_pc = raw_pc
-                        conditional_pc, start_offset = self.centralize_cond_pc(start_pc, self.is_obj_centric)
+                        # conditional_pc, start_offset = self.centralize_cond_pc(start_pc, self.is_obj_centric)
 
+                        conditional_pc, start_offset = centralize_downsample(start_pc, self.pc_shape, obj_centric = self.is_obj_centric, add_bottom = self.is_add_bottom, method = self.downsample_method, debug_visualize=False)
+                        
                         pc_tensor = torch.tensor(conditional_pc).unsqueeze(0).to(torch.float32)
                         pred_grasp_id = np.random.randint(0, len(pred_grasp_poses)-1)
                         pred_grasp = pred_grasp_poses[pred_grasp_id].copy()

@@ -52,6 +52,7 @@ data:
     has_eff_list: [true, false]
 
     is_obj_centric: true
+    is_add_bottom: True 
 
     preload_path: ${model.encoder.backbone_args.preload_path}
 
