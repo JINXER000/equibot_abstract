@@ -49,8 +49,8 @@ class SDPAgent:
             )
         
         # Config parameters
-        self.num_eef = self.actor.num_eef
-        self.dof = cfg.env.dof
+        # self.num_eef = self.actor.num_eef
+        # self.dof = cfg.env.dof
         self.num_points = cfg.data.dataset.num_points
         self.obs_mode = cfg.model.obs_mode
         self.ac_mode = cfg.model.ac_mode

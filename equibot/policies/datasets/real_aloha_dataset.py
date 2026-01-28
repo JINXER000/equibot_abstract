@@ -137,7 +137,7 @@ class RealAlohaDataset(Dataset):
         cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir) if hasattr(cfg, 'embedding_cache_dir') else None
         
         # Get task name from config or directory name
-        task_name = cfg.task_name if hasattr(cfg, 'task_name') else os.path.basename(self.root)
+        task_name = cfg.task_name 
         
         # Get uniskills from config
         primitive_kws = cfg.uniskills if hasattr(cfg, 'uniskills') else ['grasp', 'place']
@@ -231,10 +231,14 @@ class RealAlohaDataset(Dataset):
         
         # Get task embedding
         task_emb_dict = {}
-        if cache_dir is not None:
+        if  task_name is not None:
             task_emb_dict = get_embs_without_saving([task_name], cache_dir=cache_dir)
-        
+        else:
+            ## task emb is the same as skill emb
+            task_emb_dict = skill_embs_all_tasks
+            
         self.statistics['task_emb_dict'] = task_emb_dict
+
         self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
         
         return data_list
@@ -284,7 +288,8 @@ class RealAlohaDataset(Dataset):
         data_slice['eefpos'] = normalized_eef_pos_tensor
         data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32)
         data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
-        data_slice['task_name'] = str_to_ascii_tensor(task_name)
+        ## if task_name is not distinctive, use skill_name instead
+        data_slice['task_name'] = str_to_ascii_tensor(task_name) if task_name is not None else data_slice['skill_name'] 
         
         # Apply rotation augmentation if enabled
         if hasattr(cfg, 'rot_aug') and cfg.rot_aug:

@@ -95,8 +95,8 @@ class SDPPolicy(nn.Module):
             self.num_diffusion_iters = cfg.model.noise_scheduler.num_train_timesteps
         
         # Environment parameters
-        self.dof = cfg.env.dof
-        self.num_eef = cfg.env.num_eef
+        # self.dof = cfg.env.dof
+        # self.num_eef = cfg.env.num_eef
         
         # Policy parameters (following reference step.py)
         self.canonicalize = cfg.model.get('canonicalize', True)
@@ -180,9 +180,9 @@ class SDPPolicy(nn.Module):
         self.language_encoder = self._setup_language_encoder(output_size=output_size, **language_encoder_cfg)
         net_dict['language_encoder'] = self.language_encoder
         
-        # Language dimension: skill + task embeddings
+        # Language dimension: skill + task embeddings (optional)
         language_dim = 2 * output_size
-        self.language_dim = language_dim
+        # language_dim = output_size
         
         # Get obs_feature_dim from encoder output_dim (channel dimension, before irrep flattening)
         # This matches reference: output_shape() returns channel_dim, not flattened_dim
@@ -190,8 +190,6 @@ class SDPPolicy(nn.Module):
         self.obs_feature_dim = obs_feature_dim
         
         # Calculate input_dim and global_cond_dim following reference pattern
-        # Language is now included in encoder output, so global_cond = obs_features only
-        # obs_feature_dim is channel_dim (c_dim + lang_dim), actual output is (c_dim + lang_dim) * irrep_dim
         obs_feature_dim_flattened = obs_feature_dim * self.irrep_dim
         input_dim = self.action_dim + obs_feature_dim_flattened
         global_cond_dim = None
@@ -486,7 +484,7 @@ class SDPPolicy(nn.Module):
         
         ema_nets = self.ema.averaged_model
         
-        # 1. Get language embeddings (invariant scalars)
+        # 1. Get language embeddings (omit task name for debugging)
         language_emb = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
         
         # 2. Encode point cloud to spherical features (equivariant) with language embeddings

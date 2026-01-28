@@ -13,7 +13,7 @@ training:
 
 env:
   env_class: 'sdp_real_aloha'
-  num_eef: 1
+  # num_eef: 1
   dof: 7
   max_episode_length: 50
 
@@ -95,8 +95,8 @@ model:
 data:
   dataset:
     path: null  # Set via command line, e.g., data/handoff_cup
-    task_name: null  # Set via command line, e.g., handoff_cup
-    num_points: 512               # Number of points in point cloud
+    task_name: null  # Set via command line, e.g., handoff_cup (optional if use_task_name=false)
+    num_points: 128               # Number of points in point cloud
     num_workers: 4
     
     uniskills: ['grasp', 'place']  # Skills to extract from data
@@ -108,7 +108,7 @@ data:
     downsample_method: 'fps'
     rot_aug: true
     shuffle_pc: true
-    aug_traj_nums: 4                  # Number of trajectory samples per episode
+    aug_traj_nums: 16                  # Number of trajectory samples per episode
     
     embedding_cache_dir: "./data/bert"
     
@@ -130,7 +130,7 @@ data:
 shape_meta: &shape_meta
   obs:
     point_cloud:
-      shape: [512, 6]  # xyz + rgb if use_pc_color is true
+      shape: [128, 6]  # xyz + rgb if use_pc_color is true
       type: point_cloud
   action: 
     shape: [13]  # 3 pos + 6 rot (2x3 vectors) + 1 gripper + 3 pos
