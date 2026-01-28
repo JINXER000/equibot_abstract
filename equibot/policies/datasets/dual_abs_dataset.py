@@ -33,7 +33,7 @@ class DualAbsDataset(ALOHAPoseDataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
-        traj_nums = 64
+        aug_traj_nums = 64
         
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -63,7 +63,7 @@ class DualAbsDataset(ALOHAPoseDataset):
                         to(torch.float32).reshape(1, cfg.num_points, 3)
 
                     ### random select n groups of grasp and joint pose
-                    for i in range(traj_nums):
+                    for i in range(aug_traj_nums):
                         assert len(all_joint_data) > 1
                         # if len(all_joint_data) < traj_len:
                         #     qtraj_indices = np.linspace(0, len(all_joint_data)-1, traj_len).astype(int)

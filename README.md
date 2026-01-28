@@ -144,9 +144,7 @@ python train_abstract.py --config-name transfer_tape \
 ```
 ```
 cd equibot/policies/
-CUDA_VISIBLE_DEVICES=3 python train_abstract.py --config-name screwdriver_container \
-    prefix=screwdriver_container \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/screwdriver_container/
+
 
 CUDA_VISIBLE_DEVICES=2 python -m equibot.policies.train_abstract --config-name handoff_cup \
     prefix=aloha_handoff_cup \

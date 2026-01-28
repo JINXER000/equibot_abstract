@@ -24,6 +24,7 @@ class VecPointNet(nn.Module):
         num_layers=4,
         knn=16,
         preload_path=None,
+        use_rgb=False,
     ):
         super().__init__()
 
@@ -37,7 +38,7 @@ class VecPointNet(nn.Module):
         act_func = nn.LeakyReLU(negative_slope=0.0, inplace=False)
         vnla_cfg = {"mode": "so3", "act_func": act_func}
 
-        self.conv_in = VecLNA(3, h_dim, **vnla_cfg)
+        self.conv_in = VecLNA(3, h_dim, s_in=3 if use_rgb else 0, **vnla_cfg)
         self.layers, self.global_layers = nn.ModuleList(), nn.ModuleList()
         for i in range(self.num_layers):
             self.layers.append(VecLNA(h_dim, h_dim, **vnla_cfg))
@@ -76,11 +77,14 @@ class VecPointNet(nn.Module):
             y = torch.cat([neighbors - x_padded, x_padded], 1)
         return y, knn_idx  # B,C*2,3,N,K
 
-    def forward(self, x):
+    def forward(self, x, rgb=None):
         x = x.unsqueeze(1)  # [B, 1, 3, N]
 
         x, knn_idx = self.get_graph_feature(x, self.knn, cross=True)
-        x, _ = self.conv_in(x)
+        if rgb is not None:
+            x, _ = self.conv_in(x, rgb[..., None].repeat(1, 1, 1, self.knn))
+        else:
+            x, _ = self.conv_in(x)
         x = self.pool(x)
 
         y = x

@@ -32,9 +32,14 @@ setup(name="equibot",
           "gym",
           "pybullet",
           "protobuf==3.20.0",
-           "modern_robotics",
-           "open3d",
-           "h5py",
-           "easydict",
-           "dill",
+          "modern_robotics",
+          "open3d",
+          "h5py",
+          "easydict",
+          "dill",
+          # SDP (Spherical Diffusion Policy) dependencies
+          "e3nn>=0.5.0",          # Spherical harmonics & equivariant ops
+          "torch-geometric",      # Graph neural network backend
+          "torch-cluster",        # FPS pooling
+          "torch-scatter",        # Scatter operations
       ])

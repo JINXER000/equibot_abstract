@@ -215,8 +215,13 @@ class RobosuiteDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
+<<<<<<< HEAD
         traj_nums = 64
         interested_skills = cfg.primitive_kws
+=======
+        aug_traj_nums = 64
+        interested_skills = cfg.uniskills
+>>>>>>> equiformer_impl
 
         for file_id in range(len(raw_files)):
             file_name = raw_files[file_id]
@@ -256,7 +261,7 @@ class RobosuiteDataset(Dataset):
                         related_skills += [skill_name for rel_obj in related_objs if obj_name == rel_obj]
                     obj_conditioned_skills[obj_name] = related_skills
 
-                for _ in range(traj_nums):
+                for _ in range(aug_traj_nums):
                     data_slice = {}
 
                     for obj_name, obj_pc_list in obj_pcds.items(): ## now we only reuse obj encoder. pc is not concatenated. 
@@ -349,8 +354,13 @@ class RobosuiteDataset(Dataset):
         data_list = []
         raw_files = self.raw_file_names
         traj_len = cfg.pred_horizon
+<<<<<<< HEAD
         traj_nums = 32
         primitive_kws = cfg.primitive_kws
+=======
+        aug_traj_nums = 32
+        primitive_kws = cfg.uniskills
+>>>>>>> equiformer_impl
         interested_objs = cfg.conditioned_objects
         skill_names = cfg.skill_names
         skill_condition_objs = {skill_names[i]: interested_objs[i] for i in range(len(skill_names))}
@@ -391,7 +401,7 @@ class RobosuiteDataset(Dataset):
                         continue
                     
                     discard_demo = False
-                    for _ in range(traj_nums):
+                    for _ in range(aug_traj_nums):
 
                         data_slice = {}
                         for skill_name in skill_names:
