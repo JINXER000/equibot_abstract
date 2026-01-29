@@ -558,7 +558,7 @@ class BiopSkillPolicy(nn.Module):
 
         self.encoder_out_dim = cfg.model.encoder.c_dim
 
-        self.separate_policy = cfg.model.separate_policy
+        # self.separate_policy = cfg.model.separate_policy
 
         self.dof = cfg.env.dof # 6
         self.num_eef = cfg.env.num_eef

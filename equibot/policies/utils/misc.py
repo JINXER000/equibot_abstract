@@ -187,7 +187,7 @@ def get_dataset(cfg, mode="train"):
     elif "per_skill" in dataset_type:
         from equibot.policies.datasets.per_skill_dataset import PerSkillDataset
         return PerSkillDataset(cfg.data.dataset, mode)
-    elif dataset_type == "real_aloha_traj":
+    elif "real_aloha" in dataset_type:
         from equibot.policies.datasets.real_aloha_dataset import RealAlohaDataset
         return RealAlohaDataset(cfg.data.dataset, mode)
     else:
