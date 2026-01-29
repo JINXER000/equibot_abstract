@@ -13,3 +13,5 @@ temp
 *.png
 code_ref/
 paper_ref/
+.specstory/
+.cursor/

@@ -44,49 +44,10 @@ def run_eval(agent, vis=False, batch=None, history_bid=-1):
     if batch is None:
         return {}, {}
     
-    batch = to_torch(batch, agent.device)
-    
-    # Get skill/task names
-    skill_name_batch = ascii_tensor_batch_to_str(batch['skill_name'])
-    task_name_batch = ascii_tensor_batch_to_str(batch['task_name'])
-    
-    # Prepare observation
-    pc_data = batch['pc']
-    agent_obs = {'pc': pc_data}
-    
-    # Get ground truth for evaluation
-    gt_batch = {
-        'eefpos': batch['eefpos'],
-        'gripper': batch['gripper'],
-    }
-    
-    # Run prediction
-    agent.train(False)
-    with torch.no_grad():
-        action_dict, eval_metrics = agent.actor.pred_unimanual_traj(
-            skill_name_batch, agent_obs, gt_batch=gt_batch, task_name_batch=task_name_batch
-        )
-    
-    # Visualization (optional)
-    if vis and len(action_dict) > 0:
-        batch_size = pc_data.shape[0]
-        for i in range(min(batch_size, 4)):  # Visualize up to 4 samples
-            if 'eefpos' in action_dict:
-                pc_vis = pc_data[i, 0].detach().cpu().numpy()
-                traj_vis = action_dict['eefpos'][i].detach().cpu().numpy() if batch_size > 1 else action_dict['eefpos'].detach().cpu().numpy()
-                gripper_vis = action_dict['gripper'][i] if batch_size > 1 else action_dict['gripper']
-                
-                skill_name = skill_name_batch[i] if isinstance(skill_name_batch, list) else skill_name_batch
-                task_name = task_name_batch[i] if isinstance(task_name_batch, list) else task_name_batch
-                title = f"{skill_name}_{task_name}_pred"
-                
-                try:
-                    rendered_img = render_trajectory(pc_vis, traj_vis, gripper_vis, title=title)
-                    eval_metrics[f"{title}_image"] = rendered_img
-                except Exception as e:
-                    print(f"Visualization failed: {e}")
-    
-    return action_dict, eval_metrics
+    unnormed_history, metrics = agent.eval_with_rotation(batch, history_bid)
+    # print(f"Inference time: {time.time() - st:.3f}s")
+
+    return unnormed_history, metrics
 
 
 @hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="sdp_per_skill")

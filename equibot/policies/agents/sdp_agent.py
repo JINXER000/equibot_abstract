@@ -13,6 +13,7 @@ from equibot.policies.utils.norm import Normalizer
 from equibot.policies.utils.misc import to_torch, rotate_observation, to_tensor, EQUIBOT_PATH
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 from equibot.policies.agents.sdp_policy import SDPPolicy
+from equibot.policies.agents.per_skill_policy import BiopSkillPolicy
 
 
 class SDPAgent:
@@ -29,11 +30,9 @@ class SDPAgent:
     def __init__(self, cfg):
         self.cfg = cfg
         self.device = cfg.device
-        
-        # Initialize SDP policy
-        self.actor = SDPPolicy(cfg, device=cfg.device).to(cfg.device)
-        self.actor.ema.averaged_model.to(cfg.device)
-        
+        self.dataset_type = cfg.data.dataset.dataset_type
+        self._init_actor(self.dataset_type)
+
         # Training setup
         if cfg.mode == "train":
             self.optimizer = torch.optim.AdamW(
@@ -50,7 +49,7 @@ class SDPAgent:
         
         # Config parameters
         # self.num_eef = self.actor.num_eef
-        # self.dof = cfg.env.dof
+        self.dof = cfg.env.dof
         self.num_points = cfg.data.dataset.num_points
         self.obs_mode = cfg.model.obs_mode
         self.ac_mode = cfg.model.ac_mode
@@ -60,6 +59,16 @@ class SDPAgent:
         
         self.all_normalizers = None
     
+
+    def _init_actor(self, dataset_type):
+        if 'jpose' in dataset_type:
+            self.actor = BiopSkillPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
+        elif 'traj' in dataset_type:
+            self.actor = SDPPolicy(self.cfg, device=self.cfg.device).to(self.cfg.device)
+        else:
+            raise ValueError(f"Invalid dataset type: {dataset_type}")
+        self.actor.ema.averaged_model.to(self.cfg.device)
+
     def train(self, training=True):
         """Set training mode."""
         self.actor.nets.train(training)
@@ -171,6 +180,33 @@ class SDPAgent:
         
         return vec_loss, scalar_loss
     
+    def learn_bimanual_jpose(self,  batch):
+        n_data_dict = {}
+        n_data_dict['skill_name'] = batch['skill_name']
+        n_data_dict['task_name'] = batch['task_name']
+        n_data_dict['jpose'] = batch['jpose']
+
+        jpose_key = 'jpose'
+        scalar_dual_jpose_raw = n_data_dict[jpose_key]
+        batch_size = scalar_dual_jpose_raw.shape[0]
+        scalar_dual_jpose_raw = scalar_dual_jpose_raw.reshape(batch_size, -1, self.dof)
+        scalar_dual_jpose = self.actor.proc_jpose(scalar_dual_jpose_raw,  jpose_key).squeeze(1)
+        timesteps = torch.randint(
+            0,
+            self.actor.noise_scheduler.config.num_train_timesteps,
+            (batch_size,),
+            device=self.device,
+        ).long()
+        jpose_noise = torch.randn_like(scalar_dual_jpose, device=self.device)
+        noisy_jpose = self.actor.noise_scheduler.add_noise(
+            scalar_dual_jpose, jpose_noise, timesteps
+        )
+
+        scalar_noise_pred = self.actor.nets['jpose_noise_pred_net'](noisy_jpose, timesteps)
+        scalar_loss = nn.functional.mse_loss(scalar_noise_pred, jpose_noise)
+        return scalar_loss
+
+
     def update(self, batch):
         """
         Update model with one training step.
@@ -196,8 +232,13 @@ class SDPAgent:
         
         # Train trajectory prediction (following per_skill pattern)
         metrics = {}
-        vec_loss, scalar_loss = self.learn_unimanual_traj(batch)
-        metrics['vec_loss'] = vec_loss
+        if 'jpose' in self.dataset_type:
+            scalar_loss = self.learn_bimanual_jpose(batch)
+        elif 'traj' in self.dataset_type:
+            vec_loss, scalar_loss = self.learn_unimanual_traj(batch)
+            metrics['vec_loss'] = vec_loss
+        else:
+            raise ValueError(f"Invalid dataset type: {self.dataset_type}")
         metrics['scalar_loss'] = scalar_loss
         
         # Compute total loss (following per_skill pattern)

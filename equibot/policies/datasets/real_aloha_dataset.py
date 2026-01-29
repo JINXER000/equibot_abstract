@@ -116,8 +116,13 @@ class RealAlohaDataset(Dataset):
 
     def process_select(self, cfg, **kwargs):
         if self.dataset_type == 'real_aloha_traj':
+            # Unimanual trajectory dataset (pc + eef pose sequence)
             self.data = self.process_real_aloha_traj(cfg, **kwargs)
-            self.normalizer = self.get_normalizer_and_statistics(self.data)
+            self.normalizer = self.get_normalizer_and_statistics(self.data, mode='unimanual')
+        elif self.dataset_type == 'real_aloha_biop_jpose':
+            # Bimanual joint-pose dataset (single joint configuration per sample)
+            self.data = self.process_real_aloha_biop_jpose(cfg, **kwargs)
+            self.normalizer = self.get_normalizer_and_statistics(self.data, mode='bimanual')
         else:
             raise NotImplementedError(f'Dataset type {self.dataset_type} not implemented!')
 
@@ -186,36 +191,30 @@ class RealAlohaDataset(Dataset):
                         # Process grasp skill
                         if 'grasp' in primitive_kws and len(grasp_poses) > 0:
                             skill_name = f'grasp_{obj_name}'
-                            data_slice = self.get_dataslice_unimanual_real(
-                                obj_pc_raw=start_pc,
-                                eef_poses=grasp_poses,
-                                pose_ids=grasp_ids,
-                                skill_name=skill_name,
-                                task_name=task_name,
-                                cfg=cfg,
-                                traj_len=traj_len,
-                                gripper_action=1.0  # Closing gripper for grasp
-                            )
-                            if data_slice is not None:
-                                data_list.append(data_slice)
-                                self.involved_skill_names.add(skill_name)
-                        
-                        # Process place/release skill
-                        if has_release and 'place' in primitive_kws and len(release_poses) > 0:
+                            obj_pc_raw = start_pc
+                            eef_poses = grasp_poses
+                            pose_ids = grasp_ids
+                        elif has_release and 'place' in primitive_kws and len(release_poses) > 0:
                             skill_name = f'place_{obj_name}'
-                            data_slice = self.get_dataslice_unimanual_real(
-                                obj_pc_raw=end_pc,
-                                eef_poses=release_poses,
-                                pose_ids=release_ids,
-                                skill_name=skill_name,
-                                task_name=task_name,
-                                cfg=cfg,
-                                traj_len=traj_len,
-                                gripper_action=-1.0  # Opening gripper for place
-                            )
-                            if data_slice is not None:
-                                data_list.append(data_slice)
-                                self.involved_skill_names.add(skill_name)
+                            obj_pc_raw = end_pc
+                            eef_poses = release_poses
+                            pose_ids = release_ids
+                        else:
+                            raise ValueError(f'No valid skill found for {obj_name} in {file_name}')
+
+                        data_slice = self.get_dataslice_unimanual_real(
+                            obj_pc_raw=obj_pc_raw,
+                            eef_poses=eef_poses,
+                            pose_ids=pose_ids,
+                            skill_name=skill_name,
+                            task_name=task_name,
+                            cfg=cfg,
+                            traj_len=traj_len,
+                            gripper_action=1.0  # Closing gripper for grasp
+                        )
+                        if data_slice is not None:
+                            data_list.append(data_slice)
+                            self.involved_skill_names.add(skill_name)
         
         # Save processed data
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
@@ -242,6 +241,117 @@ class RealAlohaDataset(Dataset):
         self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
         
         return data_list
+
+    def process_real_aloha_biop_jpose(self, cfg, **kwargs):
+        """
+        Process real ALOHA data into a bimanual joint-pose (biop) dataset.
+
+        This mirrors `process_per_biop` in `per_skill_dataset.py` but adapts
+        to the simpler real ALOHA HDF5 format, which stores joint poses and
+        holding indices directly under each object group.
+        """
+        print('Processing real ALOHA bimanual joint-pose dataset...')
+        data_list = []
+        raw_files = self.raw_file_names
+
+        aug_traj_nums = cfg.aug_traj_nums if hasattr(cfg, 'aug_traj_nums') else 64
+        cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir) if hasattr(cfg, 'embedding_cache_dir') else None
+
+        # Task name is shared across all files for this dataset
+        task_name = cfg.task_name
+
+        self.involved_skill_names = set()
+        skill_embs_all_tasks = {}
+
+        for file_id in range(len(raw_files)):
+            file_name = raw_files[file_id]
+            if not file_name.endswith('.hdf5'):
+                continue
+
+            hdf5_path = os.path.join(self.root, 'raw', file_name)
+            with h5py.File(hdf5_path, 'r') as f:
+                # Find object groups (exclude camera data)
+                obj_names = [key for key in f.keys() if not key.startswith('cam_')]
+
+                for obj_name in obj_names:
+                    obj_grp = f[obj_name]
+
+                    # Require joint poses and holding ids for bimanual pose sampling
+                    if 'joint_poses' not in obj_grp or 'holding_ids' not in obj_grp:
+                        continue
+
+                    joint_poses = obj_grp['joint_poses'][()]  # shape (M, 14) for dual-arm ALOHA
+                    holding_ids = obj_grp['holding_ids'][()]
+
+                    if len(joint_poses) == 0 or len(holding_ids) == 0:
+                        continue
+
+                    # Skill name is per-object bimanual holding
+                    skill_name = f'bimanual_hold_{obj_name}'
+
+                    for _ in range(aug_traj_nums):
+                        data_slice = self.get_dataslice_bimanual_jpose(
+                            joint_poses=joint_poses,
+                            holding_ids=holding_ids,
+                            skill_name=skill_name,
+                            task_name=task_name,
+                        )
+                        if data_slice is not None:
+                            data_list.append(data_slice)
+                            self.involved_skill_names.add(skill_name)
+
+        # Save processed data
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        print(f'Processed all hdf5 files for bimanual jpose! Total samples: {len(data_list)}')
+
+        # Get skill name embeddings (optional)
+        if cache_dir is not None and len(self.involved_skill_names) > 0:
+            skill_name_to_emb = get_embs_without_saving(list(self.involved_skill_names), cache_dir=cache_dir)
+            skill_embs_all_tasks.update(skill_name_to_emb)
+            cache_name = f'{self.dataset_type}_skill_name_to_emb.npy'
+            save_embs(skill_embs_all_tasks, cache_dir=cache_dir, cache_name=cache_name)
+
+        # Get task embedding
+        task_emb_dict = {}
+        if task_name is not None:
+            task_emb_dict = get_embs_without_saving([task_name], cache_dir=cache_dir)
+        else:
+            task_emb_dict = skill_embs_all_tasks
+
+        self.statistics['task_emb_dict'] = task_emb_dict
+        self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
+
+        return data_list
+
+    def get_dataslice_bimanual_jpose(self, joint_poses, holding_ids, skill_name, task_name):
+        """
+        Create a data slice for bimanual joint-pose learning from real ALOHA data.
+
+        This is conceptually similar to `get_dataslice_bimanual_jpose` in
+        `per_skill_dataset.py` but uses joint poses and holding indices directly,
+        without relying on scene graphs or robot state dictionaries.
+        """
+        if len(holding_ids) == 0 or len(joint_poses) == 0:
+            return None
+
+        # # Filter holding indices that lie within the range of recorded joint poses
+        # valid_ids = [idx for idx in holding_ids if 0 <= idx < len(joint_poses)]
+        # if len(valid_ids) == 0:
+        #     return None
+        valid_ids = range(len(joint_poses)//4, len(joint_poses) // 4 * 3)
+
+        # Randomly select one holding index and use the corresponding joint pose
+        qtraj_index = np.random.choice(valid_ids)
+        selected_jpose = joint_poses[qtraj_index].astype(np.float32)  # shape (14,)
+
+        data_slice_bi = {}
+        data_slice_bi['jpose'] = selected_jpose
+        data_slice_bi['skill_name'] = str_to_ascii_tensor(skill_name)
+        data_slice_bi['task_name'] = str_to_ascii_tensor(task_name) if task_name is not None else data_slice_bi['skill_name']
+
+        return data_slice_bi
+
 
     def get_dataslice_unimanual_real(self, obj_pc_raw, eef_poses, pose_ids, skill_name, task_name, cfg, traj_len, gripper_action):
         """
@@ -314,27 +424,34 @@ class RealAlohaDataset(Dataset):
     def get_normalizer_and_statistics(self, data_list, mode='unimanual'):
         """Compute normalizer statistics from data."""
         normalizer = LinearNormalizer()
-        
+
         if len(data_list) == 0:
             return normalizer
-        
-        # Normalize pc
+
+        # Bimanual joint-pose only: normalize joint positions and return
+        if mode == 'bimanual':
+            jpose_arr = np.stack([data['jpose'] for data in data_list], axis=0)
+            jpose_stats = to_torch_stats(jpose_arr.reshape(-1, jpose_arr.shape[-1]))
+            normalizer['jpose'] = get_torch_range_symmetric_normalizer_from_stat(jpose_stats)
+            return normalizer
+
+        # Unimanual trajectory: normalize pc, eefpos, gripper, in_hand_pc
         pc_arr = np.concatenate([data['pc'] for data in data_list], axis=0)
-        
+
         if self.use_pc_color and pc_arr.shape[-1] == 6:
             pc_xyz = pc_arr[..., :3]
         elif pc_arr.shape[-1] == 3:
             pc_xyz = pc_arr
         else:
             raise ValueError(f"Invalid pc shape: {pc_arr.shape}")
-        
+
         pcd_stats = to_torch_stats(pc_xyz.reshape(-1, 3))
         normalizer['pc'] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
-        
+
         # Normalize eefpos
         eef_pos_arr = np.concatenate([data['eefpos'] for data in data_list], axis=0)
         eef_pos_torch = torch.tensor(eef_pos_arr).to(torch.float32)
-        
+
         if self.eef_representation == '3vec':
             eef_xyz_raw, _, _ = convert_trans_to_vec(eef_pos_torch.reshape(-1, 1, 4, 4))
             eef_xyz_np = eef_xyz_raw.detach().cpu().numpy()
@@ -349,19 +466,19 @@ class RealAlohaDataset(Dataset):
             eef_xyz_raw, _, _ = convert_trans_to_vec(eef_pos_torch.reshape(-1, 1, 4, 4))
             eef_xyz_np = eef_xyz_raw.detach().cpu().numpy()
             eef_stats = to_torch_stats(eef_xyz_np.reshape(-1, eef_xyz_np.shape[-1]))
-        
+
         normalizer['eefpos'] = get_torch_range_symmetric_normalizer_from_stat(eef_stats)
-        
+
         # Normalize gripper
         gripper_arr = np.concatenate([data['gripper'] for data in data_list], axis=0)
         gripper_stats = to_torch_stats(gripper_arr.reshape(-1, gripper_arr.shape[-1]))
         normalizer['gripper'] = get_torch_range_symmetric_normalizer_from_stat(gripper_stats)
-        
+
         # Compute pc_scale
         pc_arr_for_scale = pc_arr[..., :3] if pc_arr.shape[-1] == 6 else pc_arr
         pc_scale = self.get_pc_scale(pc_arr_for_scale, eef_stats["max"].max())
         self.statistics['pc_scale'] = pc_scale
-        
+
         # Normalize in_hand_pc (same as pc for real aloha)
         if 'in_hand_pc' in data_list[0]:
             in_hand_pc_arr = np.concatenate([data['in_hand_pc'] for data in data_list], axis=0)
@@ -371,10 +488,10 @@ class RealAlohaDataset(Dataset):
                 in_hand_pc_xyz = in_hand_pc_arr
             else:
                 raise ValueError(f"Invalid in_hand_pc shape: {in_hand_pc_arr.shape}")
-            
+
             in_hand_pcd_stats = to_torch_stats(in_hand_pc_xyz.reshape(-1, 3))
             normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
-        
+
         return normalizer
 
     def get_pc_scale(self, pc_data, ac_scale):
