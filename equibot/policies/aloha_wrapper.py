@@ -72,9 +72,10 @@ class pddl_wrapper(object):
         offset_dict = {}
         for k, v in obs.items():
             if 'pc' in k:
-                pc = v.numpy().reshape(-1, 3)
+                pc = v.numpy()
                 centered_pc, offset = centralize_downsample(pc, self.dataset.pc_shape, add_bottom = is_add_bottom, **kwargs)
-                centralized_obs[k] = torch.tensor(centered_pc, device= self.cfg.device).reshape(1, 1, -1, 3).float()
+                centered_pc= torch.tensor(centered_pc, device= self.cfg.device).float()
+                centralized_obs[k] = centered_pc.unsqueeze(0).unsqueeze(0)
                 
                 grasp_key = k.replace('pc', 'grasp')
 
@@ -184,8 +185,13 @@ class pddl_wrapper(object):
         obs_c = to_tensor(obs_c)
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
-        skill_key = skill_name if skill_name is not None else obs_key
-        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(skill_key, obs_gpu, task_name_batch=task_name)
+        skill_key = skill_name if skill_name is not None else obs_key 
+        # ## for real-world aloha, task name is skill name
+        # if self.cfg.data.dataset.task_name is None:
+        #     task_name = skill_name
+        task_name = self.cfg.data.dataset.task_name 
+        
+        action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(skill_key, obs_gpu, task_name_batch=task_name)
         action_c = to_np(action_c)
 
         # key_mapping = [('robot0_grasp_piece_1:','left_'),('eefpos','grasp'),\

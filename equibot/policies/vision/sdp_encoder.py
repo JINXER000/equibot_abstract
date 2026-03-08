@@ -308,6 +308,7 @@ class SDPEncoder(nn.Module):
         
         # Process through down blocks
         node_src = None
+        node_dst = None
         for n, block in enumerate(self.down_blocks):
             # Pooling
             pool_graph = block['pool'](node_coord_src=node_coord, batch_src=batch)
@@ -341,18 +342,13 @@ class SDPEncoder(nn.Module):
                 # If node_feature is None (no color), initialize to zeros
                 offset_res = 0
                 offset = 0
+                # Initialize the l = 0, m = 0 coefficients for each resolution
                 for i in range(self.num_resolutions):
-                    if node_feature is not None:
-                        # Use color features when available
-                        if self.num_resolutions == 1:
-                            node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)
-                        else:
-                            node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)[
-                                :, offset:offset + self.sphere_channels[0]
-                            ]
+                    if self.num_resolutions == 1:
+                        node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)
                     else:
-                        # No features: initialize to zeros (as in reference when no color)
-                        node_src.embedding[:, offset_res, :] = 0.0
+                        node_src.embedding[:, offset_res, :] = self.type0_linear(node_feature)[:,
+                                                               offset: offset + self.sphere_channels[0]]
                     offset = offset + self.sphere_channels[0]
                     offset_res = offset_res + int((self.lmax_list[i] + 1) ** 2)
             
@@ -376,14 +372,15 @@ class SDPEncoder(nn.Module):
             node_dst = block['transblock'](
                 node_src, node_dst, edge_attr, edge_src, edge_dst, batch=batch
             )
-            
             node_src = node_dst
             node_coord = node_coord_dst
             batch = batch_dst
         
         # Final normalization
         if self.norm is not None:
-            node_dst.embedding = self.norm(node_dst.embedding)
+            # Cast to float32 before norm (autocast may have converted to bf16,
+            # but norm layers disable autocast and require float32 for their buffers)
+            node_dst.embedding = self.norm(node_dst.embedding.float())
         
         # Output spherical features: [B*T, irrep_dim, c_dim]
         s2_feat = node_dst.embedding

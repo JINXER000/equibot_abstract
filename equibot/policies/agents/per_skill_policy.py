@@ -704,8 +704,8 @@ class BiopSkillPolicy(nn.Module):
 
         curr_action = {'jpose': noisy_jpose}
 
-        ## TODO: condition on skill name and task name
-        emb_batch = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
+        # ## TODO: condition on skill name and task name
+        # emb_batch = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
 
         ####### inverse diffusion step
         for k in self.noise_scheduler.timesteps:

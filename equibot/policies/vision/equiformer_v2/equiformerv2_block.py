@@ -492,8 +492,8 @@ class TransBlock(torch.nn.Module):
         output_src = x_src.clone()
         output_dst = x_dst.clone()
         x_res = output_dst.embedding
-        output_src.embedding = self.norm_1_src(output_src.embedding)
-        output_dst.embedding = self.norm_1_dst(output_dst.embedding)
+        output_src.embedding = self.norm_1_src(output_src.embedding.float())
+        output_dst.embedding = self.norm_1_dst(output_dst.embedding.float())
 
         output_embedding = self.ga(output_src,
                                    output_dst,
@@ -509,7 +509,7 @@ class TransBlock(torch.nn.Module):
         output_embedding.embedding = output_embedding.embedding + x_res
 
         x_res = output_embedding.embedding
-        output_embedding.embedding = self.norm_2(output_embedding.embedding)
+        output_embedding.embedding = self.norm_2(output_embedding.embedding.float())
         output_embedding = self.ffn(output_embedding)
 
         if self.drop_path is not None:

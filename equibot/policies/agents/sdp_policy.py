@@ -276,7 +276,7 @@ class SDPPolicy(nn.Module):
             # List case
             names = name_batch
         
-            emb_tensor_batch = []
+        emb_tensor_batch = []
         for name in names:
             emb_tensor = mapping_dict[name]
             if isinstance(emb_tensor, np.ndarray):
@@ -290,7 +290,7 @@ class SDPPolicy(nn.Module):
     def encode_bert_emb(self, bert_emb, batch_size):
         skill_emb = self.nets['language_encoder'](bert_emb)
         skill_emb_batch = skill_emb.reshape(batch_size, -1)
-        return skill_emb_batch
+        return skill_emb_batch.to(dtype=torch.float32)
     
     def get_all_embs(self, skill_name_batch, batch_size, task_name_batch=None):
         skill_emb_batch = self.get_encoding_from_name_batch(

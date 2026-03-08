@@ -460,7 +460,6 @@ dependencies:
       - markdown-it-py==3.0.0
       - mdit-py-plugins==0.4.2
       - mdurl==0.1.2
-      - mimicgen-envs==0.1.0
       - mink==0.0.11
       - modern-robotics==1.1.1
       - mujoco==3.3.4
@@ -477,7 +476,6 @@ dependencies:
       - pybullet==3.2.7
       - pydot==4.0.1
       - pygame==2.6.1
-      - pygraphviz==1.11
       - pymanopt==2.2.1
       - pynput==1.8.1
       - pyopengl==3.1.9
@@ -490,7 +488,6 @@ dependencies:
       - rerun-sdk==0.22.0
       - retrying==1.4.0
       - robosuite==1.5.1
-      - robosuite-task-zoo==0.1
       - rpds-py==0.26.0
       - rtree==1.4.1
       - safetensors==0.5.3
