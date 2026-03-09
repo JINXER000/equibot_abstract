@@ -68,7 +68,7 @@ class PerSkillDataset(Dataset):
         self.pre_filter = pre_filter
         self.composed_inference = False
 
-        self.use_pc_color = cfg.use_pc_color
+        self.use_pc_color = cfg.get('use_pc_color', False)
         # Update pc_shape based on whether color is used
         pc_channels = 6 if self.use_pc_color else 3
         self.pc_shape = (cfg.num_points, pc_channels)

@@ -360,7 +360,7 @@ class DMGPolicy(nn.Module):
 
         return action_dict, eval_metrics
     
-    def pred_unimaual_traj(self, skill_name, agent_obs, gt_batch = None, task_name_batch = None):
+    def pred_unimanual_traj(self, skill_name, agent_obs, gt_batch = None, task_name_batch = None):
         pc_data = agent_obs[f'{skill_name}:pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
 
@@ -478,7 +478,7 @@ class DMGPolicy(nn.Module):
             else:
                 pc_data = batch[f'{skill_name}:pc']
                 agent_obs = {f'{skill_name}:pc': pc_data}
-                action_dict, eval_metrics = self.pred_unimaual_traj(skill_name, agent_obs, gt_batch=batch)
+                action_dict, eval_metrics = self.pred_unimanual_traj(skill_name, agent_obs, gt_batch=batch)
             action_dict_all.update(action_dict)
             eval_metrics_all.update(eval_metrics)
 

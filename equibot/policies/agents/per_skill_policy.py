@@ -378,7 +378,7 @@ class EquiSkillPolicy(nn.Module):
 
         return obs_vec
 
-    def pred_unimaual_traj(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
+    def pred_unimanual_traj(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
         pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
 
@@ -513,7 +513,7 @@ class EquiSkillPolicy(nn.Module):
         # if 'in_hand_pc' in batch:
         #     agent_obs['in_hand_pc'] = batch['in_hand_pc']
             # agent_obs['in_hand_mask'] = batch['in_hand_mask']
-        action_dict, eval_metrics = self.pred_unimaual_traj(skill_name_batch, agent_obs, gt_batch=batch, task_name_batch=task_name_batch)
+        action_dict, eval_metrics = self.pred_unimanual_traj(skill_name_batch, agent_obs, gt_batch=batch, task_name_batch=task_name_batch)
         action_dict_all.update(action_dict)
         eval_metrics_all.update(eval_metrics)
 
