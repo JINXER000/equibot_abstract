@@ -70,7 +70,7 @@ model:
   # Diffusion config (SDTU) - following reference
   diffusion:
     diffusion_step_embed_dim: 128
-    down_dims: [200, 400, 800]      # U-net channel dimensions
+    down_dims: [64, 128, 256]      # U-net channel dimensions
     kernel_size: 5                 # Kernel size 
     FiLM_type: 'SFiLM'             # Spherical FiLM (from paper Eq. 6)
     
@@ -99,7 +99,8 @@ data:
     num_points: 128               # Number of points in point cloud
     num_workers: 4
     
-    # uniskills: ['grasp', 'place']  # Skills to extract from data
+    # # uniskills: ['grasp', 'place']  # Skills to extract from data
+    # uniskills: ['grasp']
     # dataset_type: 'real_aloha_traj'  # Use real ALOHA dataset
     
     uniskills: ['bimanual']
