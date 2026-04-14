@@ -158,63 +158,62 @@ class RealAlohaDataset(Dataset):
             hdf5_path = os.path.join(self.root, 'raw', file_name)
             
             with h5py.File(hdf5_path, 'r') as f:
-                # Find object groups (exclude camera data)
-                obj_names = [key for key in f.keys() if not key.startswith('cam_')]
+                # Find object groups (exclude camera data and non-group items)
+                obj_names = [key for key in f.keys() 
+                             if isinstance(f[key], h5py.Group)]
                 
                 for obj_name in obj_names:
                     obj_grp = f[obj_name]
                     
                     # Get point cloud data
                     start_pc = self.get_pc_of_phase(obj_grp, phase = 'start')
-                    end_pc = self.get_pc_of_phase(obj_grp, phase = 'end')
                     
                     # Get grasp poses and indices
                     grasp_poses = obj_grp['grasp_poses'][()]
                     grasp_ids = obj_grp['grasp_ids'][()]
-                    
-                    # # Get joint poses for determining which arm is active
-                    # if 'joint_poses' in obj_grp:
-                    #     joint_poses = obj_grp['joint_poses'][()]
-                    #     holding_ids = obj_grp['holding_ids'][()]
-                    # else:
-                    #     joint_poses = None
-                    #     holding_ids = None
+                    grasp_gripper_actions = obj_grp['grasp_gripper_actions'][()]
                     
                     # Get release poses if available (for place skill)
                     has_release = 'release_poses' in obj_grp
                     if has_release:
                         release_poses = obj_grp['release_poses'][()]
                         release_ids = obj_grp['release_ids'][()]
+                        end_pc = self.get_pc_of_phase(obj_grp, phase = 'end')
+                        release_gripper_actions = obj_grp['release_gripper_actions'][()]
+
                     
                     # Create data samples for grasp skill
                     for _ in range(aug_traj_nums):
-                        # Process grasp skill
-                        if 'grasp' in primitive_kws and len(grasp_poses) > 0:
-                            skill_name = f'grasp_{obj_name}'
-                            obj_pc_raw = start_pc
-                            eef_poses = grasp_poses
-                            pose_ids = grasp_ids
-                        elif has_release and 'place' in primitive_kws and len(release_poses) > 0:
-                            skill_name = f'place_{obj_name}'
-                            obj_pc_raw = end_pc
-                            eef_poses = release_poses
-                            pose_ids = release_ids
-                        else:
-                            raise ValueError(f'No valid skill found for {obj_name} in {file_name}')
+                        for primitive_kw in primitive_kws:
+                            # Process grasp skill
+                            if primitive_kw == 'grasp' and len(grasp_poses) > 0:
+                                skill_name = f'grasp_{obj_name}'
+                                obj_pc_raw = start_pc
+                                eef_poses = grasp_poses
+                                pose_ids = grasp_ids
+                                gripper_actions = grasp_gripper_actions
+                            elif primitive_kw == 'place' and has_release and len(release_poses) > 0:
+                                skill_name = f'place_{obj_name}'
+                                obj_pc_raw = end_pc
+                                eef_poses = release_poses
+                                pose_ids = release_ids
+                                gripper_actions = release_gripper_actions
+                            else:
+                                raise ValueError(f'No valid skill found for {obj_name} in {file_name}')
 
-                        data_slice = self.get_dataslice_unimanual_real(
-                            obj_pc_raw=obj_pc_raw,
-                            eef_poses=eef_poses,
-                            pose_ids=pose_ids,
-                            skill_name=skill_name,
-                            task_name=task_name,
-                            cfg=cfg,
-                            traj_len=traj_len,
-                            gripper_action=1.0  # Closing gripper for grasp
-                        )
-                        if data_slice is not None:
-                            data_list.append(data_slice)
-                            self.involved_skill_names.add(skill_name)
+                            data_slice = self.get_dataslice_unimanual_real(
+                                obj_pc_raw=obj_pc_raw,
+                                eef_poses=eef_poses,
+                                pose_ids=pose_ids,
+                                skill_name=skill_name,
+                                task_name=task_name,
+                                cfg=cfg,
+                                traj_len=traj_len,
+                                gripper_action= gripper_actions
+                            )
+                            if data_slice is not None:
+                                data_list.append(data_slice)
+                                self.involved_skill_names.add(skill_name)
         
         # Save processed data
         os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
@@ -270,8 +269,9 @@ class RealAlohaDataset(Dataset):
 
             hdf5_path = os.path.join(self.root, 'raw', file_name)
             with h5py.File(hdf5_path, 'r') as f:
-                # Find object groups (exclude camera data)
-                obj_names = [key for key in f.keys() if not key.startswith('cam_')]
+                # Find object groups (exclude camera data and non-group items)
+                obj_names = [key for key in f.keys() 
+                             if isinstance(f[key], h5py.Group)]
 
                 for obj_name in obj_names:
                     obj_grp = f[obj_name]
@@ -292,7 +292,6 @@ class RealAlohaDataset(Dataset):
                     for _ in range(aug_traj_nums):
                         data_slice = self.get_dataslice_bimanual_jpose(
                             joint_poses=joint_poses,
-                            holding_ids=holding_ids,
                             skill_name=skill_name,
                             task_name=task_name,
                         )
@@ -324,7 +323,7 @@ class RealAlohaDataset(Dataset):
 
         return data_list
 
-    def get_dataslice_bimanual_jpose(self, joint_poses, holding_ids, skill_name, task_name):
+    def get_dataslice_bimanual_jpose(self, joint_poses,  skill_name, task_name):
         """
         Create a data slice for bimanual joint-pose learning from real ALOHA data.
 
@@ -332,14 +331,8 @@ class RealAlohaDataset(Dataset):
         `per_skill_dataset.py` but uses joint poses and holding indices directly,
         without relying on scene graphs or robot state dictionaries.
         """
-        if len(holding_ids) == 0 or len(joint_poses) == 0:
-            return None
-
-        # # Filter holding indices that lie within the range of recorded joint poses
-        # valid_ids = [idx for idx in holding_ids if 0 <= idx < len(joint_poses)]
-        # if len(valid_ids) == 0:
-        #     return None
-        valid_ids = range(len(joint_poses)//4, len(joint_poses) // 4 * 3)
+        valid_ids = range(len(joint_poses)//6, len(joint_poses) // 3)
+        # valid_ids = range(len(joint_poses)//6*5, len(joint_poses))
 
         # Randomly select one holding index and use the corresponding joint pose
         qtraj_index = np.random.choice(valid_ids)
@@ -376,13 +369,8 @@ class RealAlohaDataset(Dataset):
         )
         obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32)
         
-        # Sample trajectory indices
-        if len(eef_poses) < traj_len:
-            # If not enough poses, repeat/interpolate
-            chosen_ids = np.linspace(0, len(eef_poses) - 1, traj_len).astype(int)
-        else:
-            # Random sampling with start and end preserved
-            chosen_ids = self._sample_trajectory_indices(len(eef_poses), traj_len)
+        # Sample trajectory indices based on gripper action values
+        chosen_ids = self._sample_trajectory_indices(len(eef_poses), traj_len, gripper_action)
         
         # Get eef poses and normalize
         eef_pos_list = eef_poses[chosen_ids]
@@ -390,13 +378,14 @@ class RealAlohaDataset(Dataset):
         normalized_eef_pos_tensor = torch.tensor(normalized_eef_pos_list).to(torch.float32).reshape(traj_len, 4, 4)
         
         # Create gripper actions (same action for all steps in this skill)
-        gripper_list = np.full((traj_len, 1, 1), gripper_action, dtype=np.float32)
+        # gripper_list = np.full((traj_len, 1, 1), gripper_action, dtype=np.float32)
+        gripper_list = gripper_action[chosen_ids]
         
         # Build data slice
         data_slice['pc'] = obj_pc_tensor
         data_slice['in_hand_pc'] = obj_pc_tensor.clone()  # For compatibility with per_skill format
         data_slice['eefpos'] = normalized_eef_pos_tensor
-        data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32)
+        data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
         data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
         ## if task_name is not distinctive, use skill_name instead
         data_slice['task_name'] = str_to_ascii_tensor(task_name) if task_name is not None else data_slice['skill_name'] 
@@ -407,18 +396,47 @@ class RealAlohaDataset(Dataset):
         
         return data_slice
 
-    def _sample_trajectory_indices(self, total_len, traj_len):
-        """Sample trajectory indices, preserving start and end."""
+    def _sample_trajectory_indices(self, total_len, traj_len, gripper_action=None):
+        """Sample trajectory indices based on gripper action values.
+        
+        Priority order:
+        1. First (init) and last (end) indices
+        2. Max gripper value index
+        3. Min gripper value index
+        4. Intermediate indices based on gripper values (e.g., midpoint between min and max)
+        """
         if total_len <= traj_len:
             return np.linspace(0, total_len - 1, traj_len).astype(int)
         
-        # Always include first and last
-        middle_indices = np.random.choice(
-            np.arange(1, total_len - 1), 
-            traj_len - 2, 
-            replace=False
-        )
-        chosen_ids = np.concatenate([[0], np.sort(middle_indices), [total_len - 1]])
+        # If no gripper action provided, fall back to linear spacing
+        if gripper_action is None:
+            return np.linspace(0, total_len - 1, traj_len).astype(int)
+        
+        # Flatten gripper_action if needed
+        gripper_values = np.array(gripper_action).flatten()
+        
+        # Start with init (0) and end (total_len - 1) indices
+        chosen_set = {0, total_len - 1}
+        
+        # Find max and min gripper indices (excluding first and last)
+        middle_range = np.arange(1, total_len - 1)
+        if len(middle_range) > 0:
+            middle_gripper = gripper_values[middle_range]
+            max_idx = middle_range[np.argmax(middle_gripper)]
+            min_idx = middle_range[np.argmin(middle_gripper)]
+            chosen_set.add(max_idx)
+            chosen_set.add(min_idx)
+        
+        # Fill remaining slots by uniformly sampling from available indices
+        remaining_slots = traj_len - len(chosen_set)
+        if remaining_slots > 0:
+            available_indices = np.array([i for i in range(total_len) if i not in chosen_set])
+            if len(available_indices) > 0:
+                sampled = np.random.choice(available_indices, size=min(remaining_slots, len(available_indices)), replace=False)
+                chosen_set.update(sampled)
+        
+        # Convert to sorted array
+        chosen_ids = np.sort(np.array(list(chosen_set)))
         return chosen_ids.astype(int)
 
     def get_normalizer_and_statistics(self, data_list, mode='unimanual'):

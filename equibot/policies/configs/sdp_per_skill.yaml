@@ -1,10 +1,3 @@
-# SDP (Spherical Diffusion Policy) Configuration
-# Reference: paper_ref/sdp/example_paper.tex
-#
-# Key differences from EquiBot (Vector Neurons):
-# - Uses EquiformerV2 encoder with spherical harmonics (degree L) 
-# - SDTU (Spherical Denoising Temporal U-net) with SFiLM conditioning
-# - Higher expressiveness: (L+1)^2 coefficients vs 3D vectors
 
 defaults:
   - base

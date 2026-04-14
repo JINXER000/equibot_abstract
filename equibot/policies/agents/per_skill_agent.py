@@ -317,7 +317,8 @@ class EquiSkillAgent(object):
     def eval_with_rotation(self, obs, skill_id = -1):
         self.train(False)
         random_yaw = np.random.uniform(-np.pi, np.pi)
-        np_obs= rotate_observation(obs, random_yaw)
+        # np_obs= rotate_observation(obs, random_yaw)
+        np_obs = obs
         cpu_obs = to_tensor(np_obs)
         gpu_obs = to_torch(cpu_obs, self.device)
 
