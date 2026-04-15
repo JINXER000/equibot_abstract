@@ -479,18 +479,29 @@ class SDPPolicy(nn.Module):
         Denoising process (from paper Eq. 2):
         A_t^{k-1} = alpha * (A_t^k - gamma * epsilon_theta(S_t, A_t^k, k) + z)
         """
+        import time
+        _cuda = torch.cuda.is_available()
+        def _sync_time():
+            if _cuda:
+                torch.cuda.synchronize()
+            return time.perf_counter()
+
+        t0 = _sync_time()
+
         pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size = pc_data.shape[0]
-        
+
         ema_nets = self.ema.averaged_model
-        
+
         # 1. Get language embeddings (omit task name for debugging)
         language_emb = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
-        
+
         # 2. Encode point cloud to spherical features (equivariant) with language embeddings
         # Language embeddings are added in encoder with proper irrep structure (type-0 in l=0, m=0 only)
         obs_vec, center, scale = self.proc_pc(pc_data, language_emb=language_emb, ema_nets=ema_nets)
-        
+
+        t_enc = _sync_time()
+
         # 3. Prepare global_cond: obs_vec already includes language features from encoder
         if self.obs_as_global_cond:
             if "cross_attention" in self.condition_type:
@@ -534,7 +545,9 @@ class SDPPolicy(nn.Module):
                 timestep=k,
                 sample=curr_sample
             ).prev_sample
-        
+
+        t_denoise = _sync_time()
+
         # Split back into eef and gripper
         if self.eef_representation == "3vec":
             # (B, T, 10) -> (B, T, 9) eef + (B, T, 1) gripper
@@ -554,13 +567,25 @@ class SDPPolicy(nn.Module):
             pred_eef_z, scale, center, key="eefpos"
         )
         gripper_batch = self.recover_gripper(pred_gripper, key="gripper")
-        
+
+        t_end = _sync_time()
+        n_steps = len(self.noise_scheduler.timesteps)
+        _runtime = {
+            "encoder_ms":          (t_enc     - t0)       * 1e3,
+            "denoise_ms":          (t_denoise - t_enc)     * 1e3,
+            "denoise_per_step_ms": (t_denoise - t_enc)     * 1e3 / max(n_steps, 1),
+            "recover_ms":          (t_end     - t_denoise) * 1e3,
+            "total_ms":            (t_end     - t0)        * 1e3,
+            "num_diffusion_iters": n_steps,
+        }
+        print(f"[SDP inference] {_runtime}")
+
         # Always return predicted trajectories (batch-shaped), and compute metrics if GT is provided.
         action_dict = {
             "eefpos": trans_batch,
             "gripper": gripper_batch,
         }
-        eval_metrics = {}
+        eval_metrics = {f"runtime/{k}": v for k, v in _runtime.items()}
 
         if batch_size == 1:
             # Single sample inference - return indexed results

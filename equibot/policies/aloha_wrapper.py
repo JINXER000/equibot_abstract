@@ -190,8 +190,9 @@ class pddl_wrapper(object):
         if task_name is None:
             raise ValueError('task_name is required for non-libero tasks')
         
-        ## only for real-world aloha, not for inference
-        action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(skill_key, obs_gpu, task_name_batch=task_name)
+        self.agent.actor.train(False)
+        with torch.no_grad():
+            action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(skill_key, obs_gpu, task_name_batch=task_name)
         action_c = to_np(action_c)
 
         # key_mapping = [('robot0_grasp_piece_1:','left_'),('eefpos','grasp'),\
@@ -217,7 +218,9 @@ class pddl_wrapper(object):
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
         skill_key = skill_name
-        action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(skill_key, obs_gpu, task_name_batch=task_name)
+        self.agent.actor.train(False)
+        with torch.no_grad():
+            action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(skill_key, obs_gpu, task_name_batch=task_name)
         action_c = to_np(action_c)
 
         ## TODO: decode for bimanual
