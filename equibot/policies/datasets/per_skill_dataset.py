@@ -13,7 +13,7 @@ from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rot
 
 from equibot.policies.utils.lan_utils import get_embs_without_saving, save_embs
 
-from equibot.policies.utils.normalize_utils import to_torch_stats, get_torch_range_symmetric_normalizer_from_stat
+from equibot.policies.utils.normalize_utils import to_torch_stats, get_torch_range_symmetric_normalizer_from_stat, get_torch_isotropic_xyz_normalizer_from_stat
 
 from equibot.policies.utils.normalizer import LinearNormalizer
 
@@ -708,7 +708,7 @@ class PerSkillDataset(Dataset):
             raise ValueError(f"Invalid pc shape: {pc_arr.shape}")
         
         pcd_stats = to_torch_stats(pc_xyz.reshape(-1, 3))
-        normalizer['pc'] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
+        normalizer['pc'] = get_torch_isotropic_xyz_normalizer_from_stat(pcd_stats)
 
 
 
@@ -725,8 +725,8 @@ class PerSkillDataset(Dataset):
             eef_4pts_raw = convert_trans_to_4pts(eef_pos_torch.reshape(-1, 1, 4, 4), original_gripper_pcd)
             eef_4pts_np = eef_4pts_raw.detach().cpu().numpy()
             eef_stats = to_torch_stats(eef_4pts_np.reshape(-1, eef_4pts_np.shape[-1]))
-        ## actually not symmetric. confusing name.
-        normalizer['eefpos'] = get_torch_range_symmetric_normalizer_from_stat(eef_stats)
+        ## isotropic scale, zero offset — required for rotation equivariance
+        normalizer['eefpos'] = get_torch_isotropic_xyz_normalizer_from_stat(eef_stats)
         
         ## normalize gripper
         gripper_arr = np.concatenate([data['gripper'] for data in data_list], axis=0)
@@ -750,7 +750,7 @@ class PerSkillDataset(Dataset):
                 raise ValueError(f"Invalid in_hand_pc shape: {in_hand_pc_arr.shape}")
 
             in_hand_pcd_stats = to_torch_stats(in_hand_pc_xyz.reshape(-1, 3))
-            normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
+            normalizer['in_hand_pc'] = get_torch_isotropic_xyz_normalizer_from_stat(in_hand_pcd_stats)
 
             # in_hand_pc_scale = self.get_pc_scale(in_hand_pc_arr, eef_stats["max"].max())
             # self.statistics['in_hand_pc_scale'] = in_hand_pc_scale

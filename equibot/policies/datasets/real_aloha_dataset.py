@@ -20,7 +20,7 @@ from equibot.policies.utils.misc import (
 )
 
 from equibot.policies.utils.lan_utils import get_embs_without_saving, save_embs
-from equibot.policies.utils.normalize_utils import to_torch_stats, get_torch_range_symmetric_normalizer_from_stat
+from equibot.policies.utils.normalize_utils import to_torch_stats, get_torch_range_symmetric_normalizer_from_stat, get_torch_isotropic_xyz_normalizer_from_stat
 from equibot.policies.utils.normalizer import LinearNormalizer
 
 
@@ -464,7 +464,7 @@ class RealAlohaDataset(Dataset):
             raise ValueError(f"Invalid pc shape: {pc_arr.shape}")
 
         pcd_stats = to_torch_stats(pc_xyz.reshape(-1, 3))
-        normalizer['pc'] = get_torch_range_symmetric_normalizer_from_stat(pcd_stats)
+        normalizer['pc'] = get_torch_isotropic_xyz_normalizer_from_stat(pcd_stats)
 
         # Normalize eefpos
         eef_pos_arr = np.concatenate([data['eefpos'] for data in data_list], axis=0)
@@ -485,7 +485,7 @@ class RealAlohaDataset(Dataset):
             eef_xyz_np = eef_xyz_raw.detach().cpu().numpy()
             eef_stats = to_torch_stats(eef_xyz_np.reshape(-1, eef_xyz_np.shape[-1]))
 
-        normalizer['eefpos'] = get_torch_range_symmetric_normalizer_from_stat(eef_stats)
+        normalizer['eefpos'] = get_torch_isotropic_xyz_normalizer_from_stat(eef_stats)
 
         # Normalize gripper
         gripper_arr = np.concatenate([data['gripper'] for data in data_list], axis=0)
@@ -508,7 +508,7 @@ class RealAlohaDataset(Dataset):
                 raise ValueError(f"Invalid in_hand_pc shape: {in_hand_pc_arr.shape}")
 
             in_hand_pcd_stats = to_torch_stats(in_hand_pc_xyz.reshape(-1, 3))
-            normalizer['in_hand_pc'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_pcd_stats)
+            normalizer['in_hand_pc'] = get_torch_isotropic_xyz_normalizer_from_stat(in_hand_pcd_stats)
 
         return normalizer
 
