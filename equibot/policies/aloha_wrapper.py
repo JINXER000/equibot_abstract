@@ -217,7 +217,7 @@ class pddl_wrapper(object):
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
         skill_key = skill_name
-        action_c, eval_metrics = self.agent.actor.pred_unimaual_traj(skill_key, obs_gpu, task_name_batch=task_name)
+        action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(skill_key, obs_gpu, task_name_batch=task_name)
         action_c = to_np(action_c)
 
         ## TODO: decode for bimanual

@@ -272,7 +272,7 @@ class TrajPolicy(nn.Module):
 
         return action_dict, eval_metrics
     
-    def pred_unimaual_traj(self, side, agent_obs, gt_batch = None):
+    def pred_unimanual_traj(self, side, agent_obs, gt_batch = None):
         pc_data = agent_obs[side + '_pc']
         batch_size =  pc_data.shape[0]
         pc_data = pc_data.repeat(1, self.obs_horizon, 1, 1)
@@ -361,7 +361,7 @@ class TrajPolicy(nn.Module):
         agent_obs = {}
         for side in ["left", "right"]:
             agent_obs[side + '_pc'] = batch[side + '_pc']
-            action_dict, eval_metrics = self.pred_unimaual_traj(side, batch, gt_batch=batch)
+            action_dict, eval_metrics = self.pred_unimanual_traj(side, batch, gt_batch=batch)
             action_dict_all.update(action_dict)
             eval_metrics_all.update(eval_metrics)
 
