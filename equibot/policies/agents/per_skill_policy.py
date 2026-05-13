@@ -46,7 +46,7 @@ class EquiSkillPolicy(nn.Module):
 
         self.encoder_out_dim = cfg.model.encoder.c_dim
 
-        self.separate_policy = cfg.model.separate_policy
+        # self.separate_policy = cfg.model.separate_policy
 
         self.dof = cfg.env.dof # 6
         self.num_eef = cfg.env.num_eef
@@ -159,23 +159,25 @@ class EquiSkillPolicy(nn.Module):
         return eval(network_name)(**language_encoder_kwargs)
     
     def get_encoding_from_name_batch(self, name_batch, batch_size, mapping_dict):
-
-        if batch_size == 1:
-            emb_tensor = mapping_dict[name_batch]
+        # Handle both single string and list of strings
+        # name_batch can be: "skill_name" (string) or ["skill_name"] (list with one element)
+        if isinstance(name_batch, str):
+            names = [next(iter(mapping_dict))] if len(mapping_dict) == 1 else [name_batch] # if only one key in mapping_dict, use it as the key
+        else:
+            # List case
+            names = name_batch
+        
+        emb_tensor_batch = []
+        for name in names:
+            emb_tensor = mapping_dict[name]
             if isinstance(emb_tensor, np.ndarray):
                 emb_tensor = torch.tensor(emb_tensor).to(self.device)
-            emb_batch = self.encode_bert_emb(emb_tensor, batch_size)
-        else:
-            emb_tensor_batch = []
-            for skill_name in name_batch:
-                emb_tensor = mapping_dict[skill_name]
-                if isinstance(emb_tensor, np.ndarray):
-                    emb_tensor = torch.tensor(emb_tensor).to(self.device)
-                emb_tensor_batch.append(emb_tensor)
-            emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
-            emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
+            emb_tensor_batch.append(emb_tensor)
+    
+        emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
+        emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
         return emb_batch
-
+    
     def encode_bert_emb(self, bert_emb, batch_size):
         skill_emb = self.nets['language_encoder'](bert_emb)
         skill_emb_batch = skill_emb.reshape(batch_size, -1)       
@@ -641,23 +643,25 @@ class BiopSkillPolicy(nn.Module):
         return eval(network_name)(**language_encoder_kwargs)
     
     def get_encoding_from_name_batch(self, name_batch, batch_size, mapping_dict):
-
-        if batch_size == 1:
-            emb_tensor = mapping_dict[name_batch]
+        # Handle both single string and list of strings
+        # name_batch can be: "skill_name" (string) or ["skill_name"] (list with one element)
+        if isinstance(name_batch, str):
+            names = [next(iter(mapping_dict))] if len(mapping_dict) == 1 else [name_batch] # if only one key in mapping_dict, use it as the key
+        else:
+            # List case
+            names = name_batch
+        
+        emb_tensor_batch = []
+        for name in names:
+            emb_tensor = mapping_dict[name]
             if isinstance(emb_tensor, np.ndarray):
                 emb_tensor = torch.tensor(emb_tensor).to(self.device)
-            emb_batch = self.encode_bert_emb(emb_tensor, batch_size)
-        else:
-            emb_tensor_batch = []
-            for skill_name in name_batch:
-                emb_tensor = mapping_dict[skill_name]
-                if isinstance(emb_tensor, np.ndarray):
-                    emb_tensor = torch.tensor(emb_tensor).to(self.device)
-                emb_tensor_batch.append(emb_tensor)
-            emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
-            emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
+            emb_tensor_batch.append(emb_tensor)
+    
+        emb_tensor_batch = torch.stack(emb_tensor_batch, dim=0)
+        emb_batch = self.encode_bert_emb(emb_tensor_batch, batch_size)
         return emb_batch
-
+        
     def encode_bert_emb(self, bert_emb, batch_size):
         skill_emb = self.nets['language_encoder'](bert_emb)
         skill_emb_batch = skill_emb.reshape(batch_size, -1)       

@@ -1,0 +1,64 @@
+defaults:
+  - base
+
+use_wandb: true
+
+training:
+  ckpt: "logs/train/dmg_assembly_policy/ckpt_fixed_leftright.pth" 
+  eval_interval: 50
+  num_epochs: 2000
+
+env:
+  env_name: 'two_arm_three_piece_assembly'
+  env_class: 'dmg_assembly'
+  num_eef: 2
+  dof: 7
+  max_episode_length: 50
+
+agent:
+  agent_name: eefequibot
+
+model:
+  down_dims: [256, 512, 1024]
+### use VDGCNN and transfer from pretrained model
+  hidden_dim: 256
+
+  obs_horizon: 2
+  
+  encoder:
+    backbone_type: VDGCNN
+    backbone_args: 
+      num_layers: 7
+      preload_path: "pretrained/chairs.pt"
+
+data:
+  dataset:
+    num_points: 256
+    # uniskills: ['grasp', 'contact']
+    # skill_names: ['grasp_piece_1', 'grasp_piece_2', 'piece_2_contact_piece_1', 'piece_1_contact_base']
+    # conditioned_objects: ['piece_1', 'piece_2', 'piece_1', 'base']
+    uniskills: ['grasp']
+    skill_names: ['robot0_grasp_piece_1', 'robot1_grasp_piece_2', 'bimanual_0']
+    conditioned_objects: ['piece_1', 'piece_2', 'None']
+    related_robots: ['robot0', 'robot1']
+    related_objects: ['piece_1', 'piece_2', 'base']
+    
+    dataset_type: 'dmg_policy'
+
+    is_obj_centric: True
+
+  shape_meta: &shape_meta
+    # acceptable types: rgb, low_dim
+    obs:
+      eef_pos:
+        shape: [2, 13]
+      pc:
+        shape: [256, 3]
+    action: 
+      shape: [2, 9]
+
+eval:
+  history_bid: 10
+
+
+

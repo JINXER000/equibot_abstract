@@ -79,8 +79,9 @@ def rotate_around_z(
     Returns:
         Rotated points with same shape as input.
     """
-    # Check if the input points have the correct shape (at least 3 channels for xyz)
-    assert (len(points.shape) == 1 and len(points) >= 3) or points.shape[-1] ==6
+    # Accept either a single point (D,) or batched points (..., D) with xyz in first 3 channels.
+    points = np.asarray(points)
+    assert points.ndim >= 1 and points.shape[-1] >= 3
     p_shape = points.shape
     num_channels = p_shape[-1]
     

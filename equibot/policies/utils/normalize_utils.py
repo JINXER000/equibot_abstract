@@ -58,6 +58,34 @@ def get_torch_range_symmetric_normalizer_from_stat(stat, output_max=1, output_mi
         input_stats_dict=stat
     )
 
+def get_torch_isotropic_xyz_normalizer_from_stat(stat, output_max=1, output_min=-1, range_eps=1e-7):
+    """
+    Equivariant normalizer for xyz coordinates (point clouds and eef positions).
+
+    Uses a single isotropic scale across all axes with zero offset so that
+    rotation commutes with normalization:  normalize(R @ x) == R @ normalize(x).
+
+    The scale is chosen as (output_max - output_min) / 2 / abs_max, where
+    abs_max is the largest absolute value across all axes in the dataset.
+    This guarantees all normalized values lie within [output_min, output_max].
+    """
+    input_max = stat['max']
+    input_min = stat['min']
+
+    abs_max = torch.max(torch.abs(input_max).max(), torch.abs(input_min).max())
+    if abs_max < range_eps:
+        abs_max = input_max.new_tensor(1.0)
+
+    scalar_scale = ((output_max - output_min) / 2.0) / abs_max
+    scale = torch.full_like(input_max, scalar_scale.item())
+    offset = torch.zeros_like(input_max)
+
+    return SingleFieldLinearNormalizer.create_manual(
+        scale=scale,
+        offset=offset,
+        input_stats_dict=stat
+    )
+
 def get_voxel_identity_normalizer():
     scale = np.array([1], dtype=np.float32)
     offset = np.array([0], dtype=np.float32)
