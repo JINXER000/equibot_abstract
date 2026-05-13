@@ -165,7 +165,9 @@ class pddl_wrapper(object):
             action_w = action_c
         return action_w
 
-    def gen_objcentric_traj(self, obs_key, agent_obs, skill_name = None, task_name = None):
+    def gen_objcentric_traj(
+        self, obs_key, agent_obs, skill_name=None, task_name=None, seed=None
+    ):
 
         import re
         def revise_key(action_output, key_mapping):
@@ -192,7 +194,9 @@ class pddl_wrapper(object):
         
         self.agent.actor.train(False)
         with torch.no_grad():
-            action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(skill_key, obs_gpu, task_name_batch=task_name)
+            action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(
+                skill_key, obs_gpu, task_name_batch=task_name, seed=seed
+            )
         action_c = to_np(action_c)
 
         # key_mapping = [('robot0_grasp_piece_1:','left_'),('eefpos','grasp'),\
@@ -208,7 +212,9 @@ class pddl_wrapper(object):
 
         return action_w
     
-    def gen_bimanual_kp(self,  related_pc_dict, skill_name = None, task_name = None):
+    def gen_bimanual_kp(
+        self, related_pc_dict, skill_name=None, task_name=None, seed=None
+    ):
         obs_tensor = to_tensor(related_pc_dict)
         # obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method)
         init_pc_n, init_pc_offset= combined_pc_instances_and_offset(obs_tensor, self.dataset.pc_shape, self.dataset.is_obj_centric, self.dataset.is_add_bottom, self.dataset.downsample_method)
@@ -220,7 +226,9 @@ class pddl_wrapper(object):
         skill_key = skill_name
         self.agent.actor.train(False)
         with torch.no_grad():
-            action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(skill_key, obs_gpu, task_name_batch=task_name)
+            action_c, eval_metrics = self.agent.actor.pred_unimanual_traj(
+                skill_key, obs_gpu, task_name_batch=task_name, seed=seed
+            )
         action_c = to_np(action_c)
 
         ## TODO: decode for bimanual
@@ -232,13 +240,15 @@ class pddl_wrapper(object):
         return action_w
     
 
-    def gen_uncond_jposes(self, arm1, arm2, sk):
+    def gen_uncond_jposes(self, arm1, arm2, sk, seed=None):
         ## old version
         # action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, batch_size = 1)
         # jpose_out = to_np(action_dict)[f'{sk}:jpose']
 
         ## per_skill version
-        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(sk, agent_obs = None)
+        action_dict, eval__metrics = self.agent.actor.pred_bimanual_jposes(
+            sk, agent_obs=None, seed=seed
+        )
         jpose_out = to_np(action_dict)['jpose']
 
         return jpose_out

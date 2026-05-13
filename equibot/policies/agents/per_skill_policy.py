@@ -689,7 +689,14 @@ class BiopSkillPolicy(nn.Module):
         return skill_emb_batch
 
     
-    def pred_bimanual_jposes(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
+    def pred_bimanual_jposes(
+        self,
+        skill_name_batch,
+        agent_obs,
+        gt_batch=None,
+        task_name_batch=None,
+        seed=None,
+    ):
         if isinstance(skill_name_batch, str):
             batch_size = 1
         else:
@@ -698,7 +705,16 @@ class BiopSkillPolicy(nn.Module):
         ema_nets = self.ema.averaged_model
 
         initial_noise_scale = 1
-        noisy_jpose = torch.randn((batch_size,   self.num_eef*self.dof)).to(self.device) * initial_noise_scale
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device=torch.device(self.device))
+            generator.manual_seed(seed)
+
+        noisy_jpose = torch.randn(
+            (batch_size, self.num_eef * self.dof),
+            device=self.device,
+            generator=generator,
+        ) * initial_noise_scale
 
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
 

@@ -24,13 +24,11 @@ model:
   obs_mode: 'pc'
   ac_mode: 'traj'
   use_torch_compile: true
-  
-  # Horizons — pred_horizon=1 since only the first step is used at runtime.
-  # Requires down_dims to be a single element (no temporal halving stages) — see below.
-  obs_horizon: 1
-  pred_horizon: 1
-  ac_horizon: 1
 
+  obs_horizon: 1
+  pred_horizon: 4
+  ac_horizon: 4
+  
   # Policy parameters (following reference sdp_ddpm_5layer.yaml)
   canonicalize: false               # Canonicalize point cloud and actions
   obs_as_global_cond: true         # Use observations as global conditioning
@@ -41,64 +39,55 @@ model:
   rad_aug: 0                       # Radial augmentation (translation noise)
   pcd_noise: 0                     # Point cloud noise augmentation
   n_groups: 8                      # Number of groups for convolution
-
-  # Encoder config — 3-layer EquiformerV2 with lmax=1 (reduced from 5-layer lmax=2)
-  # lmax: 2→1 cuts irrep coefficients per channel from 9→4 (~2x win in spherical ops)
-  # 5 layers → 3 layers removes the two most expensive (widest channel) stages
-  # Requires retraining from scratch.
+  
+  # Encoder config (EquiformerV2) - following reference sdp_ddpm_5layer.yaml (5-layer architecture)
   encoder:
-    encoder_output_dim: 64         # Output channel dimension (alias: c_dim)
-    c_dim: 64                      # Must match language_encoder_cfg.hidden_size
-    lmax: 1                        # Max degree of spherical harmonics (1 = up to l=1)
-    mmax: 1                        # Max order (same as lmax)
-    max_neighbors: [16, 16, 128]   # KNN neighbors at each scale (3 layers)
-    max_radius: [3, 3, 3]          # Graph radius at each scale
-    pool_ratio: [0.5, 0.5]         # FPS pooling ratio (n_layers-1 = 2 ratios)
-    sphere_channels: [16, 32, 64]  # Channels at each scale (3 layers)
-    attn_hidden_channels: [16, 32, 64]
-    attn_alpha_channels: [4, 8, 16]
-    attn_value_channels: [2, 4, 8]
-    ffn_hidden_channels: [32, 64, 128]
-    edge_channels: [8, 16, 32]
-    num_distance_basis: [64, 64, 64]  # Reduced from 128
+    encoder_output_dim: 128        # Output channel dimension (alias: c_dim)
+    c_dim: 128                     # Same as encoder_output_dim (for compatibility)
+    lmax: 2                        # Max degree of spherical harmonics (2 = up to l=2)
+    mmax: 2                        # Max order (usually same as lmax)
+    max_neighbors: [16, 16, 16, 16, 128]   # KNN neighbors at each scale (5 layers, reference)
+    max_radius: [3, 3, 3, 3, 3]   # Graph radius at each scale (reference: all 3)
+    pool_ratio: [0.5, 0.5, 0.5, 0.5]    # FPS pooling ratio (4 ratios, last is adaptive)
+    sphere_channels: [16, 32, 64, 128, 256]    # Channels at each scale (5 layers, reference)
+    attn_hidden_channels: [16, 32, 64, 128, 256]  # (5 layers, reference)
+    attn_alpha_channels: [4, 8, 16, 32, 64]  # (5 layers, reference)
+    attn_value_channels: [2, 4, 8, 16, 32]  # (5 layers, reference)
+    ffn_hidden_channels: [32, 64, 128, 256, 512]  # (5 layers, reference)
+    edge_channels: [8, 16, 32, 64, 128]  # (5 layers, reference)
+    num_distance_basis: [128, 128, 128, 128, 128]  # (5 layers, all 128, reference)
     num_heads: 4
-    v_grid_resolution:
+    v_grid_resolution: 
     d_grid_resolution:
-    grid_resolution: 8             # Reduced from 12 (cuts S2 grid FFT cost)
-    pool_method: "fpsknn"
+    grid_resolution: 12            # Alias for v_grid_resolution (for compatibility, used as default)
+    pool_method: "fpsknn"          # Pooling method: "fps" or "fpsknn"
     deterministic: false
     alpha_drop: 0.1
     drop_path_rate: 0.0
     proj_drop: 0.1
-
-  # Diffusion config (SDTU)
-  # down_dims must be a single element when pred_horizon=1:
-  # with N elements, N-1 stages halve the time axis, requiring pred_horizon >= 2^(N-1).
-  # Single element → 0 halving stages → any pred_horizon including 1.
+  
+  # Diffusion config (SDTU) - following reference
   diffusion:
-    diffusion_step_embed_dim: 64   # Reduced to match smaller c_dim
-    down_dims: [64]                # Single element: no temporal downsampling
-    kernel_size: 5
-    FiLM_type: 'SFiLM'
-
+    diffusion_step_embed_dim: 128
+    down_dims: [64, 128, 256]      # U-net channel dimensions
+    kernel_size: 5                 # Kernel size 
+    FiLM_type: 'SFiLM'             # Spherical FiLM (from paper Eq. 6)
+    
   # Language encoder (for skill/task text conditioning)
   language_encoder_cfg:
     network_name: MLPEncoder
     input_size: 768               # BERT embedding size
-    hidden_size: 64               # Must match encoder c_dim
+    hidden_size: 128              # Should match encoder c_dim
     num_layers: 1
   
-  # Inference steps: DDIM re-spaces num_train_timesteps=100 into this many steps.
-  # No retraining needed — DDIM reuses DDPM epsilon-prediction weights.
-  num_diffusion_iters: 15
-
-  # Noise scheduler (DDIM for fast inference; trained with DDPM but weights are compatible)
+  # Noise scheduler
   noise_scheduler:
-    _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
+    _target_: diffusers.schedulers.DDPMScheduler
     num_train_timesteps: 100
     beta_start: 0.0001
     beta_end: 0.02
     beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small
     clip_sample: true
     prediction_type: epsilon
 
@@ -109,12 +98,12 @@ data:
     num_points: 128               # Number of points in point cloud
     num_workers: 4
     
-    # uniskills: ['grasp', 'place']  # Skills to extract from data
-    uniskills: ['grasp']
-    dataset_type: 'real_aloha_traj'  # Use real ALOHA dataset
+    # # uniskills: ['grasp', 'place']  # Skills to extract from data
+    # uniskills: ['grasp']
+    # dataset_type: 'real_aloha_traj'  # Use real ALOHA dataset
     
-    # uniskills: ['bimanual']
-    # dataset_type: 'real_aloha_biop_jpose'
+    uniskills: ['bimanual']
+    dataset_type: 'real_aloha_biop_jpose'
     
     is_obj_centric: true
     is_add_bottom: true

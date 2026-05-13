@@ -36,6 +36,12 @@ from equibot.policies.vision.equiformer_v2.connectivity import (
 )
 
 
+@torch._dynamo.disable
+def _distance_expansion_eager(distance_expansion: nn.Module, edge_length: torch.Tensor) -> torch.Tensor:
+    """Execute distance expansion in eager mode to avoid TorchDynamo ScriptFunction guard issues."""
+    return distance_expansion(edge_length)
+
+
 class SDPEncoder(nn.Module):
     """
     SDP Encoder for object-centric trajectory prediction.
@@ -242,7 +248,7 @@ class SDPEncoder(nn.Module):
         self.apply(self._uniform_init_rad_func_linear_weights)
         
         print(f"SDPEncoder initialized with {self.num_params} parameters, lmax={lmax}")
-    
+
     def forward(self, pcl, target_norm=1.0, language_emb=None):
         """
         Forward pass for object-centric point cloud encoding.
@@ -353,7 +359,7 @@ class SDPEncoder(nn.Module):
                     offset_res = offset_res + int((self.lmax_list[i] + 1) ** 2)
             
             # Distance expansion
-            edge_attr = block['distance_expansion'](edge_length)
+            edge_attr = _distance_expansion_eager(block['distance_expansion'], edge_length)
             
             # Create destination embedding
             node_dst = SO3_Embedding(
