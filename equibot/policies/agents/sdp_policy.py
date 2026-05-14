@@ -463,7 +463,14 @@ class SDPPolicy(nn.Module):
         return eef_z, gripper
     
     # ==================== Prediction ====================
-    def pred_unimanual_traj(self, skill_name_batch, agent_obs, gt_batch=None, task_name_batch=None):
+    def pred_unimanual_traj(
+        self,
+        skill_name_batch,
+        agent_obs,
+        gt_batch=None,
+        task_name_batch=None,
+        seed=None,
+    ):
         """
         Predict object-centric trajectory using SDP.
         
@@ -518,9 +525,15 @@ class SDPPolicy(nn.Module):
         # - For 3vec: input_dim = 10 // 3 = 3, so sample shape is (B, T, 10) but treated as 3 vectors + 1 scalar
         # - For 4pts: input_dim = 13 // 3 = 4, so sample shape is (B, T, 13) but treated as 4 vectors + 1 scalar
         initial_noise_scale = 1.0
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device=torch.device(self.device))
+            generator.manual_seed(seed)
+
         noisy_sample = torch.randn(
             (batch_size, self.pred_horizon, self.action_dim),
-            device=self.device
+            device=self.device,
+            generator=generator,
         ) * initial_noise_scale
         
         # Denoising loop
@@ -671,4 +684,3 @@ class SDPPolicy(nn.Module):
         
         denoise_history = []
         return action_dict_all, eval_metrics_all, denoise_history
-

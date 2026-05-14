@@ -58,16 +58,18 @@ class IrrepConv1dBlock(nn.Module):
     def forward(self, x):
         # x in shape (B, (C, irrep), n_pts)
         assert x.dim() == 3
+        bsz = x.shape[0]
+        npts = x.shape[-1]
         # h = nn.functional.conv1d(x, self.weight, self.bias, padding=self.padding)
         l_start, l_end = 0, 0
         h = []
-        x = einops.rearrange(x, 'b (c i) n -> b c i n', i=self.d_irrep)
+        x = x.reshape(bsz, -1, self.d_irrep, npts)
         for l in range(self.max_lmax + 1):
             l_order = 2 * l + 1
             l_end += l_order
-            x_l = einops.rearrange(x[:, :, l_start:l_end, :], 'b c i n -> (b i) c n')
+            x_l = x[:, :, l_start:l_end, :].permute(0, 2, 1, 3).reshape(bsz * l_order, -1, npts)
             h_l = nn.functional.conv1d(x_l, self.weight[l, :, :, :], padding=self.padding)
-            h_l = einops.rearrange(h_l, '(b i) c n -> (b n) i c', i=l_order)
+            h_l = h_l.reshape(bsz, l_order, self.out_channels, npts).permute(0, 3, 1, 2).reshape(bsz * npts, l_order, self.out_channels)
             if l == 0:
                 h_l = h_l + self.bias
             h.append(h_l)
@@ -77,7 +79,7 @@ class IrrepConv1dBlock(nn.Module):
         if self.activation:
             gating_scalars = self.gating_linear(h.narrow(1, 0, 1))  # This is different from Equiformer
             h = self.s2_act(gating_scalars, h, self.SO3_grid)
-        h = einops.rearrange(h, '(b n) i c -> b (c i) n', n=x.shape[-1])
+        h = h.reshape(bsz, npts, self.d_irrep, self.out_channels).permute(0, 3, 2, 1).reshape(bsz, self.out_channels * self.d_irrep, npts)
         if self.scale != 1:
             h = nn.functional.interpolate(h, scale_factor=self.scale)
         return h
