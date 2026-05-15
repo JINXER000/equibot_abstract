@@ -360,7 +360,12 @@ class DMGPolicy(nn.Module):
 
         return action_dict, eval_metrics
     
-    def pred_unimanual_traj(self, skill_name, agent_obs, gt_batch = None, task_name_batch = None):
+    def pred_unimanual_traj(self, skill_name, agent_obs, gt_batch = None, task_name_batch = None, seed=None):
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
         pc_data = agent_obs[f'{skill_name}:pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
 
@@ -371,10 +376,16 @@ class DMGPolicy(nn.Module):
         ##### start denoising #####
 
         initial_noise_scale = 1
-        noisy_eef_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims[skill_name], 3)).to(self.device)\
-        * initial_noise_scale
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device='cpu')
+            generator.manual_seed(seed)
 
-        noisy_gripper = torch.randn((batch_size, self.pred_horizon, 1)).to(self.device) * initial_noise_scale
+        noisy_eef_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims[skill_name], 3),
+                                    generator=generator).to(self.device) * initial_noise_scale
+
+        noisy_gripper = torch.randn((batch_size, self.pred_horizon, 1),
+                                     generator=generator).to(self.device) * initial_noise_scale
 
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
 
@@ -389,14 +400,14 @@ class DMGPolicy(nn.Module):
             policy_key = 'unitraj_noise_pred_net'
             skill_scalar_id = self.get_skill_name_encoding(skill_name, batch_size)
             
-        for k in self.noise_scheduler.timesteps:
+        for i, k in enumerate(self.noise_scheduler.timesteps):
 
             new_action = {f"{skill_name}:eefpos": None, f"{skill_name}:gripper": None }
 
             vec_noise_pred, gripper_noise_pred = ema_nets[policy_key](\
                 sample=curr_action[f"{skill_name}:eefpos"],
                 timestep = k,
-                scalar_sample = curr_action[f"{skill_name}:gripper"], 
+                scalar_sample = curr_action[f"{skill_name}:gripper"],
                 cond= obs_vec,
                 scalar_cond=skill_scalar_id,
             )
@@ -419,7 +430,7 @@ class DMGPolicy(nn.Module):
         ## recover gripper
         gripper_batch = self.recover_gripper(curr_action[f"{skill_name}:gripper"], key=f"{skill_name}:gripper")
 
-        ## update action dict 
+        ## update action dict
         action_dict = {}
         eval_metrics = {}
         if batch_size ==1:

@@ -3,7 +3,7 @@ import sys
 import torch
 import hydra
 import numpy as np
-
+sys.path.append('.')
 from equibot.policies.utils.misc import get_agent, get_agent_from_ckpt, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, decentralize_cond_pc, decentralize_grasp, centralize_downsample, combined_pc_instances_and_offset
 
 
@@ -165,9 +165,37 @@ class pddl_wrapper(object):
             action_w = action_c
         return action_w
 
+    def save_objcentric_input(self, obs_key, agent_obs, skill_name, task_name, seed, save_path):
+        """Pickle the args of gen_objcentric_traj for offline replay/debugging."""
+        import pickle
+        payload = {
+            "obs_key": obs_key,
+            "agent_obs": {
+                k: (v.detach().cpu() if torch.is_tensor(v) else v)
+                for k, v in agent_obs.items()
+            },
+            "skill_name": skill_name,
+            "task_name": task_name,
+            "seed": seed,
+            "ckpt_path": getattr(self.cfg.training, "ckpt", None),
+            "dataset_path": self.cfg.data.dataset.path,
+            "downsample_method": self.cfg.data.dataset.downsample_method,
+            "is_obj_centric": self.cfg.data.dataset.is_obj_centric,
+        }
+        save_dir = os.path.dirname(save_path)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+        with open(save_path, "wb") as f:
+            pickle.dump(payload, f)
+        print(f"[save_objcentric_input] wrote {save_path}")
+
     def gen_objcentric_traj(
         self, obs_key, agent_obs, skill_name=None, task_name=None, seed=None
     ):
+        _dump_path = os.environ.get("EQUIBOT_DUMP_INPUT")
+        if _dump_path and not getattr(self, "_dumped_once", False):
+            self.save_objcentric_input(obs_key, agent_obs, skill_name, task_name, seed, _dump_path)
+            self._dumped_once = True
 
         import re
         def revise_key(action_output, key_mapping):

@@ -378,7 +378,12 @@ class EquiSkillPolicy(nn.Module):
 
         return obs_vec
 
-    def pred_unimanual_traj(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None):
+    def pred_unimanual_traj(self, skill_name_batch, agent_obs, gt_batch = None, task_name_batch = None, seed=None):
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
         pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
         batch_size =  pc_data.shape[0]
 
@@ -390,31 +395,36 @@ class EquiSkillPolicy(nn.Module):
 
         ##### start denoising #####
         initial_noise_scale = 1
-        noisy_eef_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims, 3)).to(self.device)\
-        * initial_noise_scale
+        cpu_gen = None
+        if seed is not None:
+            cpu_gen = torch.Generator()
+            cpu_gen.manual_seed(seed)
+        noisy_eef_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims, 3),
+                                    generator=cpu_gen).to(self.device) * initial_noise_scale
 
-        noisy_gripper = torch.randn((batch_size, self.pred_horizon, 1)).to(self.device) * initial_noise_scale
+        noisy_gripper = torch.randn((batch_size, self.pred_horizon, 1),
+                                    generator=cpu_gen).to(self.device) * initial_noise_scale
 
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
 
-        curr_action = { "eefpos": noisy_eef_xt, 
+        curr_action = { "eefpos": noisy_eef_xt,
             "gripper": noisy_gripper}
-        
+
          ####### inverse diffusion step
         policy_key = 'unitraj_noise_pred_net'
         task_skill_condition = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
-        
+
         # obs_vec = equiv_feat
         # task_skill_condition = torch.cat([inv_feat, task_skill_condition], dim=-1)
 
-        for k in self.noise_scheduler.timesteps:
+        for i, k in enumerate(self.noise_scheduler.timesteps):
 
             new_action = { "eefpos": None, "gripper": None }
 
             vec_noise_pred, gripper_noise_pred = ema_nets[policy_key](\
                 sample=curr_action["eefpos"],
                 timestep = k,
-                scalar_sample = curr_action["gripper"], 
+                scalar_sample = curr_action["gripper"],
                 cond= obs_vec,
                 scalar_cond=task_skill_condition,
             )
@@ -437,7 +447,7 @@ class EquiSkillPolicy(nn.Module):
         ## recover gripper
         gripper_batch = self.recover_gripper(curr_action["gripper"], key="gripper")
 
-        ## update action dict 
+        ## update action dict
         action_dict = {}
         eval_metrics = {}
         if batch_size ==1:
@@ -697,11 +707,16 @@ class BiopSkillPolicy(nn.Module):
         task_name_batch=None,
         seed=None,
     ):
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
         if isinstance(skill_name_batch, str):
             batch_size = 1
         else:
             batch_size = len(skill_name_batch)
-            
+
         ema_nets = self.ema.averaged_model
 
         initial_noise_scale = 1
@@ -724,8 +739,8 @@ class BiopSkillPolicy(nn.Module):
         # emb_batch = self.get_all_embs(skill_name_batch, batch_size, task_name_batch)
 
         ####### inverse diffusion step
-        for k in self.noise_scheduler.timesteps:
-            biop_key = 'jpose'
+        biop_key = 'jpose'
+        for i, k in enumerate(self.noise_scheduler.timesteps):
             new_action = {biop_key: None}
 
             scalar_noise_pred = ema_nets['jpose_noise_pred_net'](\
@@ -739,7 +754,7 @@ class BiopSkillPolicy(nn.Module):
             curr_action = new_action
 
         unnormed_joint = self.recover_jpose(curr_action[biop_key], key=biop_key)
-        unnormed_joint = torch.tensor(unnormed_joint).to(self.device)   
+        unnormed_joint = torch.tensor(unnormed_joint).to(self.device)
 
         action_dict = {}
         eval_metrics = {}
