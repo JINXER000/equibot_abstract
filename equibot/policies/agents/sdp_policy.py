@@ -492,6 +492,11 @@ class SDPPolicy(nn.Module):
                 torch.cuda.synchronize()
             return time.perf_counter()
 
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
         t0 = _sync_time()
 
         pc_data = agent_obs['pc'].repeat(1, self.obs_horizon, 1, 1)
@@ -557,7 +562,6 @@ class SDPPolicy(nn.Module):
                 timestep=k,
                 sample=curr_sample
             ).prev_sample
-
         t_denoise = _sync_time()
 
         # Split back into eef and gripper
