@@ -1,0 +1,137 @@
+# SDP training on DexMimicGen two_arm_threading (grasp skills, RGB point cloud)
+# Based on sdp_real_aloha.yaml with per_skill_dmg_traj dataset loader
+
+defaults:
+  - base
+
+use_wandb: true
+wandb_note: "SDP grasp+color on dmg"
+
+training:
+  eval_interval: 50
+  num_epochs: 2000
+
+env:
+  env_class: 'sdp_dmg'
+  num_eef: 2
+  dof: 7
+  max_episode_length: 50
+
+agent:
+  agent_name: sdp
+
+model:
+  obs_mode: 'pc'
+  ac_mode: 'traj'
+  use_torch_compile: false
+  
+  obs_horizon: 1
+  pred_horizon: 8
+  ac_horizon: 8
+  
+  canonicalize: false
+  obs_as_global_cond: true
+  condition_type: "film"
+  denoise_nn: "irrep"
+  norm: false
+  rot_aug: [5, 5, 180]
+  rad_aug: 0
+  pcd_noise: 0
+  n_groups: 8
+  
+  encoder:
+    encoder_output_dim: 128
+    c_dim: 128
+    lmax: 2
+    mmax: 2
+    max_neighbors: [16, 16, 16, 16, 128]
+    max_radius: [3, 3, 3, 3, 3]
+    pool_ratio: [0.5, 0.5, 0.5, 0.5]
+    sphere_channels: [16, 32, 64, 128, 256]
+    attn_hidden_channels: [16, 32, 64, 128, 256]
+    attn_alpha_channels: [4, 8, 16, 32, 64]
+    attn_value_channels: [2, 4, 8, 16, 32]
+    ffn_hidden_channels: [32, 64, 128, 256, 512]
+    edge_channels: [8, 16, 32, 64, 128]
+    num_distance_basis: [128, 128, 128, 128, 128]
+    num_heads: 4
+    v_grid_resolution: 
+    d_grid_resolution:
+    grid_resolution: 12
+    pool_method: "fpsknn"
+    deterministic: false
+    alpha_drop: 0.1
+    drop_path_rate: 0.0
+    proj_drop: 0.1
+  
+  diffusion:
+    diffusion_step_embed_dim: 128
+    down_dims: [100, 200, 400]
+    kernel_size: 5
+    FiLM_type: 'SFiLM'
+    
+  language_encoder_cfg:
+    network_name: MLPEncoder
+    input_size: 768
+    hidden_size: 128
+    num_layers: 1
+  
+  unconditional_mlp_cfg:
+    architecture: "deeper"
+    custom_encoder_layers: [256, 256]
+    custom_time_mixer_layers: [512, 256]
+    custom_decoder_layers: [256, 256]
+
+  noise_scheduler:
+    _target_: diffusers.schedulers.DDIMScheduler
+    num_train_timesteps: 20
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    clip_sample: true
+    prediction_type: epsilon
+    set_alpha_to_one: false
+    steps_offset: 0
+    
+data:
+  dataset:
+    path: null
+    task_name: null
+    num_points: 128
+    num_workers: 4
+    
+    uniskills: ['grasp']
+    dataset_type: 'per_skill_dmg_traj'
+    
+    is_obj_centric: true
+    is_add_bottom: true
+    downsample_method: 'fps'
+    rot_aug: true
+    shuffle_pc: true
+    pcd_noise: 0.002               # Gaussian std (meters) on xyz in centered frame; 0 = disabled
+    aug_traj_nums: 8
+    n_use: 50
+    
+    embedding_cache_dir: "./data/bert"
+    
+    eef_representation: "3vec"
+    normalization_method: "all"
+    choose_id_method: "normal"
+    
+    original_gripper_pcd: [[0.10, 0.01, 0], 
+                            [0.03, -0.04, 0],
+                            [0.02, 0.05, 0],
+                            [0, 0, 0]]
+
+    use_pc_color: true
+
+shape_meta: &shape_meta
+  obs:
+    point_cloud:
+      shape: [128, 6]
+      type: point_cloud
+  action: 
+    shape: [13]
+
+eval:
+  history_bid: 10

@@ -10,7 +10,7 @@ import torch
 from torch import nn
 
 from equibot.policies.utils.norm import Normalizer
-from equibot.policies.utils.misc import to_torch, rotate_observation, to_tensor, EQUIBOT_PATH
+from equibot.policies.utils.misc import to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, matched_actions_from_json
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 from equibot.policies.agents.sdp_policy import SDPPolicy
 from equibot.policies.agents.per_skill_policy import BiopSkillPolicy
@@ -356,3 +356,9 @@ class SDPAgent:
         
         return denoise_history, eval_metrics
 
+    def get_skillwise_sgs_from_statistics(self, skill_name):
+        action_sgs_json = self.actor.statistics['matched_action_sgs'][skill_name]
+        import json
+        action_sgs = json.loads(action_sgs_json)
+        skill_info_nx = matched_actions_from_json(action_sgs)
+        return skill_info_nx

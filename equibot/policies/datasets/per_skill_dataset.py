@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 from equibot.policies.vision.vdgcnn_encoder import VecDGCNN_att_frozen
 from equibot.policies.datasets.effpose_estimation import solve_pairwise_registration, debug_and_save
-from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, get_skill_names, compose_transformation, centralize_downsample, centralize_grasp, choose_ids, choose_ids_rdp, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg, convert_trans_to_vec, convert_trans_to_4pts, str_to_ascii_tensor, combined_pc_instances_and_offset, get_obj_visibility
+from equibot.policies.utils.misc import rotate_around_z, rotate_observation, rotate_vec_grasp, to_tensor, to_np, EQUIBOT_PATH, get_skill_names, compose_transformation, centralize_downsample, add_pcd_noise, centralize_grasp, choose_ids, choose_ids_rdp, rotate_dataslice, get_rbt_states, get_rbt_actions, get_pc_instances, get_sg, convert_trans_to_vec, convert_trans_to_4pts, str_to_ascii_tensor, combined_pc_instances_and_offset, get_obj_visibility
 
 from equibot.policies.utils.lan_utils import get_embs_without_saving, save_embs
 
@@ -78,6 +78,7 @@ class PerSkillDataset(Dataset):
         self.is_obj_centric = cfg.is_obj_centric
         self.is_add_bottom = cfg.is_add_bottom
         self.downsample_method = cfg.downsample_method
+        self.pcd_noise = cfg.get('pcd_noise', 0)
 
         self.num_eef = cfg.num_eef
         self.dof = cfg.dof
@@ -585,6 +586,8 @@ class PerSkillDataset(Dataset):
             method=self.downsample_method, 
             debug_visualize=False
         )
+        if self.pcd_noise > 0:
+            obj_pc_n = add_pcd_noise(obj_pc_n, self.pcd_noise)
         
         # Reshape to (1, num_points, channels)
         obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32)

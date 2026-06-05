@@ -106,6 +106,7 @@ data:
     aug_traj_nums: 1
     rot_aug: false
     shuffle_pc: true
+    pcd_noise: 0.002               # Gaussian std (meters) on xyz in centered frame; 0 = disabled
     
     embedding_cache_dir: "./data/bert"
     task_suite_name: "libero_spatial"

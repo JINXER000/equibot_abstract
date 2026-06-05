@@ -9,7 +9,8 @@ from torch.utils.data import Dataset
 from equibot.policies.utils.misc import (
     EQUIBOT_PATH, 
     compose_transformation, 
-    centralize_downsample, 
+    centralize_downsample,
+    add_pcd_noise,
     centralize_grasp, 
     choose_ids, 
     choose_ids_rdp, 
@@ -62,6 +63,7 @@ class RealAlohaDataset(Dataset):
         self.is_obj_centric = cfg.is_obj_centric
         self.is_add_bottom = cfg.is_add_bottom if hasattr(cfg, 'is_add_bottom') else False
         self.downsample_method = cfg.downsample_method if hasattr(cfg, 'downsample_method') else 'fps'
+        self.pcd_noise = cfg.get('pcd_noise', 0)
 
         self.num_eef = cfg.num_eef if hasattr(cfg, 'num_eef') else 1
         self.dof = cfg.dof if hasattr(cfg, 'dof') else 7
@@ -367,6 +369,8 @@ class RealAlohaDataset(Dataset):
             method=self.downsample_method,
             debug_visualize=False
         )
+        if self.pcd_noise > 0:
+            obj_pc_n = add_pcd_noise(obj_pc_n, self.pcd_noise)
         obj_pc_tensor = torch.tensor(obj_pc_n).unsqueeze(0).to(torch.float32)
         
         # Sample trajectory indices based on gripper action values

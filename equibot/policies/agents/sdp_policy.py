@@ -270,6 +270,7 @@ class SDPPolicy(nn.Module):
         # Handle both single string and list of strings
         # name_batch can be: "skill_name" (string) or ["skill_name"] (list with one element)
         if isinstance(name_batch, str):
+            # Single string case
             names = [next(iter(mapping_dict))] if len(mapping_dict) == 1 else [name_batch] # if only one key in mapping_dict, use it as the key
         else:
             # List case

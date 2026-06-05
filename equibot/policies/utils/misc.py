@@ -822,6 +822,14 @@ def centralize_downsample(pc, pc_shape, obj_centric = True, add_bottom = False, 
         pc_offset = np.zeros(3)
     return input_pc, pc_offset
 
+def add_pcd_noise(pc, std):
+    """Add Gaussian noise to xyz channels. std=0 is a no-op."""
+    if std <= 0:
+        return pc
+    pc = np.asarray(pc).copy()
+    pc[:, :3] += np.random.randn(pc.shape[0], 3) * std
+    return pc
+
 def centralize_grasp( grasp, pc_offset):
     grasp[:3, 3] -= pc_offset
     return grasp
@@ -1265,3 +1273,22 @@ def vis_metric_imgs(metrics, save_name = "eval_debug.png"):
 
     plt.tight_layout()
     plt.savefig(save_name)
+
+
+def _is_node_link(obj: dict) -> bool:
+    # nx.node_link_data produces keys: 'directed','multigraph','graph','nodes','links'
+    return isinstance(obj, dict) and 'nodes' in obj and ('links' in obj or 'edges' in obj)
+
+
+def _from_serializable(obj):
+    if isinstance(obj, dict):
+        if _is_node_link(obj):
+            return nx.node_link_graph(obj)
+        return {k: _from_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_from_serializable(x) for x in obj]
+    return obj
+
+
+def matched_actions_from_json(action_sgs):
+    return _from_serializable(action_sgs)
