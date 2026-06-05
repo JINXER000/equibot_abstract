@@ -331,8 +331,8 @@ class RealAlohaDataset(Dataset):
         `per_skill_dataset.py` but uses joint poses and holding indices directly,
         without relying on scene graphs or robot state dictionaries.
         """
-        valid_ids = range(len(joint_poses)//6, len(joint_poses) // 3)
-        # valid_ids = range(len(joint_poses)//6*5, len(joint_poses))
+        # valid_ids = range(len(joint_poses)//6, len(joint_poses) // 3)
+        valid_ids = range(len(joint_poses)//6*4, len(joint_poses//6*5))
 
         # Randomly select one holding index and use the corresponding joint pose
         qtraj_index = np.random.choice(valid_ids)
