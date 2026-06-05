@@ -81,6 +81,14 @@ model:
     hidden_size: 128              # Should match encoder c_dim
     num_layers: 1
   
+  unconditional_mlp_cfg:
+    # Architecture type: "small", "deeper", "wider", or "custom"
+    architecture: "deeper"
+    # For custom architecture, specify individual layer sizes
+    custom_encoder_layers: [256, 256]  # Only used if architecture is "custom"
+    custom_time_mixer_layers: [512, 256]  # Only used if architecture is "custom"
+    custom_decoder_layers: [256, 256]  # Only used if architecture is "custom"
+    
   # Noise scheduler
   # noise_scheduler:
   #   _target_: diffusers.schedulers.DDPMScheduler
