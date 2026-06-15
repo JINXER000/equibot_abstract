@@ -87,6 +87,9 @@ class PerSkillDataset(Dataset):
         self.eef_representation = cfg.eef_representation
         self.original_gripper_pcd = np.array(cfg.original_gripper_pcd)
 
+        ## also predict per-frame binary in-hand status alongside gripper
+        self.predict_in_hand = cfg.get('predict_in_hand', False)
+
         self.statistics = {}
         # self.skill_names = None
         # self.task_names = None
@@ -679,6 +682,20 @@ class PerSkillDataset(Dataset):
         ## output
         data_slice['eefpos'] = normalized_eef_pos_tensor
         data_slice['gripper'] = torch.tensor(gripper_list).to(torch.float32).reshape(traj_len, 1, 1)
+
+        ## per-frame binary in-hand status, aligned to the same chosen_ids as gripper.
+        ## grasp_event_boundary is the in-hand onset frame; the object is in hand from that
+        ## frame on. The onset may legitimately fall just past extended_ids[-1] (the ~5-frame
+        ## lag w.r.t. subtask_term_signal), in which case all chosen_ids precede it and the
+        ## binary array is all-zeros (object not yet in hand within this window). chosen_ids is
+        ## always drawn from extended_ids, so the comparison stays scoped to that window.
+        if self.predict_in_hand:
+            if 'grasp_event_boundary' not in skill_info or skill_info['grasp_event_boundary'][()] is None:
+                raise ValueError(f"grasp_event_boundary missing/None for {skill_name} ({task_name})")
+            geb = skill_info['grasp_event_boundary'][()]
+            in_hand_list = (np.asarray(chosen_ids) >= geb).astype(np.float32)
+            data_slice['in_hand'] = torch.tensor(in_hand_list).to(torch.float32).reshape(traj_len, 1, 1)
+
         data_slice['skill_name'] = str_to_ascii_tensor(skill_name)
         data_slice['task_name'] = str_to_ascii_tensor(task_name)
         ## note: if rotation, then the min xy and max xy will be same. So we need mean instead of min/max
@@ -735,6 +752,12 @@ class PerSkillDataset(Dataset):
         gripper_arr = np.concatenate([data['gripper'] for data in data_list], axis=0)
         gripper_stats = to_torch_stats(gripper_arr.reshape(-1, gripper_arr.shape[-1]))
         normalizer['gripper'] = get_torch_range_symmetric_normalizer_from_stat(gripper_stats)
+
+        ## normalize in-hand status separately (binary {0,1} -> ~{-1,1}), if present
+        if 'in_hand' in data_list[0]:
+            in_hand_arr = np.concatenate([data['in_hand'] for data in data_list], axis=0)
+            in_hand_stats = to_torch_stats(in_hand_arr.reshape(-1, in_hand_arr.shape[-1]))
+            normalizer['in_hand'] = get_torch_range_symmetric_normalizer_from_stat(in_hand_stats)
 
         ## set_scale. 
         # For scale computation, use only xyz (first 3 channels) even if color is present
