@@ -132,6 +132,14 @@ class PerSkillDataset(Dataset):
             ## dexmimicgen
             self.data = self.process_per_skill_dmg_traj(cfg, **kwargs)
             self.normalizer = self.get_normalizer_and_statistics(self.data)
+        elif self.dataset_type == 'per_skill_mj_traj':
+            ## mujoco peg-in-hole grasp candidates
+            self.data = self.process_per_skill_mj_traj(cfg, **kwargs)
+            self.normalizer = self.get_normalizer_and_statistics(self.data)
+        elif self.dataset_type == 'per_skill_mj_biop_jpose':
+            ## mujoco peg-in-hole bimanual insertion keypose
+            self.data = self.process_per_skill_mj_biop(cfg, **kwargs)
+            self.normalizer = self.get_normalizer_and_statistics(self.data, mode='bimanual')
         elif self.dataset_type == 'per_skill_biop_jpose':
             self.data = self.process_per_biop(cfg, **kwargs)
             self.normalizer = self.get_normalizer_and_statistics(self.data, mode = 'jpose')
@@ -490,6 +498,146 @@ class PerSkillDataset(Dataset):
         self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
         self.statistics['matched_action_sgs'] = matched_action_sgs
         return data_list
+
+
+    def _finalize_mj_perskill(self, data_list, skill_names, task_name, cfg):
+        """Cache skill/task BERT embeddings into statistics and persist the processed
+        dataset. Shared tail for the mj per-skill processors."""
+        cache_dir = os.path.join(EQUIBOT_PATH, cfg.embedding_cache_dir)
+        skill_embs_all_tasks = get_embs_without_saving(skill_names, cache_dir=cache_dir)
+        task_emb_dict = get_embs_without_saving([task_name], cache_dir=cache_dir)
+        save_embs(skill_embs_all_tasks, cache_dir=cache_dir,
+                  cache_name=f'{cfg.dataset_type}_skill_name_to_emb.npy')
+        self.statistics['skill_embs_all_tasks'] = skill_embs_all_tasks
+        self.statistics['task_emb_dict'] = task_emb_dict
+
+        os.makedirs(os.path.join(self.root, 'processed'), exist_ok=True)
+        torch.save((data_list, None), self.processed_file_path)
+        return data_list
+
+
+    def process_per_skill_mj_traj(self, cfg, **kwargs):
+        """Build per-skill *grasp* slices from the MuJoCo peg-in-hole diffgen dumps.
+
+        Each raw episode (`data/mj_peg_hole/raw/episode_*_diffgen.hdf5`) stores a
+        *set* of candidate grasp poses per object (`peg_grasps` / `socket_grasps`),
+        not a demonstration trajectory. We turn that set into a fixed-length
+        pseudo-trajectory of end-effector poses so the grasp policy receives the
+        same `(pc -> eefpos/gripper)` contract as the demo-based per-skill datasets.
+
+        Each object gets its OWN text-conditioned skill name `grasp_{obj}`
+        (`grasp_socket`, `grasp_peg`). The mj task runs on the ALOHA robot, whose
+        PDDL grasp skills are `{left|right}_grasp_{obj}`; `skill_naming.policy_skill_name`
+        strips the `left_/right_` arm prefix before querying the policy, so the embedding
+        key the policy is looked up by is the bare `grasp_{obj}`. The distinct names give
+        the language encoder a discriminative condition for peg vs. socket (in addition to
+        the conditioning point cloud).
+        """
+        print('Processing mj per-skill (grasp) hdf5 dataset...')
+        data_list = []
+        traj_len = cfg.pred_horizon
+        aug_traj_nums = cfg.aug_traj_nums
+        task_name = 'mj_insertion'
+
+        group_to_obj = {'peg_grasps': 'peg', 'socket_grasps': 'socket'}
+        involved_skills = set()
+
+        for file_name in self.raw_file_names:
+            if 'hdf5' not in file_name:
+                continue
+
+            hdf5_path = os.path.join(self.root, 'raw', file_name)
+            with h5py.File(hdf5_path, 'r') as f:
+                for grasp_group, obj_name in group_to_obj.items():
+                    grp = f[grasp_group]
+                    obj_points = grp['obj_points'][()]
+                    all_grasp_poses = grp['grasp_poses'][()]
+                    all_grippers = grp['grasp_actions'][()]
+
+                    ## TAMP queries the policy with policy_skill_name(sk), which strips the
+                    ## left_/right_ arm prefix from the ALOHA PDDL skill `{arm}_grasp_{obj}`,
+                    ## leaving `grasp_{obj}` -> that is the embedding key we train under.
+                    skill_name = f'grasp_{obj_name}'
+                    involved_skills.add(skill_name)
+
+                    assert len(all_grasp_poses) == len(all_grippers), \
+                        f'{file_name}/{grasp_group}: grasp/gripper count mismatch'
+                    ## endpoints (first/last candidate) are always kept, so we need at
+                    ## least `traj_len` candidates to draw the interior waypoints from.
+                    if len(all_grasp_poses) < traj_len:
+                        raise ValueError(
+                            f'{file_name}/{grasp_group} has {len(all_grasp_poses)} grasp '
+                            f'candidates, fewer than pred_horizon={traj_len}')
+
+                    for _ in range(aug_traj_nums):
+                        interior_ids = np.random.choice(
+                            np.arange(1, len(all_grasp_poses) - 1),
+                            traj_len - 2, replace=False)
+                        traj_ids = [0] + sorted(interior_ids) + [len(all_grasp_poses) - 1]
+
+                        ## fresh downsample per sample gives point-cloud diversity and a
+                        ## matching offset that keeps the grasp poses object-centric.
+                        obj_pc_tensor, obj_offset = self.get_obj_pc_tensor(obj_points, cfg.num_points)
+
+                        ## copy before centralizing: centralize_grasp mutates in place.
+                        grasp_poses = all_grasp_poses[traj_ids].copy()
+                        centered_poses = list(map(centralize_grasp, grasp_poses, [obj_offset] * traj_len))
+
+                        data_slice = {
+                            'pc': obj_pc_tensor,
+                            'in_hand_pc': get_random_in_hand_pc(obj_pc_tensor),
+                            'eefpos': torch.tensor(np.stack(centered_poses)).to(torch.float32).reshape(traj_len, 4, 4),
+                            'gripper': torch.tensor(all_grippers[traj_ids]).to(torch.float32).reshape(traj_len, 1, 1),
+                            'skill_name': str_to_ascii_tensor(skill_name),
+                            'task_name': str_to_ascii_tensor(task_name),
+                        }
+                        if cfg.rot_aug:
+                            data_slice = rotate_dataslice(data_slice)
+                        data_list.append(data_slice)
+
+        skill_names = sorted(involved_skills)
+        print(f'processed {len(data_list)} mj grasp slices for skills {skill_names}!')
+        return self._finalize_mj_perskill(data_list, skill_names, task_name, cfg)
+
+
+    def process_per_skill_mj_biop(self, cfg, **kwargs):
+        """Bimanual insertion keypose (biop) slices from mj `pred_joint_vals`.
+
+        The biop policy (`BiopSkillPolicy`) conditions ONLY on the skill+task text
+        embeddings (no point cloud, see `BiopSkillPolicy.forward` -> agent_obs=None)
+        and regresses the 14-dof dual-arm joint keypose. We sample random frames of
+        `pred_joint_vals` exactly like `DualAbsDataset.process_mj_insertion_pred`; the
+        reached keypose is the switch point that triggers ACT for the fine insertion.
+
+        Skill name is `bimanual_0` to match the TAMP two-arm prefix_key (and the
+        scene-graph skill from `symbolic_utils.build_mj_skillwise_sgs`).
+        """
+        print('Processing mj per-skill biop (bimanual keypose) hdf5 dataset...')
+        data_list = []
+        aug_traj_nums = cfg.aug_traj_nums
+        skill_name = 'bimanual_0'
+        task_name = 'mj_insertion'
+
+        for file_name in self.raw_file_names:
+            if 'hdf5' not in file_name:
+                continue
+
+            hdf5_path = os.path.join(self.root, 'raw', file_name)
+            with h5py.File(hdf5_path, 'r') as f:
+                all_joint_data = f['pred_joint_vals'][()]   # (T, 14): [left 7 | right 7]
+                if len(all_joint_data) < 1:
+                    raise ValueError(f'{file_name}: empty pred_joint_vals')
+
+                for _ in range(aug_traj_nums):
+                    idx = np.random.randint(0, len(all_joint_data))
+                    data_list.append({
+                        'jpose': all_joint_data[idx].astype(np.float32),   # (14,)
+                        'skill_name': str_to_ascii_tensor(skill_name),
+                        'task_name': str_to_ascii_tensor(task_name),
+                    })
+
+        print(f'processed {len(data_list)} mj biop keypose slices for skill {skill_name}!')
+        return self._finalize_mj_perskill(data_list, [skill_name], task_name, cfg)
 
 
     def get_bimanual_pcs(self, pre_sg, related_pc_dict, observation_idx, num_points):

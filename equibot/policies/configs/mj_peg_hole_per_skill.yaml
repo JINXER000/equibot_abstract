@@ -1,0 +1,105 @@
+defaults:
+  - base
+
+use_wandb: true
+wandb_note: null
+
+training:
+  eval_interval: 50
+  num_epochs: 2000
+
+env:
+  env_class: 'mj_peg_hole_per_skill'
+  num_eef: 2
+  dof: 7
+  max_episode_length: 50
+
+agent:
+  agent_name: per_skill
+
+model:
+  down_dims: [128, 256, 512]
+### use VDGCNN and transfer from pretrained model
+  hidden_dim: 256
+
+  obs_horizon: 1
+  pred_horizon: 8
+
+  separate_encoder: False
+  separate_policy: False
+
+  encoder:
+    backbone_type: VDGCNN
+    backbone_args:
+      num_layers: 7
+      preload_path: "pretrained/chairs.pt"
+
+  language_encoder_cfg:
+    network_name: MLPEncoder
+    input_size: 768
+    hidden_size: 256
+    num_layers: 1
+
+  unconditional_mlp_cfg:
+    # Architecture type: "small", "deeper", "wider", or "custom"
+    architecture: "custom"
+    # For custom architecture, specify individual layer sizes
+    custom_encoder_layers: [256, 256]
+    custom_time_mixer_layers: [512, 256]
+    custom_decoder_layers: [256, 256]
+
+data:
+  dataset:
+    num_points: 128
+    primitive_kws: ['grasp']
+    dataset_type: 'per_skill_mj_traj'
+
+    is_obj_centric: True
+    is_add_bottom: True
+    downsample_method: 'fps'
+    rot_aug: True
+    # candidate-grasp set -> synthetic trajectory samples per object per episode
+    aug_traj_nums: 32
+
+    embedding_cache_dir: "./data/bert"
+
+    eef_representation: "3vec"
+
+    normalization_method: "all"
+
+    original_gripper_pcd: [[0.10, 0.01, 0],
+                            [0.03, -0.04, 0],
+                            [0.02, 0.05, 0],
+                            [0, 0, 0]]
+
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    agentview_image:
+      shape: [3, 128, 128]
+      type: rgb
+    robot0_eye_in_hand_image:
+      shape: [3, 128, 128]
+      type: rgb
+    robot1_eye_in_hand_image:
+      shape: [3, 128, 128]
+      type: rgb
+    robot0_eef_pos:
+      shape: [3]
+    robot0_eef_quat:
+      shape: [4]
+    robot0_gripper_qpos:
+      shape: [2]
+    robot1_eef_pos:
+      shape: [3]
+    robot1_eef_quat:
+      shape: [4]
+    robot1_gripper_qpos:
+      shape: [2]
+
+  action:
+    shape: [14]
+
+
+eval:
+  history_bid: 10
