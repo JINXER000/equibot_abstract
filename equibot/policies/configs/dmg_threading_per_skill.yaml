@@ -26,7 +26,14 @@ model:
 
   obs_horizon: 1
   pred_horizon: 8
-  
+
+  # Metric-aligned x0 auxiliary loss (optimizes eval metrics directly).
+  # 0 = disabled -> identical to the base eps-MSE training.
+  lambda_pos: 1.0          # weight of position L1 (meters) aux loss
+  lambda_rot: 1.0          # weight of rotation surrogate aux loss
+  rot_loss_type: "chordal" # chordal | cosine (smooth surrogate for geodesic distance)
+  snr_gamma: 5.0           # min-SNR weighting cap; downweights high-noise timesteps
+
   separate_encoder: False
   separate_policy: False
 

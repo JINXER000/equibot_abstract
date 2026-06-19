@@ -63,6 +63,21 @@ The rotation is the 1st and 3rd row of rot mat. See trans2vec() for more detail.
 - in aloha_policy.py, remember to revise self.eef_dim. 
 - revise _init_normalizers() if the input is mixed with scalars and vectors. 
 
+## added auxiliary loss
+Because they do two **different jobs** — one trains the generative process, the other sharpens the final answer. The geodesic/chordal loss can't replace the ε-MSE on rotation. Three first-principles reasons:
+
+### 1. ε-MSE is the actual diffusion objective; the geodesic loss is not
+At inference, the reverse process denoises step-by-step using the predicted noise ε̂. For that to work, the network must learn ε̂ ≈ E[ε|xₜ] **at every noise level t**. The ε-MSE on the rotation channels is what teaches that score field. The geodesic loss says nothing about the per-step denoising direction — it only compares a reconstructed clean rotation. Drop the rotation ε-MSE and the sampler has nothing to integrate for rotation → **generation breaks**, not just gets less precise.
+
+### 2. The geodesic loss is deliberately *off at high t*
+We reconstruct `x0_pred = (xₜ − √(1−ᾱ_t)·ε̂)/√(ᾱ_t)`, and at high t that's garbage (`√ᾱ_t→0`), so the min-SNR weighting suppresses the aux loss there. That means at high noise there'd be **zero rotation supervision** if ε-MSE weren't carrying it. ε-MSE covers all t; the geodesic loss only helps where t is low (which is exactly where final precision is decided).
+
+### 3. Gram-Schmidt is many-to-one → geodesic loss alone under-determines the variable
+The diffusion lives in rot6d (R⁶), but `rotation_6d_to_matrix` is many-to-one: scaling `a1`, or shifting `a2` along `a1`, leaves R unchanged. So the geodesic loss has **zero gradient** along those directions and can't pin the full 6D vector. The forward process adds Gaussian noise to the *full orthonormal* rot6d; only ε-MSE constrains that whole 6D structure. Without it, `x0_pred` drifts off the manifold the forward process assumes → train/inference mismatch.
+
+**Summary:** ε-MSE rotation = "learn to denoise rotation at every noise level so you can *generate* it" (full 6D, all t, required for sampling). Geodesic aux = "and make the *clean* rotation geometrically precise" (low-t, degenerate alone). Complementary, not redundant.
+
+
 # EquiBot: SIM(3)-Equivariant Diffusion Policy for Generalizable and Data Efficient Learning
 
 Jingyun Yang*, Zi-ang Cao*, Congyue Deng, Rika Antonova, Shuran Song, Jeannette Bohg

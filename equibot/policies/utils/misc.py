@@ -297,8 +297,36 @@ def geodestDist(Rgts, Rps):
     
     # Clamp for numerical stability and compute theta
     theta = torch.acos(torch.clamp(0.5 * (Rt - 1), -1 + 1e-6, 1 - 1e-6))
-    
+
     return theta
+
+def rotation_surrogate_loss(Rps, Rgts, loss_type="chordal"):
+    """
+    Smooth, gradient-stable surrogate for the geodesic rotation distance.
+
+    Both options are monotonic functions of the geodesic angle and share the same
+    minimum (Rps == Rgts), but unlike ``geodestDist`` they avoid the ``acos`` gradient
+    singularities at 0 and pi -- which would otherwise produce NaNs early in training
+    when predictions are near-random. Use this for the training loss and reserve
+    ``geodestDist`` for the reported metric.
+
+    Args:
+        Rps:  predicted rotation matrices, shape (..., 3, 3).
+        Rgts: ground-truth rotation matrices, shape (..., 3, 3).
+        loss_type: "chordal" -> squared Frobenius distance ||Rp - Rg||_F^2,
+                   "cosine"  -> 1 - trace(Rg^T @ Rp) / 3 (in [0, ~1.33]).
+
+    Returns:
+        Per-rotation loss with the leading batch dims preserved (no reduction).
+    """
+    if loss_type == "chordal":
+        return ((Rps - Rgts) ** 2).sum(dim=(-2, -1))
+
+    if loss_type == "cosine":
+        trace = torch.matmul(Rgts.transpose(-1, -2), Rps).diagonal(dim1=-2, dim2=-1).sum(-1)
+        return 1.0 - trace / 3.0
+
+    raise ValueError(f"Unsupported rotation loss_type: {loss_type}")
 
 ## gripper_pcd is (B, H, 4, 3)
 def compute_plane_normal(gripper_pcd):

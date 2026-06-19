@@ -19,3 +19,4 @@ paper_ref/
 .specstory/
 .codex
 .specstory
+*.log

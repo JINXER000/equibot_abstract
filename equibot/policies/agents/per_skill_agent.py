@@ -10,6 +10,8 @@ from equibot.policies.utils.misc import (
     EQUIBOT_PATH,
     ascii_tensor_to_str,
     matched_actions_from_json,
+    rotation_surrogate_loss,
+    geodestDist,
 )
 from equibot.policies.utils.diffusion.lr_scheduler import get_scheduler
 
@@ -44,6 +46,14 @@ class EquiSkillAgent(object):
         self.obs_horizon = cfg.model.obs_horizon
         self.pred_horizon = cfg.model.pred_horizon
         self.shuffle_pc = cfg.data.dataset.shuffle_pc
+
+        # Metric-aligned x0 auxiliary loss (off by default -> reproduces base eps-MSE).
+        # Optimizes the same quantities the eval reports: position L1 (meters) and a
+        # smooth geodesic surrogate for rotation. See learn_unimanual_traj.
+        self.lambda_pos = cfg.model.get("lambda_pos", 0.0)
+        self.lambda_rot = cfg.model.get("lambda_rot", 0.0)
+        self.rot_loss_type = cfg.model.get("rot_loss_type", "chordal")
+        self.snr_gamma = cfg.model.get("snr_gamma", 5.0)
 
         self.all_normalizers = None
 
@@ -163,7 +173,68 @@ class EquiSkillAgent(object):
         vec_loss = nn.functional.mse_loss(eefpos_noise_pred, eefpos_noise)
         scalar_loss = nn.functional.mse_loss(gripper_noise_pred, gripper_action_noise)
 
-        return vec_loss, scalar_loss
+        aux_metrics = {}
+        if self.lambda_pos > 0 or self.lambda_rot > 0:
+            vec_loss, aux_metrics = self._add_metric_aligned_loss(
+                vec_loss,
+                eefpos_noise_pred=eefpos_noise_pred,
+                noisy_eefpos=noisy_eefpos,
+                timesteps=timesteps,
+                center=center,
+                scale=scale,
+                gt_eefpos=eefpos,
+            )
+
+        return vec_loss, scalar_loss, aux_metrics
+
+    def _add_metric_aligned_loss(
+        self, vec_loss, *, eefpos_noise_pred, noisy_eefpos, timesteps, center, scale, gt_eefpos
+    ):
+        """
+        Add an x0-space auxiliary loss that optimizes the eval metrics directly:
+        position L1 (meters) and a smooth geodesic surrogate for rotation.
+
+        The predicted clean sample is reconstructed from the eps-prediction
+        (x0 = (x_t - sqrt(1-ab) * eps) / sqrt(ab)) and pushed through the same
+        differentiable recovery as eval, then compared against the ground-truth pose.
+        A min-SNR-style weight downweights high-noise timesteps where the single-step
+        x0 estimate is ill-conditioned. The base eps-MSE is preserved, which keeps the
+        diffusion variable well-determined (Gram-Schmidt is many-to-one).
+        """
+        alphas_cumprod = self.actor.noise_scheduler.alphas_cumprod.to(self.device)
+        ab = alphas_cumprod[timesteps]  # (B,)
+        ab = ab.view(-1, *([1] * (noisy_eefpos.dim() - 1)))  # broadcast over (H, D, 3)
+
+        # Reconstruct the predicted clean sample from the eps-prediction.
+        x0_pred = (noisy_eefpos - torch.sqrt(1.0 - ab) * eefpos_noise_pred) / torch.sqrt(ab)
+
+        # Recover to world frame exactly as eval does (recovery is differentiable).
+        trans_pred, _, _ = self.actor.eef_recover_fn(x0_pred, scale, center, key="eefpos")
+
+        gt_xyz, pred_xyz = gt_eefpos[:, :, :3, 3], trans_pred[:, :, :3, 3]
+        gt_R, pred_R = gt_eefpos[:, :, :3, :3], trans_pred[:, :, :3, :3]
+
+        # Per-sample losses (B,), then min-SNR weighting (snr = ab / (1 - ab)).
+        pos_per_sample = (pred_xyz - gt_xyz).abs().flatten(1).mean(1)
+        rot_per_sample = rotation_surrogate_loss(pred_R, gt_R, self.rot_loss_type).flatten(1).mean(1)
+
+        ab_flat = ab.flatten()
+        snr = ab_flat / (1.0 - ab_flat).clamp(min=1e-8)
+        snr_weight = torch.clamp(snr / self.snr_gamma, max=1.0)  # (B,) in (0, 1]
+
+        pos_loss = (snr_weight * pos_per_sample).mean()
+        rot_loss = (snr_weight * rot_per_sample).mean()
+        vec_loss = vec_loss + self.lambda_pos * pos_loss + self.lambda_rot * rot_loss
+
+        # Monitoring only -- keys must NOT end in '_loss' or they get summed into total_loss.
+        with torch.no_grad():
+            rot_deg = geodestDist(gt_R, pred_R).mean() * 180.0 / torch.pi
+        aux_metrics = {
+            "aux_pos_l1_m": pos_per_sample.mean().detach(),
+            "aux_rot_surrogate": rot_per_sample.mean().detach(),
+            "aux_rot_diff_deg": rot_deg.detach(),
+        }
+        return vec_loss, aux_metrics
 
 
     def learn_bimanual_jpose(self,  batch):
@@ -210,8 +281,9 @@ class EquiSkillAgent(object):
         if 'jpose' in self.dataset_type:
             scalar_loss = self.learn_bimanual_jpose(batch)
         elif 'traj' in self.dataset_type:
-            vec_loss, scalar_loss = self.learn_unimanual_traj(batch)
+            vec_loss, scalar_loss, traj_aux = self.learn_unimanual_traj(batch)
             metrics['vec_loss'] = vec_loss
+            metrics.update(traj_aux)
         else:
             raise ValueError(f"Invalid dataset type: {self.dataset_type}")
         metrics['scalar_loss'] = scalar_loss
