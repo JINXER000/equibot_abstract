@@ -708,6 +708,7 @@ def get_skill_names(cpu_obs):
         skill_names.append(skill_name)
     return set(skill_names)
 
+from scipy.spatial import cKDTree
 from scipy.spatial.transform import Rotation
 
 ## quaternion is (x, y, z, w)
@@ -720,6 +721,45 @@ def compose_transformation(xyz, quat):
 
 import open3d as o3d
 
+
+def _surface_variation_saliency(xyz, k=16):
+    """
+    Per-point surface variation, used as a geometric saliency score.
+
+    Surface variation = lambda_min / (lambda_0 + lambda_1 + lambda_2), where the
+    lambdas are the eigenvalues of the covariance of each point's k-nearest
+    neighbors. High values mark edges, corners and high-curvature regions;
+    near-zero values mark flat patches.
+
+    Args:
+        xyz: (N, 3) array of point coordinates.
+        k: Neighborhood size used to estimate local covariance.
+
+    Returns:
+        (N,) array of saliency in [0, 1/3]. Degenerate neighborhoods yield 0.
+    """
+    xyz = np.asarray(xyz, dtype=np.float64)
+    n_points = xyz.shape[0]
+
+    k_eff = min(k, n_points)
+    # Batched knn for all points at once (avoids a per-point Python loop).
+    _, neighbor_ids = cKDTree(xyz).query(xyz, k=k_eff)
+    if neighbor_ids.ndim == 1:  # k_eff == 1
+        neighbor_ids = neighbor_ids[:, None]
+
+    neighbors = xyz[neighbor_ids]                       # (N, k_eff, 3)
+    centered = neighbors - neighbors.mean(axis=1, keepdims=True)
+    cov = np.einsum('nki,nkj->nij', centered, centered) / max(k_eff - 1, 1)
+
+    eigvals = np.clip(np.linalg.eigvalsh(cov), 0.0, None)  # ascending
+    eig_sum = eigvals.sum(axis=1)
+    return np.divide(
+        eigvals[:, 0], eig_sum,
+        out=np.zeros(n_points, dtype=np.float64),
+        where=eig_sum > np.finfo(np.float64).eps,
+    )
+
+
 def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
     """
     Downsample point cloud to num_points.
@@ -729,7 +769,7 @@ def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
             First 3 channels are xyz (used for geometry-based selection).
             Additional channels (e.g., rgb) are preserved.
         num_points: Target number of points.
-        method: 'random', 'fps', or 'uniform'.
+        method: 'random', 'fps', 'uniform', or 'saliency'.
         debug_visualize: If True, save downsampled point cloud to file.
         
     Returns:
@@ -767,6 +807,19 @@ def downsample_pc(pc, num_points, method = 'random', debug_visualize = False):
     elif method == 'uniform':
         every_k_points = max(1, pc.shape[0] // num_points)
         pcd_down = pcd.uniform_down_sample(every_k_points=every_k_points)
+    elif method == 'saliency':
+        # Keep the most salient points, then FPS them back to even coverage so the
+        # salient points don't cluster. The elif chain above guarantees
+        # pc.shape[0] > num_points here, hence num_candidates > num_points.
+        saliency = _surface_variation_saliency(xyz, k=16)
+        num_candidates = min(4 * num_points, pc.shape[0])
+        candidate_ids = np.argpartition(saliency, -num_candidates)[-num_candidates:]
+
+        pcd_salient = o3d.geometry.PointCloud()
+        pcd_salient.points = o3d.utility.Vector3dVector(xyz[candidate_ids])
+        if use_pc_color:
+            pcd_salient.colors = o3d.utility.Vector3dVector(rgb[candidate_ids])
+        pcd_down = pcd_salient.farthest_point_down_sample(num_points)
     else:
         raise ValueError(f'Method {method} not supported!')
     

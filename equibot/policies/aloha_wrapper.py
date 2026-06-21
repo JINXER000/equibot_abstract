@@ -4,7 +4,7 @@ import torch
 import hydra
 import numpy as np
 sys.path.append('.')
-from equibot.policies.utils.misc import get_agent, get_agent_from_ckpt, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, decentralize_cond_pc, decentralize_grasp, centralize_downsample, combined_pc_instances_and_offset
+from equibot.policies.utils.misc import get_agent, get_agent_from_ckpt, get_dataset, to_np, to_torch, rotate_observation, to_tensor, EQUIBOT_PATH, decentralize_cond_pc, decentralize_grasp, centralize_downsample, combined_pc_instances_and_offset, geodestDist, add_pcd_noise
 
 
 TAMP_PATH = '/home/xuhang/interbotix_ws/src/pddlstream_aloha/'
@@ -67,13 +67,15 @@ class pddl_wrapper(object):
         return data_batch
 
     ## do not use it during training
-    def centralize_obs(self, obs, is_add_bottom = False, **kwargs):
+    def centralize_obs(self, obs, is_add_bottom = False, pcd_noise = 0.0, **kwargs):
         centralized_obs = obs.copy()
         offset_dict = {}
         for k, v in obs.items():
             if 'pc' in k:
                 pc = v.numpy()
                 centered_pc, offset = centralize_downsample(pc, self.dataset.pc_shape, add_bottom = is_add_bottom, **kwargs)
+                if pcd_noise > 0:
+                    centered_pc = add_pcd_noise(centered_pc, pcd_noise)
                 centered_pc= torch.tensor(centered_pc, device= self.cfg.device).float()
                 centralized_obs[k] = centered_pc.unsqueeze(0).unsqueeze(0)
                 
@@ -165,6 +167,74 @@ class pddl_wrapper(object):
             action_w = action_c
         return action_w
 
+    def predict_skill_keyposes_world(self, object_pc, skill_name, task_name, seed=None, pcd_noise=0.0):
+        """Predict a unimanual per-skill eef keypose trajectory in the world frame.
+
+        This is the object-centric inference path used for sim-observation eval:
+        the raw point cloud is centered the same way the dataset preprocesses it,
+        the per-skill diffusion policy predicts an object-centric eef trajectory,
+        and the result is shifted back to the world frame by the centering offset.
+
+        Args:
+            object_pc: (N, 3) point cloud of the conditioning object, world frame.
+            skill_name: checkpoint skill key, e.g. ``robot0_grasp_tripod_obj``.
+            task_name: task embedding key, e.g. ``two_arm_threading``.
+            seed: optional diffusion seed (None -> stochastic sample).
+            pcd_noise: std (meters) of Gaussian xyz jitter added to the centered
+                point cloud, matching the training-time ``add_pcd_noise``
+                augmentation (0 -> no jitter).
+
+        Returns:
+            dict with ``eefpos`` (T, 4, 4) world-frame SE(3) keyposes and
+            ``gripper`` (T, ...) as numpy arrays.
+        """
+        ds_cfg = self.cfg.data.dataset
+        centered_pc, offset = centralize_downsample(
+            np.asarray(object_pc, dtype=np.float32)[:, :3],
+            self.dataset.pc_shape,
+            obj_centric=ds_cfg.is_obj_centric,
+            add_bottom=ds_cfg.is_add_bottom,
+            method=ds_cfg.downsample_method,
+            debug_visualize=False,
+        )
+        if pcd_noise > 0:
+            centered_pc = add_pcd_noise(centered_pc, pcd_noise)
+        pc_tensor = torch.tensor(
+            centered_pc, device=self.cfg.device, dtype=torch.float32
+        ).unsqueeze(0).unsqueeze(0)
+
+        self.agent.actor.train(False)
+        with torch.no_grad():
+            action_c, _ = self.agent.actor.pred_unimanual_traj(
+                skill_name, {"pc": pc_tensor}, task_name_batch=task_name, seed=seed
+            )
+        action_c = self.dict_tensor_to_numpy(action_c)
+        eefpos_world = decentralize_grasp(action_c["eefpos"].copy(), offset)
+        return {"eefpos": eefpos_world, "gripper": action_c["gripper"]}
+
+    def keypose_error(self, pred_T_world, gt_T_world):
+        """Position (m) and rotation (deg, geodesic) error between two SE(3) trajectories.
+
+        Args:
+            pred_T_world: (T, 4, 4) predicted world-frame keyposes.
+            gt_T_world: (T, 4, 4) ground-truth world-frame keyposes.
+
+        Returns:
+            dict with ``pos_err_m`` and ``rot_err_deg`` (means over the T keyposes).
+        """
+        pred_T = np.asarray(pred_T_world, dtype=np.float32)
+        gt_T = np.asarray(gt_T_world, dtype=np.float32)
+        assert pred_T.shape == gt_T.shape, f"shape mismatch {pred_T.shape} vs {gt_T.shape}"
+
+        pos_err = np.linalg.norm(pred_T[:, :3, 3] - gt_T[:, :3, 3], axis=-1).mean()
+        rot_rad = geodestDist(
+            torch.from_numpy(gt_T[:, :3, :3]), torch.from_numpy(pred_T[:, :3, :3])
+        ).mean()
+        return {
+            "pos_err_m": float(pos_err),
+            "rot_err_deg": float(torch.rad2deg(rot_rad)),
+        }
+
     def gen_objcentric_traj(
         self, obs_key, agent_obs, skill_name=None, task_name=None, seed=None
     ):
@@ -185,7 +255,13 @@ class pddl_wrapper(object):
             return new_action_output
         
         obs_tensor = to_tensor(agent_obs)
-        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method, is_add_bottom = True)
+        pcd_noise = float(self.cfg.data.dataset.get('pcd_noise', 0.0))
+        # [TEMP EXPERIMENT TOGGLE] A/B noise on/off; revert after sweep.
+        _pcd_noise_ovr = os.environ.get('PCD_NOISE_OVERRIDE')
+        if _pcd_noise_ovr is not None:
+            pcd_noise = float(_pcd_noise_ovr)
+        print(f'[gen_objcentric_traj] pcd_noise={pcd_noise}', flush=True)
+        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method, is_add_bottom = True, pcd_noise = pcd_noise)
         obs_c = to_tensor(obs_c)
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
