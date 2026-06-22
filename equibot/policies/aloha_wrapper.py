@@ -67,15 +67,13 @@ class pddl_wrapper(object):
         return data_batch
 
     ## do not use it during training
-    def centralize_obs(self, obs, is_add_bottom = False, pcd_noise = 0.0, **kwargs):
+    def centralize_obs(self, obs, is_add_bottom = False, **kwargs):
         centralized_obs = obs.copy()
         offset_dict = {}
         for k, v in obs.items():
             if 'pc' in k:
                 pc = v.numpy()
                 centered_pc, offset = centralize_downsample(pc, self.dataset.pc_shape, add_bottom = is_add_bottom, **kwargs)
-                if pcd_noise > 0:
-                    centered_pc = add_pcd_noise(centered_pc, pcd_noise)
                 centered_pc= torch.tensor(centered_pc, device= self.cfg.device).float()
                 centralized_obs[k] = centered_pc.unsqueeze(0).unsqueeze(0)
                 
@@ -255,13 +253,7 @@ class pddl_wrapper(object):
             return new_action_output
         
         obs_tensor = to_tensor(agent_obs)
-        pcd_noise = float(self.cfg.data.dataset.get('pcd_noise', 0.0))
-        # [TEMP EXPERIMENT TOGGLE] A/B noise on/off; revert after sweep.
-        _pcd_noise_ovr = os.environ.get('PCD_NOISE_OVERRIDE')
-        if _pcd_noise_ovr is not None:
-            pcd_noise = float(_pcd_noise_ovr)
-        print(f'[gen_objcentric_traj] pcd_noise={pcd_noise}', flush=True)
-        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method, is_add_bottom = True, pcd_noise = pcd_noise)
+        obs_c, offset_dict = self.centralize_obs(obs_tensor, obj_centric=self.cfg.data.dataset.is_obj_centric, method=self.cfg.data.dataset.downsample_method, is_add_bottom = True)
         obs_c = to_tensor(obs_c)
         obs_gpu = to_torch(obs_c, self.cfg.device)
         
