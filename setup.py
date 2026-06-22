@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_namespace_packages
 
 
 setup(name="equibot",
@@ -6,8 +6,8 @@ setup(name="equibot",
       description="",
       author="",
       author_email="",
-      license="",
-      packages=[],
+      license="MIT",
+      packages=find_namespace_packages(include=["equibot*"]),
       install_requires=[
           "click",
           "matplotlib",
@@ -37,9 +37,6 @@ setup(name="equibot",
           "h5py",
           "easydict",
           "dill",
-          # SDP (Spherical Diffusion Policy) dependencies
-          "e3nn>=0.5.0",          # Spherical harmonics & equivariant ops
-          "torch-geometric",      # Graph neural network backend
-          "torch-cluster",        # FPS pooling
-          "torch-scatter",        # Scatter operations
+          "transformers",   # BERT skill/task language embeddings
+          "zarr",           # normalizer statistics storage
       ])

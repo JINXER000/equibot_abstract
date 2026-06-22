@@ -112,12 +112,39 @@ def rotate_around_z(
 
     return rotated_points
 
+def euler2mat(euler):
+    """Convert euler angles (r, p, y) into a 3x3 rotation matrix.
+
+    Vendored verbatim from the former ``equibot.envs.sim_mobile.utils.transformations``
+    so the policies package carries no dependency on the simulation envs.
+    """
+    euler = np.asarray(euler, dtype=np.float64)
+    assert euler.shape[-1] == 3, "Invalid shaped euler {}".format(euler)
+
+    ai, aj, ak = -euler[..., 2], -euler[..., 1], -euler[..., 0]
+    si, sj, sk = np.sin(ai), np.sin(aj), np.sin(ak)
+    ci, cj, ck = np.cos(ai), np.cos(aj), np.cos(ak)
+    cc, cs = ci * ck, ci * sk
+    sc, ss = si * ck, si * sk
+
+    mat = np.empty(euler.shape[:-1] + (3, 3), dtype=np.float64)
+    mat[..., 2, 2] = cj * ck
+    mat[..., 2, 1] = sj * sc - cs
+    mat[..., 2, 0] = sj * cc + ss
+    mat[..., 1, 2] = cj * sk
+    mat[..., 1, 1] = sj * ss + cc
+    mat[..., 1, 0] = sj * cs - sc
+    mat[..., 0, 2] = -sj
+    mat[..., 0, 1] = cj * si
+    mat[..., 0, 0] = cj * ci
+    return mat
+
+
 ### The function is to test the equivariance of the model
 ## input np or torch tensor, output np
 def rotate_observation(np_obs, yaw_rotation):
 
-    from equibot.envs.sim_mobile.utils.transformations import euler2mat
-    rot_3x3 = euler2mat([0, 0, yaw_rotation]) 
+    rot_3x3 = euler2mat([0, 0, yaw_rotation])
     trans_mat = np.eye(4)
     trans_mat[:3, :3] = rot_3x3
 
@@ -149,81 +176,19 @@ def rotate_observation(np_obs, yaw_rotation):
     return obs_rotated
 
 
-def get_env_class(env_name):
-    if env_name == "fold":
-        from equibot.envs.sim_mobile.folding_env import FoldingEnv
-        return FoldingEnv
-    elif env_name == "cover":
-        from equibot.envs.sim_mobile.covering_env import CoveringEnv
-        return CoveringEnv
-    elif env_name == "close":
-        from equibot.envs.sim_mobile.closing_env import ClosingEnv
-        return ClosingEnv
-    elif env_name == "insert":
-        from equibot.envs.sim_mobile.insertion_env_todo import InsertionEnv
-        return InsertionEnv
-    else:
-        raise ValueError()
-
 def get_dataset(cfg, mode="train"):
-    if 'dataset_type' not in cfg.data.dataset:
-        from equibot.policies.datasets.dataset import BaseDataset
-        return BaseDataset(cfg.data.dataset, mode)
     dataset_type = cfg.data.dataset.dataset_type
-    if dataset_type == "hdf5_mini":
-        from equibot.policies.datasets.abstract_dataset import ALOHAPoseDataset
-        return ALOHAPoseDataset(cfg.data.dataset, mode)
-    elif dataset_type == "dual_hdf5_mini":
-        from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
-        return DualAbsDataset(cfg.data.dataset, mode)
-    elif dataset_type == "mj_insertion_pred":
-        from equibot.policies.datasets.dual_abs_dataset import DualAbsDataset
-        return DualAbsDataset(cfg.data.dataset, mode)
-    elif "robosuite" in dataset_type:
-        from equibot.policies.datasets.dmg_dataset import RobosuiteDataset
-        return RobosuiteDataset(cfg.data.dataset, mode)
-    elif dataset_type == "dmg_policy":
-        from equibot.policies.datasets.robosuite_policy_dataset import RobosuitePolicyDataset
-        return RobosuitePolicyDataset(cfg.data.dataset, mode)
-    elif "per_skill" in dataset_type:
+    if "per_skill" in dataset_type:
         from equibot.policies.datasets.per_skill_dataset import PerSkillDataset
         return PerSkillDataset(cfg.data.dataset, mode)
-    elif "real_aloha" in dataset_type:
-        from equibot.policies.datasets.real_aloha_dataset import RealAlohaDataset
-        return RealAlohaDataset(cfg.data.dataset, mode)
     else:
         raise ValueError(f"Dataset type [{dataset_type}] not supported.")
 
 
-
 def get_agent(agent_name):
-    if agent_name == "dp":
-        from equibot.policies.agents.dp_agent import DPAgent
-        return DPAgent
-    elif agent_name == "equibot":
-        from equibot.policies.agents.equibot_agent import EquiBotAgent
-        return EquiBotAgent
-    elif agent_name == "aloha":
-        from equibot.policies.agents.aloha_agent import ALOHAAgent
-        return ALOHAAgent
-    elif agent_name == "compaloha":
-        from equibot.policies.agents.compaloha_agent import CompALOHAAgent
-        return CompALOHAAgent
-    elif agent_name == "traj":
-        from equibot.policies.agents.traj_agent import TrajAgent
-        return TrajAgent
-    elif agent_name == "dmg":
-        from equibot.policies.agents.dmg_agent import DMGAgent
-        return DMGAgent
-    elif agent_name == "eefequibot":
-        from equibot.policies.agents.eefequibot_agent import EefEquiBotAgent
-        return EefEquiBotAgent
-    elif agent_name == "per_skill":
+    if agent_name == "per_skill":
         from equibot.policies.agents.per_skill_agent import EquiSkillAgent
         return EquiSkillAgent
-    elif agent_name == "sdp":
-        from equibot.policies.agents.sdp_agent import SDPAgent
-        return SDPAgent
     else:
         raise ValueError(f"Agent with name [{agent_name}] not found.")
 
@@ -1000,8 +965,7 @@ def rotate_dataslice(data_slice):
     ## input: dataslice: dict of tensors
 
     yaw_rotation =  np.random.uniform(-np.pi, np.pi)
-    from equibot.envs.sim_mobile.utils.transformations import euler2mat
-    rot_3x3 = euler2mat([0, 0, yaw_rotation]) 
+    rot_3x3 = euler2mat([0, 0, yaw_rotation])
     trans_mat = np.eye(4)
     trans_mat[:3, :3] = rot_3x3
     

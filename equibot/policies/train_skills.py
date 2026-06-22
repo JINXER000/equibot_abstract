@@ -15,7 +15,7 @@ try:
 except ImportError:
     from test_skills import run_eval
 
-@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="transfer_tape")
+@hydra.main(config_path=os.path.join(EQUIBOT_PATH, "equibot/policies/configs"), config_name="dmg_threading_per_skill")
 def main(cfg):
     assert cfg.mode == "train"
     np.random.seed(cfg.seed)

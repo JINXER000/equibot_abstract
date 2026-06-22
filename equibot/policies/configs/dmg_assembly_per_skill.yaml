@@ -70,8 +70,8 @@ model:
 data:
   dataset:
     num_points: 128
-    # primitive_kws: ['bi']
-    primitive_kws: ['grasp']
+    # uniskills: ['bi']
+    uniskills: ['grasp']
     dataset_type: 'per_skill_dmg_traj'
     # dataset_type: 'per_skill_biop_jpose'
 

@@ -20,3 +20,4 @@ paper_ref/
 .codex
 .specstory
 *.log
+.claude

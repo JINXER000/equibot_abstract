@@ -49,9 +49,9 @@ def run_eval(
     return unnormed_history, metrics
 
 
-@hydra.main(config_path="configs", config_name="mj_peg_hole")
+@hydra.main(config_path="configs", config_name="dmg_threading_per_skill")
 def main(cfg):
-    cfg.mode == "eval"
+    cfg.mode = "eval"
     device = torch.device(cfg.device)
     if cfg.use_wandb:
         wandb_config = omegaconf.OmegaConf.to_container(

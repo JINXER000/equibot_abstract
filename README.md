@@ -1,236 +1,102 @@
-# CYZ dev
+# Per-Skill SIM(3)-Equivariant Diffusion Policy (Threading & Assembly)
 
+A SIM(3)-equivariant diffusion policy that predicts manipulation skills **per skill**
+(one conditional model shared across skills, conditioned on a skill/task language
+embedding) from point-cloud observations. This release focuses on two bimanual
+[DexMimicGen](https://dexmimicgen.github.io/) tasks:
 
-## TODO
-### problems and solution
-[x] use grasp pose relative to obj. before normalizing pc, subtract the pc with pc center. --> NO need, as when producing pc_feat, it already subtracted the centroid.
-[x] Use grasp data for riemann to train. --> still rot incorrect
-[x] Visualize the grasp diffusion history. 
-[x] feat_dict["so3"] and feat_dict["inv"] seems to be so small. Is it because of nomalizer?  --> It becomes better with more data. 
-[x] Make grasp_xyz normalizer different --> still incorrect
-[x] perform orthogonization on rotation mat
-[x] find out why joint error is big in evaluation. Should we use 6 dof only? Still no use. Should we use txt joint data?
-[] restructure the code: standardize the preprocess of pc; clean the import and yaml
+| Config | Task | Skill |
+| --- | --- | --- |
+| `dmg_threading_per_skill` | `dmg_threading` | per-skill grasp |
+| `dmg_assembly_per_skill`  | `dmg_assembly`  | per-skill grasp |
 
-- recap: the rotation error is solved with more data. the joint visulaizaiton error actually comes from the bug in evaluation. 
+Both configs use the `per_skill` agent (`EquiSkillAgent`) with a frozen VDGCNN
+encoder and an SO(3)-equivariant conditional U-Net denoiser. The bimanual
+keypose path (`BiopSkillPolicy` / `per_skill_biop_jpose`) is retained for
+extension but is not wired to either default config.
 
-#### simple case: only 1 input pc
-[] place the cup on a shelf: equibot  ee xyz and rot relative to the cup is fixed, but it can add goal point as additional conditional input. To figure out if square, can, and tool_hang  tasks can be done. 
-[] bimanual transfer tape: the goal point cannot be specified. But I think this can be done, as the 2 eef relative position is known. 
+## Installation
 
-#### complex case: input 2 pcs
-1. observation: by input the pointcloud of random, the joint pose is not affected. So we can use unconditional score and conditional score to compose the final score. 
-2. As Ho is 2, we can input pc (O) of size 32, 2, 512, 3. As the Hp is 16, we can output (A) predgrasp 32, 16, 3, 3 or effgrasp 32, 16, 6, 3. The conditional distribution is SO(3) equivariant, as p(A|O) = p(RA | RO). 
+Tested on Ubuntu 22.04, CUDA 11.8, RTX 4090. From the repository root:
 
-### representative runs
-- when using only one grasp and point cloud, the rotation error is large:
-https://wandb.ai/neuralogic/equibot/runs/bdwdh2iv?nw=nwuserjosephchen
-
-- when using 50 demos, we observe that at 50k step,  the encoder output goes up, and rotation error drops as well!
-https://wandb.ai/neuralogic/equibot/runs/33c0qst9?nw=nwuserjosephchen
-
-- however, when training grasp + jpose, jpose is not accurate...
-https://wandb.ai/neuralogic/equibot/runs/c9us76fl?nw=nwuserjosephchen
-
-- Using 2 layer encoder, output 1 grasp + 6 joints, worse..
-https://wandb.ai/neuralogic/equibot/runs/1evwj954?nw=nwuserjosephchen
-
-- 2 grasps conditioned on 1 pc:
-https://wandb.ai/neuralogic/equibot/runs/cp29pe8i?nw=nwuserjosephchen
-
-#### questions about convergence
-Is it because of the weight initialization of the encoder? we need more point clouds?
-I found that vec_layer use kaiming initialization. 
-I think in aloha case, we should use 2-layer encoder instead of 4-layer. 
-### compose 2 grasps
-#### in training, 
-
-- use 2 unet to sum the loss.  Note that each grasp should subtract the corresponding point cloud. As a result, the right grasp should be normal distribution around the right point cloud.
-- in CCSP, it average outputs from different constraints(mlps). I think it is also doable, as the right grasp pred output is not taken into account in the left-unet. 
-- specifically, we have vec_lgrasp_pred and vec_rgrasp_pred, then we concatnate them to compute the loss. For joint, we calculate the average output from 2 unets. 
-- I think it can jointly model the moultimodality of 2 grasps. For example, left grasp on top + right grasp on bottom, it will be in the same pred_vec.
-#### in testing, 
-refer to ECCV 2022 to sample the joint poses. For grasps, sample them individually. 
-
-### use MLP instead of Unet as denoising network
-
-## Adapt to grasp+joint
-### eef data structure
-[x] figure out data structure of orientation. 
-The rotation is the 1st and 3rd row of rot mat. See trans2vec() for more detail.
-### Procedure to revise the state space
-[x] train the grasp pose and joint vals
-- in aloha_policy.py, remember to revise self.eef_dim. 
-- revise _init_normalizers() if the input is mixed with scalars and vectors. 
-
-## added auxiliary loss
-Because they do two **different jobs** — one trains the generative process, the other sharpens the final answer. The geodesic/chordal loss can't replace the ε-MSE on rotation. Three first-principles reasons:
-
-### 1. ε-MSE is the actual diffusion objective; the geodesic loss is not
-At inference, the reverse process denoises step-by-step using the predicted noise ε̂. For that to work, the network must learn ε̂ ≈ E[ε|xₜ] **at every noise level t**. The ε-MSE on the rotation channels is what teaches that score field. The geodesic loss says nothing about the per-step denoising direction — it only compares a reconstructed clean rotation. Drop the rotation ε-MSE and the sampler has nothing to integrate for rotation → **generation breaks**, not just gets less precise.
-
-### 2. The geodesic loss is deliberately *off at high t*
-We reconstruct `x0_pred = (xₜ − √(1−ᾱ_t)·ε̂)/√(ᾱ_t)`, and at high t that's garbage (`√ᾱ_t→0`), so the min-SNR weighting suppresses the aux loss there. That means at high noise there'd be **zero rotation supervision** if ε-MSE weren't carrying it. ε-MSE covers all t; the geodesic loss only helps where t is low (which is exactly where final precision is decided).
-
-### 3. Gram-Schmidt is many-to-one → geodesic loss alone under-determines the variable
-The diffusion lives in rot6d (R⁶), but `rotation_6d_to_matrix` is many-to-one: scaling `a1`, or shifting `a2` along `a1`, leaves R unchanged. So the geodesic loss has **zero gradient** along those directions and can't pin the full 6D vector. The forward process adds Gaussian noise to the *full orthonormal* rot6d; only ε-MSE constrains that whole 6D structure. Without it, `x0_pred` drifts off the manifold the forward process assumes → train/inference mismatch.
-
-**Summary:** ε-MSE rotation = "learn to denoise rotation at every noise level so you can *generate* it" (full 6D, all t, required for sampling). Geodesic aux = "and make the *clean* rotation geometrically precise" (low-t, degenerate alone). Complementary, not redundant.
-
-
-# EquiBot: SIM(3)-Equivariant Diffusion Policy for Generalizable and Data Efficient Learning
-
-Jingyun Yang*, Zi-ang Cao*, Congyue Deng, Rika Antonova, Shuran Song, Jeannette Bohg
-
-<a href='https://equi-bot.github.io'><img src='https://img.shields.io/badge/Project-Page-Green'></a> <a href='https://arxiv.org/abs/2407.01479'><img src='https://img.shields.io/badge/Paper-Arxiv-red'></a> [![YouTube](https://badges.aleen42.com/src/youtube.svg)](https://youtu.be/FFrl_TEXrUw)
-
-![Overview figure](https://equi-bot.github.io/images/teaser.jpg)
-
-This repository includes:
-
-* Implementation of the EquiBot method and a Diffusion Policy baseline that takes point clouds as input.
-* A set of three simulated mobile manipulation environments: Cloth Folding, Object Covering, and Box Closing.
-* Data generation, training, and evaluation scripts that accompany the above algorithms and environments.
-
-## Getting Started
-
-### Installation
-
-This codebase is tested with the following setup: Ubuntu 20.04, an RTX 4090 GPU, CUDA 11.8. In the root directory of the repository, run the following commands:
-
-```
-conda create -n lfd python=3.10 -y
-conda activate lfd
-
-conda install -y fvcore iopath ffmpeg -c iopath -c fvcore
-pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118
+```bash
+conda create -n equibot python=3.9 -y
+conda activate equibot
+pip install torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu118
+# pytorch3d (used by the VDGCNN encoder and pose estimation) — install from source:
 pip install "git+https://github.com/facebookresearch/pytorch3d.git"
-
 pip install -e .
 ```
 
-Then, in the last two lines of [this config file](equibot/policies/configs/base.yaml), enter the wandb entity and project names for logging purposes. If you do not have a wandb account yet, you can register [here](https://wandb.ai).
+`pip install -e .` pulls the remaining dependencies (including `transformers`
+and `zarr`). `pretrained/chairs.pt` (referenced by the configs as the VDGCNN
+backbone `preload_path`) ships with the repository.
 
-### Demonstration Generation
+Evaluation additionally requires [`robosuite`](https://github.com/ARISE-Initiative/robosuite)
+and the DexMimicGen environment/dataset, which are external to this repository.
 
-The following code generates demonstrations for simulated mobile environments. To change the number of generated demos, change `--num_demos 50` to a different number.
+## Data layout
 
-```
-python -m equibot.envs.sim_mobile.generate_demos --data_out_dir ../data/fold \
-    --num_demos 50 --cam_dist 2 --cam_pitches -75 --task_name fold
+Each task reads HDF5 demonstrations from `data.dataset.path` and caches BERT
+skill/task embeddings under `data.dataset.embedding_cache_dir` (default
+`./data/bert`). Point to your generated demonstrations via the `data.dataset.path`
+override shown below.
 
-python -m equibot.envs.sim_mobile.generate_demos --data_out_dir ../data/cover \
-    --num_demos 50 --cam_dist 2 --cam_pitches -75 --task_name cover
+## Training
 
-python -m equibot.envs.sim_mobile.generate_demos --data_out_dir ../data/close \
-    --num_demos 50 --cam_dist 1.5 --cam_pitches -45 --task_name close
-```
+Training is driven by Hydra; pass one of the two configs by name.
 
-### Training
-
-The following code runs training for our method and the Diffusion Policy baseline. Fill the dataset path with the `data_out_dir` argument in the previous section. Make sure the dataset path ends with `pcs`. To run this code for the `cover` and `close` environments, substitute occurrences of `fold` with `cover` or `close`.
-
-```
-# diffusion policy baseline (takes point clouds as input)
-python -m equibot.policies.train --config-name fold_mobile_dp \
-    prefix=sim_mobile_fold_7dof_dp \
-    data.dataset.path=[data out dir in the last section]/pcs
-
-# our method (equibot)
-python -m equibot.policies.train --config-name fold_mobile_equibot \
-    prefix=sim_mobile_fold_7dof_equibot \
-    data.dataset.path=[data out dir in the last section]/pcs
-```
-in my case, I can use the command below for training:
-
-
-
-```
-python -m equibot.policies.train --config-name fold_mobile_equibot \
-    prefix=sim_mobile_fold_7dof_equibot \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/fold/pcs/
-```
-
-```
-cd equibot/policies/
-python train_abstract.py --config-name transfer_tape \
-    prefix=aloha_transfer_tape \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/transfer_tape/
-```
-```
-cd equibot/policies/
-
-
-CUDA_VISIBLE_DEVICES=2 python -m equibot.policies.train_abstract --config-name handoff_cup \
-    prefix=aloha_handoff_cup \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/handoff_cup/
-
-CUDA_VISIBLE_DEVICES=3 python -m equibot.policies.train_compaloha --config-name mj_peg_hole \
-    prefix=mj_peg_hole \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/
-
-CUDA_VISIBLE_DEVICES=1 python -m equibot.policies.train_traj --config-name mj_peg_hole \
-    prefix=mj_peg_hole \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/mj_peg_hole/
-
-
-CUDA_VISIBLE_DEVICES=3 python -m equibot.policies.train_skills --config-name dmg_threading \
+```bash
+# threading, per-skill grasp
+python -m equibot.policies.train_skills --config-name dmg_threading_per_skill \
     prefix=dmg_threading \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_threading/
+    data.dataset.path=/path/to/data/dmg_threading/
 
-CUDA_VISIBLE_DEVICES=1 python -m equibot.policies.train_skills --config-name dmg_assembly_policy \
-    prefix=dmg_assembly_policy \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
-
-CUDA_VISIBLE_DEVICES=1 python -m equibot.policies.train_skills --config-name dmg_assembly \
+# assembly, per-skill grasp
+python -m equibot.policies.train_skills --config-name dmg_assembly_per_skill \
     prefix=dmg_assembly \
-    data.dataset.path=/home/chenyizhou/imitation_learning/equibot_abstract/data/dmg_assemble/
-```
-### Evaluation
-
-The commands below evaluate the trained EquiBot policy on the four different setups mentioned in the paper: `Original`, `R+Su`, `R+Sn`, and `R+Sn+P`. To run these evaluations for the DP baseline, replace all occurrences of `equibot` to`dp`. For the log directory, fill `[log_dir]` with the absolute path to the log directory. By default, this directory is `./log`.
-
-```
-# Original setup
-python -m equibot.policies.eval --config-name fold_mobile_equibot \
-    prefix="eval_original_sim_mobile_fold_equibot_s1" mode=eval \
-    training.ckpt="[log_dir]/train/sim_mobile_fold_7dof_equibot_s1/ckpt01999.pth" \
-    env.args.max_episode_length=50 env.vectorize=true
-
-# R+Su setup
-python -m equibot.policies.eval --config-name fold_mobile_equibot \
-    prefix="eval_rsu_sim_mobile_fold_7dof_equibot_s1" mode=eval \
-    training.ckpt="[log_dir]/train/sim_mobile_fold_7dof_equibot_s1/ckpt01999.pth" \
-    env.args.scale_high=2 env.args.uniform_scaling=true \
-    env.args.randomize_rotation=true env.args.randomize_scale=true env.vectorize=true
-
-# R+Sn setup
-python -m equibot.policies.eval --config-name fold_mobile_equibot \
-    prefix="eval_rsn_sim_mobile_fold_7dof_equibot_s1" mode=eval \
-    training.ckpt="[log_dir]/train/sim_mobile_fold_7dof_equibot_s1/ckpt01999.pth" \
-    env.args.scale_high=2 env.args.scale_aspect_limit=1.33 \
-    env.args.randomize_rotation=true env.args.randomize_scale=true env.vectorize=true
-
-# R+Sn+P setup
-python -m equibot.policies.eval --config-name fold_mobile_equibot \
-    prefix="eval_rsnp_sim_mobile_fold_7dof_equibot_s1" mode=eval \
-    training.ckpt="[log_dir]/train/sim_mobile_fold_7dof_equibot_s1/ckpt01999.pth" \
-    env.args.scale_high=2 env.args.scale_aspect_limit=1.33 \
-    env.args.randomize_rotation=true env.args.randomize_scale=true \
-    +env.args.randomize_position=true +env.args.rand_pos_scale=0.5 env.vectorize=true
+    data.dataset.path=/path/to/data/dmg_assembly/
 ```
 
-In my 3090:
-```
-python -m equibot.policies.eval --config-name fold_mobile_equibot \
-    prefix="eval_rsnp_sim_mobile_fold_7dof_equibot_s1" mode=eval \
-    training.ckpt="/home/chenyizhou/imitation_learning/equibot_abstract/logs/train/sim_mobile_fold_7dof_equibot/ckpt01999.pth" \
-    env.args.scale_high=2 env.args.scale_aspect_limit=1.33 \
-    env.args.randomize_rotation=true env.args.randomize_scale=true env.args.use_wandb=false\
-    +env.args.randomize_position=true +env.args.rand_pos_scale=0.5 env.vectorize=true 
+Set the wandb entity/project at the bottom of
+[`equibot/policies/configs/base.yaml`](equibot/policies/configs/base.yaml), or pass
+`use_wandb=false` to disable logging.
+
+## Evaluation
+
+`eval_dmg_perskill.py` measures per-skill grasp error against object-pose-derived
+ground truth by spawning the threading env in RoboSuite. It requires the external
+robosuite/DexMimicGen setup.
+
+```bash
+python -m equibot.policies.eval_dmg_perskill \
+    --ckpt_glob "logs/train/dmg_threading/*.pth" \
+    --K 30 --n_ref 5 --seed 0
 ```
 
+## Design notes — metric-aligned auxiliary loss
+
+The configs expose a metric-aligned auxiliary loss on top of the standard ε-MSE
+diffusion objective (`lambda_pos`, `lambda_rot`, `rot_loss_type`, `snr_gamma`).
+It is complementary, not a replacement:
+
+- **ε-MSE is the actual diffusion objective.** The reverse process integrates the
+  predicted noise at every timestep, so the rotation channels must be supervised
+  at all noise levels for sampling to work.
+- **The geodesic/chordal aux loss is deliberately low-`t`.** It sharpens the
+  reconstructed *clean* rotation (where final precision is decided) and is
+  down-weighted at high noise by min-SNR weighting.
+- **rot6d → matrix is many-to-one**, so the geodesic loss alone under-determines
+  the 6D vector; only the ε-MSE constrains the full orthonormal structure the
+  forward process assumes.
+
+Set `lambda_pos=0` / `lambda_rot=0` to recover the plain ε-MSE training.
+
+## Acknowledgements
+
+This codebase builds on **EquiBot** (Yang\*, Cao\*, Deng, Antonova, Song, Bohg;
+[paper](https://arxiv.org/abs/2407.01479), [project](https://equi-bot.github.io)).
 
 ## License
 
-This codebase is licensed under the terms of the MIT License.
+MIT License (see [LICENSE](LICENSE)).

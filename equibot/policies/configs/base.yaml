@@ -7,7 +7,7 @@ use_wandb: true
 seed: 0
 
 agent:
-  agent_name: dp
+  agent_name: per_skill
 
 env:
   env_class: ???

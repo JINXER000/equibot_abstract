@@ -63,7 +63,7 @@ model:
 data:
   dataset:
     num_points: 128
-    primitive_kws: ['grasp']
+    uniskills: ['grasp']
     dataset_type: 'per_skill_dmg_traj'
 
     is_obj_centric: True
