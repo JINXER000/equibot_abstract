@@ -1,0 +1,9 @@
+defaults:
+  - mj_peg_hole
+
+training:
+  ckpt: "logs/train/mj_peg_hole/ckpt_mj_traj_action.pth"
+
+data:
+  dataset:
+    is_add_bottom: false

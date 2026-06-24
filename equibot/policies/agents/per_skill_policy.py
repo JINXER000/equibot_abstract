@@ -107,11 +107,15 @@ class EquiSkillPolicy(nn.Module):
         # skill_names + task_names
         scalar_cond_dim = self.encoder_out_dim * self.obs_horizon * 2
 
+        ## scalar channels: gripper (+ optional binary in-hand status)
+        self.predict_in_hand = cfg.data.dataset.get('predict_in_hand', False)
+        self.scalar_input_dim = 2 if self.predict_in_hand else 1
+
         net_dict[policy_key] = VecConditionalUnet1D(
             input_dim=self.eef_dims,  ## vec dim, rot is 2, xyz is 1
             cond_dim=self.obs_dim* self.obs_horizon,
             scalar_cond_dim= scalar_cond_dim,  ## if =1,  it is the skill_emb_batch
-            scalar_input_dim= 1,  ## output gripper val
+            scalar_input_dim= self.scalar_input_dim,  ## output gripper (+ in-hand) val
             diffusion_step_embed_dim=self.obs_dim* self.obs_horizon,
             cond_predict_scale=False,
             down_dims=cfg.model.down_dims,
@@ -404,7 +408,7 @@ class EquiSkillPolicy(nn.Module):
         noisy_eef_xt = torch.randn((batch_size, self.pred_horizon, self.eef_dims, 3),
                                     generator=cpu_gen).to(self.device) * initial_noise_scale
 
-        noisy_gripper = torch.randn((batch_size, self.pred_horizon, 1),
+        noisy_gripper = torch.randn((batch_size, self.pred_horizon, self.scalar_input_dim),
                                     generator=cpu_gen).to(self.device) * initial_noise_scale
 
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
@@ -446,8 +450,15 @@ class EquiSkillPolicy(nn.Module):
             curr_action["eefpos"], scale, center, key="eefpos")
         assert trans_batch.shape[3] == 4
 
-        ## recover gripper
-        gripper_batch = self.recover_gripper(curr_action["gripper"], key="gripper")
+        ## split the scalar channels: 0 -> gripper, 1 -> binary in-hand status (if enabled)
+        gripper_part = curr_action["gripper"][..., :1]
+        gripper_batch = self.recover_gripper(gripper_part, key="gripper")
+
+        in_hand_batch = None
+        if self.predict_in_hand:
+            in_hand_part = curr_action["gripper"][..., 1:2]
+            in_hand_cont = self.unnormalize_from_key("in_hand", in_hand_part)
+            in_hand_batch = (in_hand_cont > 0.5).float().detach().cpu().numpy()
 
         ## update action dict
         action_dict = {}
@@ -455,6 +466,8 @@ class EquiSkillPolicy(nn.Module):
         if batch_size ==1:
             action_dict["eefpos"] = trans_batch[0]
             action_dict["gripper"] = gripper_batch[0]
+            if in_hand_batch is not None:
+                action_dict["in_hand"] = in_hand_batch[0]
         ## calc metrics if in training
         else:
             if self.eef_representation == "4pts":

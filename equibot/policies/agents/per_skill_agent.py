@@ -136,6 +136,15 @@ class EquiSkillAgent(object):
         ## proc gripper
         gt_gripper_action = self.actor.proc_gripper(gripper, 'gripper')
 
+        ## optionally append per-frame binary in-hand status as a second scalar channel.
+        ## each channel is normalized separately, then concatenated -> (B, T, 2)
+        predict_in_hand = self.cfg.data.dataset.get('predict_in_hand', False)
+        if predict_in_hand:
+            gt_in_hand = self.actor.proc_gripper(batch['in_hand'], 'in_hand')
+            gt_scalar_action = torch.cat([gt_gripper_action, gt_in_hand], dim=-1)
+        else:
+            gt_scalar_action = gt_gripper_action
+
         batch_size = eefpos.shape[0]
         timesteps = torch.randint(
             0,
@@ -150,8 +159,8 @@ class EquiSkillAgent(object):
         eefpos_noise = torch.randn_like(gt_eefpos_z, device=self.device)
         noisy_eefpos = self.actor.noise_scheduler.add_noise(gt_eefpos_z, eefpos_noise, timesteps)
 
-        gripper_action_noise = torch.randn_like(gt_gripper_action, device=self.device)
-        noisy_gripper_action = self.actor.noise_scheduler.add_noise(gt_gripper_action, gripper_action_noise, timesteps)
+        gripper_action_noise = torch.randn_like(gt_scalar_action, device=self.device)
+        noisy_gripper_action = self.actor.noise_scheduler.add_noise(gt_scalar_action, gripper_action_noise, timesteps)
 
         ## /tilde{z}_t = prednet(x_t, Cond, t)
         policy_key = 'unitraj_noise_pred_net'

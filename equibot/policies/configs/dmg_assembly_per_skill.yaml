@@ -90,6 +90,9 @@ data:
     normalization_method: "all"
     choose_id_method: "normal"
 
+    ## also predict per-frame binary in-hand status (from sg_info/<skill>/grasp_event_boundary)
+    predict_in_hand: True
+
     original_gripper_pcd: [[0.10, 0.01, 0], 
                             [0.03, -0.04, 0],
                             [0.02, 0.05, 0],
