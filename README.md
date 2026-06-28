@@ -20,8 +20,8 @@ extension but is not wired to either default config.
 Tested on Ubuntu 22.04, CUDA 11.8, RTX 4090. From the repository root:
 
 ```bash
-conda create -n equibot python=3.9 -y
-conda activate equibot
+conda create -n equiv_primitive python=3.9 -y
+conda activate equiv_primitive
 pip install torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu118
 # pytorch3d (used by the VDGCNN encoder and pose estimation) — install from source:
 pip install "git+https://github.com/facebookresearch/pytorch3d.git"
@@ -48,18 +48,18 @@ Training is driven by Hydra; pass one of the two configs by name.
 
 ```bash
 # threading, per-skill grasp
-python -m equibot.policies.train_skills --config-name dmg_threading_per_skill \
+python -m equiv_primitive.policies.train_skills --config-name dmg_threading_per_skill \
     prefix=dmg_threading \
     data.dataset.path=/path/to/data/dmg_threading/
 
 # assembly, per-skill grasp
-python -m equibot.policies.train_skills --config-name dmg_assembly_per_skill \
+python -m equiv_primitive.policies.train_skills --config-name dmg_assembly_per_skill \
     prefix=dmg_assembly \
     data.dataset.path=/path/to/data/dmg_assembly/
 ```
 
 Set the wandb entity/project at the bottom of
-[`equibot/policies/configs/base.yaml`](equibot/policies/configs/base.yaml), or pass
+[`equiv_primitive/policies/configs/base.yaml`](equiv_primitive/policies/configs/base.yaml), or pass
 `use_wandb=false` to disable logging.
 
 ## Evaluation
@@ -69,7 +69,7 @@ ground truth by spawning the threading env in RoboSuite. It requires the externa
 robosuite/DexMimicGen setup.
 
 ```bash
-python -m equibot.policies.eval_dmg_perskill \
+python -m equiv_primitive.policies.eval_dmg_perskill \
     --ckpt_glob "logs/train/dmg_threading/*.pth" \
     --K 30 --n_ref 5 --seed 0
 ```

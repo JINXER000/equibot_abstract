@@ -1,0 +1,4 @@
+# Marker file: identifies the repository root for
+# equiv_primitive/policies/utils/repo_paths.py. Do not remove. Its directory is the
+# authoritative REPO_ROOT regardless of the directory's name, so the repo can be
+# renamed or vendored freely.

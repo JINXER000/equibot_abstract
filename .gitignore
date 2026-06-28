@@ -3,6 +3,7 @@ data/
 **/__pycache__
 .DS_Store
 *.egg-info
+.env
 .vscode
 history_pics
 temp
@@ -16,8 +17,6 @@ paper_ref/
 .specstory/
 .cursor/
 .omx/
-.specstory/
 .codex
-.specstory
 *.log
 .claude

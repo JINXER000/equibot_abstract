@@ -1,13 +1,13 @@
 from setuptools import setup, find_namespace_packages
 
 
-setup(name="equibot",
+setup(name="equiv_primitive",
       version="0.1",
       description="",
       author="",
       author_email="",
       license="MIT",
-      packages=find_namespace_packages(include=["equibot*"]),
+      packages=find_namespace_packages(include=["equiv_primitive*"]),
       install_requires=[
           "click",
           "matplotlib",
