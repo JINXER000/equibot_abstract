@@ -1,0 +1,29 @@
+defaults:
+  - dmg_threading_per_skill
+
+# Horizon is set ONLY via model.pred_horizon; data.dataset.pred_horizon follows it (base.yaml interpolation).
+prefix: dmg_threading_biop_consec2
+
+env:
+  env_class: dmg_threading_biop
+
+model:
+  pred_horizon: 2  # <-- the tunable horizon; retune here only.
+  encoder:
+    backbone_type: vn_pointnet
+    backbone_args:
+      h_dim: 256
+      c_dim: 256
+      num_layers: 4
+      knn: 8
+      preload_path: null
+
+data:
+  dataset:
+    dataset_type: per_skill_biop_jpose_traj
+    path: /home/user/yzchen_ws/docker_share_folder/difussion/equibot_abstract/data/dmg_threading_biop/
+    uniskills: ['bi']
+    n_use: 200
+    aug_traj_nums: 8
+    # = num_epochs * len(train_dataset) // batch_size (1560/32/2000 for this config).
+    num_training_steps: 97500

@@ -604,8 +604,10 @@ class BiopSkillPolicy(nn.Module):
         net_dict['language_encoder'] = self.language_encoder 
 
 
-        joint_scalar_dims = self.dof * self.num_eef  
-        
+        ## single keypose (jpose_horizon == 1) or a length-pred_horizon joint trajectory
+        self.jpose_horizon = self.pred_horizon if 'traj' in cfg.data.dataset.dataset_type else 1
+        joint_scalar_dims = self.dof * self.num_eef * self.jpose_horizon
+
         ### Get unconditional MLP configuration
         if hasattr(cfg.model, 'unconditional_mlp_cfg'):
             mlp_cfg = cfg.model.unconditional_mlp_cfg
@@ -643,23 +645,23 @@ class BiopSkillPolicy(nn.Module):
         self.nets = nets_handles
 
     def proc_jpose(self, jpose, key):
-        
+        ## normalize per dof, then flatten to the (B, jpose_horizon*num_eef*dof) diffusion sample.
         jpose_n = self.normalize_from_key(key, jpose)
-        # jpose_vec = self._convert_jpose_to_vec(jpose_n)
-        jpose_vec = jpose_n.reshape(jpose_n.shape[0], -1,  self.dof * self.num_eef)
+        jpose_vec = jpose_n.reshape(jpose_n.shape[0], -1)
         return jpose_vec
-    
+
 
     def recover_jpose(self, jpose_batch, key):
-        # squeeze the pred horizon to 1
-        jpose_action = jpose_batch.reshape(-1,  self.num_eef, self.dof)
+        ## (B, jpose_horizon * num_eef * dof) -> (B, jpose_horizon, num_eef, dof)
+        batch_size = jpose_batch.shape[0]
+        jpose_action = jpose_batch.reshape(batch_size, self.jpose_horizon, self.num_eef, self.dof)
         unnormed_joint = (
                     self.unnormalize_from_key(key, jpose_action)
                     .detach()
                     .cpu()
                     .numpy()
                 )
-        
+
         return unnormed_joint
 
     def _setup_language_encoder(self, network_name, **language_encoder_kwargs):
@@ -743,7 +745,7 @@ class BiopSkillPolicy(nn.Module):
             generator.manual_seed(seed)
 
         noisy_jpose = torch.randn(
-            (batch_size, self.num_eef * self.dof),
+            (batch_size, self.jpose_horizon * self.num_eef * self.dof),
             device=self.device,
             generator=generator,
         ) * initial_noise_scale
@@ -770,15 +772,19 @@ class BiopSkillPolicy(nn.Module):
 
             curr_action = new_action
 
-        unnormed_joint = self.recover_jpose(curr_action[biop_key], key=biop_key)
+        unnormed_joint = self.recover_jpose(curr_action[biop_key], key=biop_key)  # (B, H, num_eef, dof)
         unnormed_joint = torch.tensor(unnormed_joint).to(self.device)
 
         action_dict = {}
         eval_metrics = {}
         if batch_size ==1:
-            action_dict[biop_key] = unnormed_joint.reshape(self.num_eef, self.dof)
+            ## drop the batch dim; squeeze the horizon too for the legacy (num_eef, dof) keypose output.
+            if self.jpose_horizon == 1:
+                action_dict[biop_key] = unnormed_joint.reshape(self.num_eef, self.dof)
+            else:
+                action_dict[biop_key] = unnormed_joint.reshape(self.jpose_horizon, self.num_eef, self.dof)
         else:
-            gt_joint = gt_batch['jpose'].reshape(-1, self.num_eef, self.dof)
+            gt_joint = gt_batch['jpose'].reshape(-1, self.jpose_horizon, self.num_eef, self.dof)
             joint_mse = torch.nn.functional.mse_loss(unnormed_joint, gt_joint)
             eval_metrics["dual_joint_mse"] = joint_mse
 

@@ -120,7 +120,7 @@ class PerSkillDataset(Dataset):
             ## dexmimicgen
             self.data = self.process_per_skill_dmg_traj(cfg, **kwargs)
             self.normalizer = self.get_normalizer_and_statistics(self.data)
-        elif self.dataset_type == 'per_skill_biop_jpose':
+        elif self.dataset_type in ('per_skill_biop_jpose', 'per_skill_biop_jpose_traj'):
             self.data = self.process_per_biop(cfg, **kwargs)
             self.normalizer = self.get_normalizer_and_statistics(self.data, mode='jpose')
         else:
@@ -223,6 +223,8 @@ class PerSkillDataset(Dataset):
 
     def process_per_biop(self, cfg, **kwargs):
         primitive_kws = cfg.uniskills
+        is_traj = self.dataset_type.endswith('traj')
+        traj_len = cfg.pred_horizon if is_traj else None
 
         def demo_slices(f, demo, robot_names, task_name, interested_objs, interested_skills):
             sg_info = f[f'data/{demo}/sg_info']
@@ -234,8 +236,14 @@ class PerSkillDataset(Dataset):
                     ## only use bimanual skills
                     if BIMANUAL_KW not in skill_name:
                         continue
-                    slices.append(self.get_dataslice_bimanual_jpose(
-                        skill_info, skill_name, rbt_states, task_name))
+                    if is_traj:
+                        data_slice = self.get_dataslice_bimanual_jtraj(
+                            skill_info, skill_name, rbt_states, task_name, traj_len)
+                    else:
+                        data_slice = self.get_dataslice_bimanual_jpose(
+                            skill_info, skill_name, rbt_states, task_name)
+                    if data_slice is not None:
+                        slices.append(data_slice)
             return slices
 
         return self._process_hdf5_files(
@@ -256,6 +264,43 @@ class PerSkillDataset(Dataset):
 
         return {
             'jpose': selected_jpose,
+            'skill_name': str_to_ascii_tensor(skill_name),
+            'task_name': str_to_ascii_tensor(task_name),
+        }
+
+    def get_dataslice_bimanual_jtraj(self, skill_info, skill_name, rbt_states, task_name, traj_len):
+        ## Sample `traj_len` consecutive raw frames starting in the EEF-distance initiation band.
+        pre_sg = get_sg(skill_info, 'pre_sg')
+        pre_idx_list = np.asarray(pre_sg.graph['idx_list'])
+        pre_left_eef_pos = rbt_states['robot0_eef_pos'][pre_idx_list]
+        pre_right_eef_pos = rbt_states['robot1_eef_pos'][pre_idx_list]
+        pre_eef_dist = np.linalg.norm(pre_left_eef_pos - pre_right_eef_pos, axis=1)
+
+        min_eef_dist, max_eef_dist = 0.3, 0.5
+        n_frames = len(rbt_states['robot0_joint_pos'])
+        ## Valid starts: EEFs in the band AND room for `traj_len` consecutive frames.
+        valid_mask = (
+            (pre_eef_dist > min_eef_dist) & (pre_eef_dist < max_eef_dist)
+            & (pre_idx_list + traj_len <= n_frames)
+        )
+        valid_starts = pre_idx_list[valid_mask].tolist()
+        if not valid_starts:
+            print(f'No valid bimanual jtraj found for {skill_name} in {task_name}')
+            return None
+
+        start_t = int(np.random.choice(valid_starts))
+        jtraj = np.stack(
+            [
+                np.concatenate(
+                    [rbt_states['robot0_joint_pos'][i], rbt_states['robot1_joint_pos'][i]], axis=0
+                )
+                for i in range(start_t, start_t + traj_len)
+            ],
+            axis=0,
+        ).astype(np.float32)  # (traj_len, num_eef * dof)
+
+        return {
+            'jpose': torch.tensor(jtraj),
             'skill_name': str_to_ascii_tensor(skill_name),
             'task_name': str_to_ascii_tensor(task_name),
         }

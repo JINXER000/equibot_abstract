@@ -45,6 +45,10 @@ class pddl_wrapper(object):
     def get_skill_names(self):
         return list(self.agent.actor.skill_names)
 
+    def get_jpose_horizon(self):
+        # Derived horizon (1=keypose, N=jtraj); 1 if the policy never declares one.
+        return int(getattr(self.agent.actor, 'jpose_horizon', 1))
+
     def get_obs_from_datset(self,**kwargs):
         assert self.cfg.mode != 'inference'
         data_iter = iter(self.test_loader)

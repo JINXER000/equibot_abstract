@@ -256,7 +256,8 @@ class EquiSkillAgent(object):
         scalar_dual_jpose_raw = n_data_dict[jpose_key]
         batch_size = scalar_dual_jpose_raw.shape[0]
         scalar_dual_jpose_raw = scalar_dual_jpose_raw.reshape(batch_size, -1, self.dof)
-        scalar_dual_jpose = self.actor.proc_jpose(scalar_dual_jpose_raw,  jpose_key).squeeze(1)
+        ## proc_jpose returns the flat (B, jpose_horizon * num_eef * dof) diffusion sample
+        scalar_dual_jpose = self.actor.proc_jpose(scalar_dual_jpose_raw,  jpose_key)
         timesteps = torch.randint(
             0,
             self.actor.noise_scheduler.config.num_train_timesteps,
