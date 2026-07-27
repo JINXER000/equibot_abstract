@@ -46,7 +46,11 @@ from scripts.playback_depth import (
 )
 
 from equiv_primitive.policies.aloha_wrapper import pddl_wrapper
-from equiv_primitive.policies.utils.misc import choose_ids, compose_transformation
+from equiv_primitive.policies.utils.misc import (
+    choose_ids,
+    closest_object_center_id,
+    compose_transformation,
+)
 
 TASK_NAME = "two_arm_threading"
 TRAJ_LEN = 8
@@ -93,7 +97,7 @@ def read_object_pose(env, obj_name):
 
 # ------------------------------------------------------------------- references
 
-def demo_grasp_world(demo, skill_name, rbt_name, ref_seed):
+def demo_grasp_world(demo, skill_name, obj_name, rbt_name, ref_seed):
     """Ground-truth grasp keyposes (T, 4, 4) of one demo, world frame.
 
     Mirrors ``PerSkillDataset.get_dataslice_unimanual`` keypose selection. The
@@ -102,11 +106,23 @@ def demo_grasp_world(demo, skill_name, rbt_name, ref_seed):
     skill_grp = demo[f"sg_info/{skill_name}"]
     extended_ids = skill_grp["extended_ids"][()]
     essential_ids = skill_grp["essential_ids"][()]
+    object_point_clouds = demo[f"obs/{obj_name}_point_cloud"][()]
+    object_visibility = demo[f"obs/{obj_name}_visible"][()]
+    all_eef_positions = demo[f"obs/{rbt_name}_eef_pos"][()]
+    closest_approach_id = closest_object_center_id(
+        all_eef_positions, object_point_clouds, extended_ids, object_visibility
+    )
 
     np.random.seed(ref_seed)
-    ids = choose_ids(TRAJ_LEN, extended_ids, essential_ids, "grasp")
+    ids = choose_ids(
+        TRAJ_LEN,
+        extended_ids,
+        essential_ids,
+        "grasp",
+        required_ids=[closest_approach_id],
+    )
 
-    eef_pos = demo[f"obs/{rbt_name}_eef_pos"][()][ids]
+    eef_pos = all_eef_positions[ids]
     eef_quat = demo[f"obs/{rbt_name}_eef_quat"][()][ids]
     return np.stack(list(map(compose_transformation, eef_pos, eef_quat)), axis=0)
 
@@ -157,7 +173,7 @@ def build_references(hdf5_path, n_ref):
                         },
                     )
                     t_obj = read_object_pose(env, obj_name)
-                    t_grasp = demo_grasp_world(demo, skill_name, rbt_name, ref_seed)
+                    t_grasp = demo_grasp_world(demo, skill_name, obj_name, rbt_name, ref_seed)
                     per_demo.append(np.linalg.inv(t_obj) @ t_grasp)
                 refs[skill_name] = average_se3(per_demo)
     finally:

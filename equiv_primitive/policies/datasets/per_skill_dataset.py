@@ -12,6 +12,7 @@ from equiv_primitive.policies.utils.misc import (
     centralize_grasp,
     choose_ids,
     choose_ids_rdp,
+    closest_object_center_id,
     rotate_dataslice,
     get_rbt_states,
     get_rbt_actions,
@@ -75,6 +76,9 @@ class PerSkillDataset(Dataset):
         self.num_eef = cfg.num_eef
         self.dof = cfg.dof
         self.dataset_type = cfg.dataset_type
+        self.jpose_horizon = cfg.get('jpose_horizon', 1)
+        if self.jpose_horizon < 1:
+            raise ValueError(f'jpose_horizon must be positive, got {self.jpose_horizon}')
 
         self.eef_representation = cfg.eef_representation
         self.original_gripper_pcd = np.array(cfg.original_gripper_pcd)
@@ -223,8 +227,9 @@ class PerSkillDataset(Dataset):
 
     def process_per_biop(self, cfg, **kwargs):
         primitive_kws = cfg.uniskills
-        is_traj = self.dataset_type.endswith('traj')
-        traj_len = cfg.pred_horizon if is_traj else None
+        # The dedicated horizon selects a keypose or consecutive joint trajectory.
+        is_traj = self.jpose_horizon > 1
+        traj_len = self.jpose_horizon if is_traj else None
 
         def demo_slices(f, demo, robot_names, task_name, interested_objs, interested_skills):
             sg_info = f[f'data/{demo}/sg_info']
@@ -254,19 +259,9 @@ class PerSkillDataset(Dataset):
         )
 
     def get_dataslice_bimanual_jpose(self, skill_info, skill_name, rbt_states, task_name):
-        pre_sg = get_sg(skill_info, 'pre_sg')
-        qtraj_indice = pre_sg.graph['idx_list']
-        selected_jpose = np.concatenate(
-            [rbt_states['robot0_joint_pos'][qtraj_indice],
-             rbt_states['robot1_joint_pos'][qtraj_indice]],
-            axis=0,
-        ).astype(np.float32)
-
-        return {
-            'jpose': selected_jpose,
-            'skill_name': str_to_ascii_tensor(skill_name),
-            'task_name': str_to_ascii_tensor(task_name),
-        }
+        # A keypose is a one-frame paired-arm sample shaped (1, 2 * dof).
+        return self.get_dataslice_bimanual_jtraj(
+            skill_info, skill_name, rbt_states, task_name, traj_len=1)
 
     def get_dataslice_bimanual_jtraj(self, skill_info, skill_name, rbt_states, task_name, traj_len):
         ## Sample `traj_len` consecutive raw frames starting in the EEF-distance initiation band.
@@ -445,6 +440,17 @@ class PerSkillDataset(Dataset):
         idx_list = skill_info['extended_ids'][()]
         essential_ids = skill_info['essential_ids'][()]
 
+        if obj_name not in obj_pcds or obj_name not in obj_visibility:
+            raise ValueError(
+                f"Target object {obj_name!r} is missing point-cloud or visibility data for {task_name}."
+            )
+        closest_approach_id = closest_object_center_id(
+            rbt_states[f'{rbt_name}_eef_pos'],
+            obj_pcds[obj_name],
+            idx_list,
+            obj_visibility[obj_name],
+        )
+
         pre_start_idx = pre_sg.graph['idx_list'][0]
 
         obj_pc_idx = self._first_visible_idx(obj_visibility, obj_name, pre_start_idx, task_name)
@@ -461,9 +467,21 @@ class PerSkillDataset(Dataset):
         ## note that in_hand pc has been centered
 
         if cfg.choose_id_method == 'rdp':
-            chosen_ids = choose_ids_rdp(rbt_states[f'{rbt_name}_eef_pos'], traj_len, idx_list, essential_ids=essential_ids)
+            chosen_ids = choose_ids_rdp(
+                rbt_states[f'{rbt_name}_eef_pos'],
+                traj_len,
+                idx_list,
+                essential_ids=essential_ids,
+                required_ids=[closest_approach_id],
+            )
         else:
-            chosen_ids = choose_ids(traj_len, idx_list, essential_ids, skill_key)
+            chosen_ids = choose_ids(
+                traj_len,
+                idx_list,
+                essential_ids,
+                skill_key,
+                required_ids=[closest_approach_id],
+            )
         eef_pos_list = rbt_states[f'{rbt_name}_eef_pos'][chosen_ids]
         eef_quat_list = rbt_states[f'{rbt_name}_eef_quat'][chosen_ids]
         eef_pos_list = list(map(compose_transformation, eef_pos_list, eef_quat_list))
@@ -510,8 +528,10 @@ class PerSkillDataset(Dataset):
         normalizer = LinearNormalizer()
 
         if mode == 'jpose':
-            jpose_arr = np.concatenate([data['jpose'].reshape(2, -1) for data in data_list], axis=0)
-            jpose_stats = to_torch_stats(jpose_arr.reshape(-1, jpose_arr.shape[-1]))
+            # Normalize each joint DOF independently before agent-side flattening.
+            jpose_arr = np.concatenate(
+                [np.asarray(data['jpose']).reshape(-1, self.dof) for data in data_list], axis=0)
+            jpose_stats = to_torch_stats(jpose_arr)
             normalizer['jpose'] = get_torch_range_symmetric_normalizer_from_stat(jpose_stats)
             return normalizer
 

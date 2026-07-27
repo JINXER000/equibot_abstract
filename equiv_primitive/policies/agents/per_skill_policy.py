@@ -604,8 +604,13 @@ class BiopSkillPolicy(nn.Module):
         net_dict['language_encoder'] = self.language_encoder 
 
 
-        ## single keypose (jpose_horizon == 1) or a length-pred_horizon joint trajectory
-        self.jpose_horizon = self.pred_horizon if 'traj' in cfg.data.dataset.dataset_type else 1
+        # Prefer the explicit horizon while retaining legacy *_traj checkpoint support.
+        self.jpose_horizon = cfg.data.dataset.get(
+            'jpose_horizon',
+            self.pred_horizon if 'traj' in cfg.data.dataset.dataset_type else 1,
+        )
+        if self.jpose_horizon < 1:
+            raise ValueError(f'jpose_horizon must be positive, got {self.jpose_horizon}')
         joint_scalar_dims = self.dof * self.num_eef * self.jpose_horizon
 
         ### Get unconditional MLP configuration

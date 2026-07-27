@@ -63,8 +63,9 @@ model:
 data:
   dataset:
     num_points: 128
-    uniskills: ['grasp']
-    dataset_type: 'per_skill_dmg_traj'
+    uniskills: ['bi']
+    dataset_type: 'per_skill_biop_jpose'
+    path: ${hydra:runtime.cwd}/data/dmg_threading_biop
 
     is_obj_centric: True
     is_add_bottom: True 
@@ -74,9 +75,12 @@ data:
     embedding_cache_dir: "./data/bert"
     task_suite_name: "dmg_threading"
     n_use: 100
+    aug_traj_nums: 8
+    num_training_steps: 97500
 
     # eef_representation: "4pts"
     eef_representation: "3vec"
+    jpose_horizon: 2
 
     normalization_method: "all"
     choose_id_method: "normal"
@@ -124,6 +128,3 @@ shape_meta: &shape_meta
 
 eval:
   history_bid: 10
-
-
-

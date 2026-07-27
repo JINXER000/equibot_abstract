@@ -1,0 +1,62 @@
+defaults:
+  - base
+  - _self_
+
+prefix: dmg_assembly_biop_consec2
+use_wandb: true
+wandb_note: null
+
+training:
+  eval_interval: 50
+  num_epochs: 2000
+
+env:
+  env_class: dmg_assembly_biop
+  num_eef: 2
+  dof: 7
+  max_episode_length: 50
+
+agent:
+  agent_name: per_skill
+
+model:
+  hidden_dim: 256
+  obs_horizon: 1
+  pred_horizon: 2
+  encoder:
+    backbone_type: vn_pointnet
+    backbone_args:
+      h_dim: 256
+      c_dim: 256
+      num_layers: 4
+      knn: 8
+  language_encoder_cfg:
+    network_name: MLPEncoder
+    input_size: 768
+    hidden_size: 256
+    num_layers: 1
+  unconditional_mlp_cfg:
+    architecture: custom
+    custom_encoder_layers: [256, 256]
+    custom_time_mixer_layers: [512, 256]
+    custom_decoder_layers: [256, 256]
+
+data:
+  dataset:
+    path: ${hydra:runtime.cwd}/data/dmg_assembly_biop
+    num_points: 128
+    uniskills: ['bi']
+    dataset_type: per_skill_biop_jpose_traj
+    jpose_horizon: 2
+    is_obj_centric: true
+    is_add_bottom: true
+    downsample_method: fps
+    rot_aug: true
+    embedding_cache_dir: ./data/bert
+    task_suite_name: dmg_assembly
+    n_use: 200
+    aug_traj_nums: 8
+    num_training_steps: 98000
+    eef_representation: 3vec
+    normalization_method: all
+    original_gripper_pcd: [[0.10, 0.01, 0], [0.03, -0.04, 0], [0.02, 0.05, 0], [0, 0, 0]]
